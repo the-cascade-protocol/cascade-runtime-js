@@ -14,7 +14,9 @@
   "lens": "everyday",
   "tables": {
     "repository": "https://github.com/the-cascade-protocol/cascade-reference-tables",
-    "feeds": ["https://the-cascade-protocol.github.io/cascade-reference-tables/feed.ttl"],
+    "feeds": [
+      "https://the-cascade-protocol.github.io/cascade-reference-tables/feed.ttl"
+    ],
     "preference": {
       "https://ns.cascadeprotocol.org/cascade#CodeNames": [
         "urn:uuid:f71f6797-48ec-4875-9b87-4cb1be1d9be0"

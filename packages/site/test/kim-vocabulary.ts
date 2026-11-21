@@ -10,8 +10,10 @@ import { specSection } from "../src/hub/spec.js";
 import { buildTree, type Finisher } from "../src/sections.js";
 import { readSpecReport, type SpecPages, specPages } from "../src/spec.js";
 
-export const TREE = "https://github.com/the-cascade-protocol/cascade-vocabulary/tree/abc/";
-export const BLOB = "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/abc/";
+export const TREE =
+  "https://github.com/the-cascade-protocol/cascade-vocabulary/tree/abc/";
+export const BLOB =
+  "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/abc/";
 export const NAMING = `${TREE}runtime/naming.feature#`;
 
 export const text = (value: string) => new TextEncoder().encode(value);

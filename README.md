@@ -51,15 +51,15 @@ claim is made that it is fit for clinical use.
 
 ## The protocol's repositories
 
-| Repository                                                                                   | What it is                                                                                                                                       |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Repository                                                                                               | What it is                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [cascade-vocabulary](https://github.com/the-cascade-protocol/cascade-vocabulary)                         | The contract a Cascade pod is built and read by: the ontologies and shapes, the standard queries, the runtime rules and the conformance kit.     |
 | [cascade-bridge-spec](https://github.com/the-cascade-protocol/cascade-bridge-spec)                       | The Cascade Bridge Specification: the contract every adapter and every Bridge follows. Draft: no compatibility is promised before a numbered v1. |
 | [cascade-bridge-rs](https://github.com/the-cascade-protocol/cascade-bridge-rs)                           | The Cascade Bridge for Rust, also built for WebAssembly. Draft.                                                                                  |
 | [cascade-bridge-js](https://github.com/the-cascade-protocol/cascade-bridge-js)                           | The Cascade Bridge for JavaScript. Draft.                                                                                                        |
 | [cascade-bridge-adapter-fhir-r4](https://github.com/the-cascade-protocol/cascade-bridge-adapter-fhir-r4) | The adapter for FHIR R4 JSON, alone or in a Bundle. Import-only.                                                                                 |
 | [cascade-bridge-adapter-ccda](https://github.com/the-cascade-protocol/cascade-bridge-adapter-ccda)       | The adapter for C-CDA R2.1 XML, as a patient portal hands it out. Import-only.                                                                   |
-| cascade-runtime-js (this repository)                                                         | The reference runtime.                                                                                                                           |
+| cascade-runtime-js (this repository)                                                                     | The reference runtime.                                                                                                                           |
 
 ## How it fits together
 

@@ -379,7 +379,9 @@ describe("The suite list as checked in · test-suites.json", () => {
     it("reads the checked-in list without a refusal, the runtime's suite in it", () => {
       const listed = checkedIn();
       assert.ok(
-        listed.some((one) => one.repository === "the-cascade-protocol/cascade-runtime-js"),
+        listed.some(
+          (one) => one.repository === "the-cascade-protocol/cascade-runtime-js",
+        ),
       );
     });
 

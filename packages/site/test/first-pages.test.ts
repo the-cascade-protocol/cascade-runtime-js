@@ -212,7 +212,8 @@ describe("A newcomer's first pages · startSection, examplesSection, trySection"
 
   describe("with `try/index.html`", () => {
     let text: string;
-    const here = "https://the-cascade-protocol.github.io/cascade-runtime-js/try/";
+    const here =
+      "https://the-cascade-protocol.github.io/cascade-runtime-js/try/";
     const sentFrom = async (
       registrations: string[],
       unregistered: string[],
@@ -263,7 +264,10 @@ describe("A newcomer's first pages · startSection, examplesSection, trySection"
     it("unregisters the browser's background script (a service worker) of its own folder and no other", async () => {
       const unregistered: string[] = [];
       await sentFrom(
-        [here, "https://the-cascade-protocol.github.io/cascade-starter-kit/try/"],
+        [
+          here,
+          "https://the-cascade-protocol.github.io/cascade-starter-kit/try/",
+        ],
         unregistered,
       );
       assert.deepEqual(unregistered, [here]);

@@ -26,8 +26,10 @@ import {
 } from "../src/term-reference.js";
 import { readPage } from "./page.js";
 
-const TREE = "https://github.com/the-cascade-protocol/cascade-bridge-spec/tree/abc123/";
-const BLOB = "https://github.com/the-cascade-protocol/cascade-bridge-spec/blob/abc123/";
+const TREE =
+  "https://github.com/the-cascade-protocol/cascade-bridge-spec/tree/abc123/";
+const BLOB =
+  "https://github.com/the-cascade-protocol/cascade-bridge-spec/blob/abc123/";
 const BRIDGE = "https://ns.cascadeprotocol.org/bridge/v1-draft#";
 const ADAPTER = `${BRIDGE}Adapter`;
 const PROFILE = `${BRIDGE}Profile`;

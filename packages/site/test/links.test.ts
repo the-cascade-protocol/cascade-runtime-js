@@ -4,7 +4,8 @@ import { noteHref, noteLinkOf, ruleHref, termHref } from "../src/links.js";
 
 const FOAF_NAME = "http://xmlns.com/foaf/0.1/name";
 const HOST = "https://ns.cascadeprotocol.org/";
-const BLOB = "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/abc123";
+const BLOB =
+  "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/abc123";
 
 /** Asserts that `call` refuses each base that is the vocabulary's host, however it is written. */
 function refusesHost(call: (base: string) => unknown): void {

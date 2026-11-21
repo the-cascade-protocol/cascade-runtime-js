@@ -669,7 +669,8 @@ function packageOf(manifest: unknown): Blob {
 }
 
 describe("The Bridge build a release publishes · releasedBuild()", () => {
-  const repository = "https://github.com/the-cascade-protocol/cascade-bridge-rs";
+  const repository =
+    "https://github.com/the-cascade-protocol/cascade-bridge-rs";
   const commit = "a".repeat(40);
   const base = `${repository}/releases/download/build-${commit}`;
   const real = globalThis.fetch;

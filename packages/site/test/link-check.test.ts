@@ -528,7 +528,10 @@ describe("Checking a site's links · scripts/link-check.mjs", () => {
         "someone-else/a",
         `# a\n\n## Docs\n\n- [The hub](${HUB}): home\n- [Terms](${HUB}terms/#foaf:name): terms\n- [Elsewhere](${origin}/ok)\n- [Local](docs/guide.md)\n\n## Other\n\n[ignored](${origin}/gone)`,
       );
-      READMES.set("the-cascade-protocol/b", `# b\n\nno docs block here\n\n[x](${HUB})`);
+      READMES.set(
+        "the-cascade-protocol/b",
+        `# b\n\nno docs block here\n\n[x](${HUB})`,
+      );
       READMES.set(
         "the-cascade-protocol/g",
         `# g\n\nintro\n\n\`\`\`\n## Docs in a fence\n\`\`\`\n\n## What it is\n\n## Docs\n\n- [The hub](${HUB})`,
