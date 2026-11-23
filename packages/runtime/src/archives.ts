@@ -403,6 +403,8 @@ export class ArchivedFiles implements Files {
   #held: Promise<Held> | undefined;
   /** The paths found at their own paths and in an archive, compared once. */
   readonly #compared = new Set<string>();
+  /** Whether the pod's requirements have been looked at. */
+  #required: Promise<void> | undefined;
   /** The archives whose directory is in the index. */
   readonly #opened = new Set<string>();
   /** The requirement's file, once this opening has seen it in the pod or written it. */
@@ -644,12 +646,7 @@ export class ArchivedFiles implements Files {
   #index(): Promise<Held> {
     if (this.#held === undefined) {
       const reading = timedAside("archives.open", async () => {
-        if (this.#newStore !== undefined)
-          await refuseUnmetRequirements(
-            this.#files,
-            this.#layout,
-            this.#newStore,
-          );
+        await this.#requirementsMet();
         const held: Held = new Map();
         await this.#absorbed(held, await this.#unopened());
         return held;
@@ -660,6 +657,28 @@ export class ArchivedFiles implements Files {
       });
     }
     return this.#held;
+  }
+
+  /** The pod requires nothing this runtime cannot do (O4): looked at once, before the opening's first read, whatever it reads. */
+  #requirementsMet(): Promise<void> {
+    if (this.#newStore === undefined) return Promise.resolve();
+    if (this.#required === undefined) {
+      const looking = refuseUnmetRequirements(
+        this.#files,
+        this.#layout,
+        this.#newStore,
+      );
+      this.#required = looking;
+      looking.catch(() => {
+        if (this.#required === looking) this.#required = undefined;
+      });
+    }
+    return this.#required;
+  }
+
+  /** Whether an archive may hold the file: a file of a snapshot's set or a sealed one. The card, the settings and the views are never in one. */
+  #mayBeArchived(path: string): boolean {
+    return SEALED_FILE.test(path) || this.#layout.inSnapshotSet(path);
   }
 
   /** The archives in the folder whose directory this opening has not read, sorted. */
@@ -732,6 +751,8 @@ export class ArchivedFiles implements Files {
     const path = relative(this, pathOrIri);
     if (under(this.#folder, path) || this.#layout.inRequirements(path))
       return undefined;
+    await this.#requirementsMet();
+    if (!this.#mayBeArchived(path)) return this.#files.read(path);
     const entry = (await this.#index()).get(path);
     return entry === undefined
       ? this.#files.read(path)
@@ -746,7 +767,10 @@ export class ArchivedFiles implements Files {
     const path = relative(this, pathOrIri);
     if (under(this.#folder, path) || this.#layout.inRequirements(path))
       return undefined;
-    const entry = (await this.#index()).get(path);
+    await this.#requirementsMet();
+    const entry = this.#mayBeArchived(path)
+      ? (await this.#index()).get(path)
+      : undefined;
     if (entry === undefined && this.#files.readRange !== undefined)
       return this.#files.readRange(path, start, length);
     const whole =
