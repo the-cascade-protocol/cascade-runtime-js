@@ -1,4 +1,8 @@
-import { boundToRecords } from "./bound-records.js";
+import {
+  answersWithARecord,
+  bindsARecord,
+  boundToRecords,
+} from "./bound-records.js";
 import { type VocabularyBuild, vocabularyBuild } from "./build.js";
 import type { Assertion } from "./conformance.js";
 import type { Database, DatabaseFunction } from "./database.js";
@@ -47,6 +51,7 @@ const QUERIES = "queries/";
 const MATCHER = "queries/matcher/";
 const LENSES = "queries/lenses/";
 const VIEWS = "queries/views/";
+const QUESTIONS = "queries/questions/";
 const LABELS = "queries/labels.rq";
 const LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
 const WRITTEN_BY = "https://ns.cascadeprotocol.org/cascade#writtenByQueryPath";
@@ -1429,6 +1434,14 @@ export async function sqlFailures(
   if (!construct && PAGED.test(sql))
     for (const record of recordsInEntries(db)) bound.add(record);
   if (!construct && /\basked\b/.test(sql)) bound.add(NO_SUCH_RECORD);
+  // A question that gives a ?record column and binds none is never bound to a record: its binding would add the record
+  // to each row that names none, as an entry's review would.
+  if (
+    ported.rq.startsWith(QUESTIONS) &&
+    !bindsARecord(ported.rqText) &&
+    answersWithARecord(ported.rqText)
+  )
+    bound.clear();
   for (const record of [...bound].sort())
     lines.push(
       ...against(

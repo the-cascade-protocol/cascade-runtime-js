@@ -55,6 +55,54 @@ function valuesOf(records: readonly string[]): string {
   return `VALUES ?record { ${records.map((record) => `<${record}>`).join(" ")} }`;
 }
 
+/**
+ * Whether a runtime binds the question to a record: a `# bound: ?record` line marks a group, or `?record` stands in
+ * the outermost group outside any group nested in it; a `?record` only inside a sub-select is not bound.
+ */
+export function bindsARecord(query: string): boolean {
+  if (marks(query) > 0) return true;
+  let depth = 0;
+  let outer = "";
+  for (const character of query.replace(TOKEN, (token) =>
+    token === "{" ? "{" : " ",
+  )) {
+    depth += (character === "{" ? 1 : 0) - (character === "}" ? 1 : 0);
+    if (depth === 1) outer += character;
+  }
+  return /[?$]record\b/.test(outer);
+}
+
+/**
+ * Whether the question gives a `?record` column, which a binding would not choose: an entry's review names the records a
+ * finding is about, and a `?record` bound to one adds it to each row that names none.
+ */
+export function answersWithARecord(query: string): boolean {
+  const stripped = query.replace(TOKEN, (token) => (token === "{" ? "{" : " "));
+  return /[?$]record\b/.test(
+    stripped.slice(0, Math.max(0, stripped.indexOf("{"))),
+  );
+}
+
+/** The marks `# bound: ?record` that stand before a group, the outermost among them. */
+function marks(query: string): number {
+  let count = 0;
+  let mark: number | undefined;
+  for (const match of query.matchAll(TOKEN)) {
+    const token = match[0];
+    if (token !== "{") {
+      mark =
+        token.startsWith("#") && MARK.test(token)
+          ? match.index + token.length
+          : undefined;
+      continue;
+    }
+    if (mark !== undefined && BEFORE_BRACE.test(query.slice(mark, match.index)))
+      count += 1;
+    mark = undefined;
+  }
+  return count;
+}
+
 /** Just after the outermost group's brace, and just after each marked group's, the outermost bound once. */
 function groups(query: string): { outermost: number; marked: number[] } {
   let outermost: number | undefined;
