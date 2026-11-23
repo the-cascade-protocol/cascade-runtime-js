@@ -227,6 +227,25 @@ const ASKED_IN_PARTS = [
   "SELECT '<urn:x:asked-' || n || '>' AS entry FROM asked_now",
 ].join("\n");
 
+/** A question in three parts: its prepare makes a temporary table, its answer reads it (and fails where `answer` is not a select of it), its cleanup drops it. */
+const WITH_CLEANUP = (answer = "SELECT k AS entry FROM said"): string =>
+  [
+    "-- part: prepare",
+    "DROP TABLE IF EXISTS temp.said;",
+    "CREATE TEMP TABLE said (k TEXT) STRICT;",
+    "INSERT INTO said VALUES ('<urn:x:a>');",
+    "-- part: answer",
+    answer,
+    "-- part: cleanup",
+    "DROP TABLE IF EXISTS temp.said;",
+  ].join("\n");
+
+const NO_SUCH_COLUMN = "SELECT no_such_column AS entry FROM said";
+
+/** The temporary table the question in three parts makes, while a connection holds it. */
+const temporaryTables = (db: Database): unknown[] =>
+  db.prepare("SELECT name FROM sqlite_temp_schema WHERE name = 'said'").all();
+
 const FILLED = (name: string): string =>
   `INSERT INTO ${name} SELECT o, s FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope);`;
 
@@ -427,6 +446,57 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     assert.deepEqual(database.answer("SELECT '<urn:x:a>' AS entry"), {
       rows: [{ entry: "urn:x:a" }],
     });
+  });
+
+  it("drops what a question's prepare part made by its cleanup part, once its answer has given its rows and when it fails", () => {
+    assert.deepEqual(sqlAnswer(db, WITH_CLEANUP()), {
+      columns: ["entry"],
+      rows: [["<urn:x:a>"]],
+    });
+    assert.deepEqual(temporaryTables(db), []);
+    assert.throws(() => sqlAnswer(db, WITH_CLEANUP(NO_SUCH_COLUMN)));
+    assert.deepEqual(temporaryTables(db), []);
+  });
+
+  it("drops what a question's prepare part made from a pod's database by its cleanup part, each time it is asked, also when the answer fails", async () => {
+    const files = new MemoryFiles("https://example.test/vocabulary/");
+    await files.write(STATEMENTS_SCHEMA, new Uint8Array());
+    let opened: Database | undefined;
+    const database = await PodDatabase.opened(
+      {
+        open: ({ functions }) =>
+          (opened = openDatabase(":memory:", { functions })),
+        builtWhole: async () => undefined,
+        remove: async () => undefined,
+        exists: async () => true,
+      },
+      new MemoryFiles("https://example.test/pod/"),
+      files,
+    );
+    const held = (): unknown[] => temporaryTables(opened as Database);
+    for (let asked = 0; asked < 2; asked++) {
+      assert.deepEqual(database.answer(WITH_CLEANUP()), {
+        rows: [{ entry: "urn:x:a" }],
+      });
+      assert.deepEqual(held(), []);
+    }
+    assert.throws(() => database.answer(WITH_CLEANUP(NO_SUCH_COLUMN)));
+    assert.deepEqual(held(), []);
+    assert.deepEqual(database.answer(WITH_CLEANUP()), {
+      rows: [{ entry: "urn:x:a" }],
+    });
+    assert.deepEqual(held(), []);
+  });
+
+  it("refuses a question's parts in another order than prepare, answer and cleanup", () => {
+    assert.throws(
+      () =>
+        sqlAnswer(
+          db,
+          "-- part: prepare\nSELECT 1;\n-- part: cleanup\nSELECT 2;\n-- part: answer\nSELECT 1 AS entry",
+        ),
+      /prepare, answer/,
+    );
   });
 
   it("splits a part into its statements at each ; outside a string, a quoted name and a comment, so each is compiled once and run again", () => {
