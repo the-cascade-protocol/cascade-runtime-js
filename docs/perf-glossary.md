@@ -341,6 +341,10 @@ Rows named `<scenario>-<dataset>/count/<count>`.
 | `matcher.queriesrun` | How many questions the matcher asked. |
 | `matcher.takenrecords` | How many records the matcher picked to compare. |
 | `matcher.boundrecords` | How many records the matcher's questions were limited to. |
+| `arrivals.repeated` | How many records the import's document stated that the pod already held in that state, so that nothing was written for them. |
+| `arrivals.revised.newrecord` | How many records the import's document stated that the pod did not hold at all, each written as a new record, version and revision. |
+| `arrivals.revised.newversion` | How many records the import's document stated that the pod held, but at other versions only; each is written as a new version and revision. |
+| `arrivals.revised.heldversion` | How many records the import's document stated that the pod held in that version, but not under that source version and change time or not as its current one; each is written as a new revision. |
 | `shapes.machine-basis-check` | How many times a judgment's stated basis was checked against its shape (a repeat check over the same statements is not counted). |
 | `files.absent.check` | How many files were checked, before a step wrote them, for being in the pod already. |
 | `files.absent.check.read` | How many of those checks had to read the file from the pod, the rest being files whose name fixes their bytes, answered by the pod's listing. |

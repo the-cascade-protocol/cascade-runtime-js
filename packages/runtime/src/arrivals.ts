@@ -752,6 +752,13 @@ export class Revisions {
     );
   }
 
+  /** Why an arrival `repeats` did not name is revised, for the probed run's counts: the pod held no such record, held it at other versions only, or held this version under another stamp. */
+  revisedBecause(arrival: Arrival): "newRecord" | "newVersion" | "heldVersion" {
+    const versions = this.#versions.get(arrival.record.value);
+    if (versions === undefined) return "newRecord";
+    return versions.has(arrival.version.value) ? "heldVersion" : "newVersion";
+  }
+
   /** Adds the record and its version, and holds the revision after each of the record's heads (A2, A5) until `write`. */
   async revise(arrival: Arrival, writes: StepWrites): Promise<string> {
     const record = arrival.record.value;
@@ -1311,6 +1318,12 @@ export async function fileExport(
       );
       for (const arrival of arriving) {
         const repeated = await revisions.repeats(arrival);
+        if (probed())
+          counted(
+            repeated
+              ? "arrivals.repeated"
+              : `arrivals.revised.${revisions.revisedBecause(arrival)}`,
+          );
         const older = repeated
           ? revisions.holding(arrival)
           : await revisions.revise(arrival, writes);

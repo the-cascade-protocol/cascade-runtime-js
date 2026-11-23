@@ -635,6 +635,21 @@ describe("Turning an adapter's arrivals into revisions · CorePod.import(), reac
     it("keeps nothing of the same export imported again, its documents being kept already (A1)", () => {
       assert.deepEqual(again, []);
     });
+
+    it("counts, in a probed run, each arrival as repeated or as revised for the reason it was: a record the pod did not hold, a version it did not hold, or one it held under another stamp", async () => {
+      const { seen } = await probing(() => threeStatesOfOneRecord());
+      const counted = (name: string): number | undefined =>
+        seen.counts.get(`arrivals.${name}`);
+      assert.deepEqual(
+        [
+          counted("repeated"),
+          counted("revised.newRecord"),
+          counted("revised.newVersion"),
+          counted("revised.heldVersion"),
+        ],
+        [1, 1, 1, 1],
+      );
+    });
   });
 
   describe("given Ada's exports imported with the ids they mint pinned, and the lines the line builder builds counted", () => {
