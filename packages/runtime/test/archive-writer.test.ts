@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, open, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { crc32 as zlibCrc32 } from "node:zlib";
 import { after, before, describe, it } from "node:test";
 import { archivedFiles, archiveDirectory } from "../src/archives.js";
 import {
@@ -18,7 +19,7 @@ import { FolderFiles, openSharedHandles } from "../src/node/folder-files.js";
 import { StepWrites } from "../src/pod.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { probing } from "../src/probe.js";
-import { archivesOf } from "../src/zip-pack.js";
+import { archivesOf, crc32, MOST_BYTES } from "../src/zip-pack.js";
 import { Refusal } from "../src/step.js";
 import { layout as vocabularyLayout } from "./vocabulary.js";
 
@@ -240,6 +241,144 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
     );
   });
 
+  it("removes the subject's loose copy an archive holds with the same bytes at the next step, as a step stopped before the removal left it", async () => {
+    const host = podAt();
+    await host.write(SUBJECT, bytes("<#s> a <#Subject> .\n"));
+    await step([[RECORD, "<#a> a <#Condition> .\n"]], ACT).commit(
+      archivedFiles(host, layout),
+    );
+    assert.ok(!(await onDisk(host.folder)).includes(SUBJECT));
+
+    await host.write(SUBJECT, bytes("<#s> a <#Subject> .\n"));
+    await step([[SECOND_RECORD, "<#c> a <#Condition> .\n"]], SECOND_ACT).commit(
+      archivedFiles(host, layout),
+    );
+    assert.ok(
+      !(await onDisk(host.folder)).includes(SUBJECT),
+      "the copy put back is gone after the next step",
+    );
+
+    await host.write(SUBJECT, bytes("<#other> a <#Subject> .\n"));
+    const third = archivedFiles(host, layout);
+    await step(
+      [[VERSION, "<#b> a <#Condition> .\n"]],
+      "provenance/imports/ab/ab000000-0000-4000-8000-000000000007.ttl",
+    ).commit(third);
+    assert.ok(
+      (await onDisk(host.folder)).includes(SUBJECT),
+      "a loose copy with other bytes is not removed, for a listing to refuse",
+    );
+  });
+
+  it("keeps the step it wrote whole when the removal of the subject's loose copy throws after the archive is in place, and removes the copy at the next step", async () => {
+    const host = podAt();
+    await host.write(SUBJECT, bytes("<#s> a <#Subject> .\n"));
+    let held = true;
+    const flaky = {
+      iri: host.iri,
+      read: (path: string) => host.read(path),
+      readRange: (path: string, start: number, length: number) =>
+        host.readRange(path, start, length),
+      list: (path: string) => host.list(path),
+      write: (path: string, written: Uint8Array) => host.write(path, written),
+      writeFlushed: (path: string, written: Uint8Array) =>
+        host.writeFlushed(path, written),
+      remove: async (paths: readonly string[]) => {
+        if (held) throw new Error("the file is held open");
+        await host.remove(paths);
+      },
+    } as Files;
+    const pod = archivedFiles(flaky, layout);
+    await step([[RECORD, "<#a> a <#Condition> .\n"]], ACT).commit(pod);
+    const after = await onDisk(host.folder);
+    assert.equal(
+      after.filter((path) => path.startsWith("archives/")).length,
+      1,
+      "the step's archive is in place",
+    );
+    assert.ok(after.includes(SUBJECT), "the loose copy is left");
+    assert.equal(
+      text(await archivedFiles(host, layout).read(SUBJECT)),
+      "<#s> a <#Subject> .\n",
+    );
+
+    held = false;
+    await step([[SECOND_RECORD, "<#c> a <#Condition> .\n"]], SECOND_ACT).commit(
+      pod,
+    );
+    assert.ok(!(await onDisk(host.folder)).includes(SUBJECT));
+  });
+
+  it("backs out its own archive when another opening's, landed while it wrote, holds a file with other bytes, so that no pod is left that refuses to open", async () => {
+    const host = podAt();
+    let reached: () => void = () => undefined;
+    const atTheArchive = new Promise<void>((done) => (reached = done));
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => (release = done));
+    const slow = {
+      iri: host.iri,
+      read: (path: string) => host.read(path),
+      readRange: (path: string, start: number, length: number) =>
+        host.readRange(path, start, length),
+      list: (path: string) => host.list(path),
+      write: (path: string, written: Uint8Array) => host.write(path, written),
+      remove: (paths: readonly string[]) => host.remove(paths),
+      writeFlushed: async (path: string, written: Uint8Array) => {
+        if (path.startsWith("archives/")) {
+          reached();
+          await held;
+        }
+        await host.writeFlushed(path, written);
+      },
+    } as Files;
+    const behind = step([[RECORD, "<#a> a <#Two> .\n"]], SECOND_ACT).commit(
+      archivedFiles(slow, layout),
+    );
+    const refused = assert.rejects(
+      behind,
+      /records\/conditions\/aa\/.* is held twice with other bytes/,
+    );
+    await atTheArchive;
+    await step([[RECORD, "<#a> a <#One> .\n"]], ACT).commit(
+      archivedFiles(host, layout),
+    );
+    release();
+    await refused;
+    const archives = (await onDisk(host.folder)).filter((path) =>
+      path.startsWith("archives/"),
+    );
+    assert.equal(archives.length, 1, "only the archive that was kept is left");
+    assert.equal(
+      text(await archivedFiles(host, layout).read(RECORD)),
+      "<#a> a <#One> .\n",
+    );
+  });
+
+  it("writes a file of a snapshot's set that no archive may hold before the archive that holds the act's file", async () => {
+    const written: string[] = [];
+    const host = new MemoryFiles(POD);
+    const watching = {
+      iri: host.iri,
+      read: (path: string) => host.read(path),
+      list: (path: string) => host.list(path),
+      write: async (path: string, held: Uint8Array) => {
+        written.push(path);
+        await host.write(path, held);
+      },
+    } as Files;
+    const writes = new StepWrites();
+    writes.add(RECORD, bytes("<#a> a <#Condition> .\n"));
+    writes.add(VERSION, new Uint8Array(MOST_BYTES + 1));
+    writes.act({ name: `${POD}${ACT}`, path: ACT, triples: [] });
+    await writes.commit(archivedFiles(watching, layout));
+    const archive = written.findIndex((path) => path.startsWith("archives/"));
+    assert.ok(archive >= 0, "the step's archive is written");
+    assert.ok(
+      written.indexOf(VERSION) >= 0 && written.indexOf(VERSION) < archive,
+      `the large file is written before the archive, not after: ${written.join(", ")}`,
+    );
+  });
+
   it("finds an archive another opening wrote since it opened: a listing lists its files, and a step writes none of them, refusing one it holds with other bytes", async () => {
     const host = podAt();
     const mine = archivedFiles(host, layout);
@@ -325,6 +464,18 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       text(await sealed.read(RECORD)),
       "<#a> a <#Condition> SECRET-HEALTH-DATA .\n",
     );
+  });
+
+  it("checks a file taken from an archive by the CRC-32 zlib gives, for every length across the eight bytes it reads at a time", () => {
+    const random = new Uint8Array(4099);
+    for (let at = 0; at < random.length; at++)
+      random[at] = (at * 2654435761) >>> 24;
+    for (const length of [...Array(40).keys(), 255, 256, 4099])
+      assert.equal(
+        crc32(random.subarray(0, length)),
+        zlibCrc32(random.subarray(0, length)),
+        `${length} bytes`,
+      );
   });
 
   it("starts another archive where a step's files pass what one may hold, the act's file in the last, and leaves a file no archive may hold alone", () => {

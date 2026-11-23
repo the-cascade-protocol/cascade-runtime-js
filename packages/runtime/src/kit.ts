@@ -875,7 +875,10 @@ async function everyInput(vocabulary: Files, kit: string): Promise<string> {
   return texts.join("\n");
 }
 
-/** The last sentence of check 5: a pod that holds an archive holds the file O4 names for reading archives, with O4's bytes. */
+/**
+ * The last sentence of check 5: a pod that holds an archive holds the file O4 names for reading archives, with O4's bytes.
+ * Read from the host's files, not from `ArchivedFiles` over them, whose listing has no archive in it.
+ */
 export async function requirementFaults(
   pod: Files,
   layout: Layout,

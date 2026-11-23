@@ -38,9 +38,42 @@ const TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
   return c >>> 0;
 });
 
+/** `TABLE` and the seven that carry a byte through one to seven more bytes, so that eight bytes are one step. */
+const SLICES = (() => {
+  const slices = new Uint32Array(8 * 256);
+  slices.set(TABLE);
+  for (let slice = 1; slice < 8; slice++)
+    for (let n = 0; n < 256; n++) {
+      const before = slices[(slice - 1) * 256 + n] as number;
+      slices[slice * 256 + n] =
+        ((TABLE[before & 0xff] as number) ^ (before >>> 8)) >>> 0;
+    }
+  return slices;
+})();
+
+/** The CRC-32 of the bytes, eight at a time: a reader checks each file it takes from an archive by it. */
 export function crc32(bytes: Uint8Array): number {
   let c = 0xffffffff;
-  for (let at = 0; at < bytes.length; at++)
+  let at = 0;
+  const eights = bytes.length - 7;
+  for (; at < eights; at += 8) {
+    const low =
+      c ^
+      ((bytes[at] as number) |
+        ((bytes[at + 1] as number) << 8) |
+        ((bytes[at + 2] as number) << 16) |
+        ((bytes[at + 3] as number) << 24));
+    c =
+      (SLICES[1792 + (low & 0xff)] as number) ^
+      (SLICES[1536 + ((low >>> 8) & 0xff)] as number) ^
+      (SLICES[1280 + ((low >>> 16) & 0xff)] as number) ^
+      (SLICES[1024 + (low >>> 24)] as number) ^
+      (SLICES[768 + (bytes[at + 4] as number)] as number) ^
+      (SLICES[512 + (bytes[at + 5] as number)] as number) ^
+      (SLICES[256 + (bytes[at + 6] as number)] as number) ^
+      (SLICES[bytes[at + 7] as number] as number);
+  }
+  for (; at < bytes.length; at++)
     c = (TABLE[(c ^ (bytes[at] as number)) & 0xff] as number) ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }

@@ -409,7 +409,7 @@ export class ArchivedFiles implements Files {
   readonly #opened = new Set<string>();
   /** The requirement's file, once this opening has seen it in the pod or written it. */
   #requirement: Promise<void> | undefined;
-  /** Whether this opening has seen to the subject's file: held in an archive, or loose in a pod that has no archive yet. */
+  /** Whether this opening has seen to the subject's file: held in an archive, with no loose copy of it left. */
   #subjectFiled = false;
 
   constructor(files: Files, layout: Layout, newStore?: StoreFactory) {
@@ -484,9 +484,13 @@ export class ArchivedFiles implements Files {
    * Writes the files one step adds as W1 says (X1): its stored documents first, each at its own path; then, when the
    * layout gives the requirements' folder, the requirement's file if the pod lacks it and every file an archive may
    * hold as one archive, or more where one would pass what an archive may hold, the last file given, the act's, in the
-   * last, each flushed to storage and renamed to its name; then the rest at their paths. The first archive in a pod
-   * also holds the subject's file, whose loose copy goes once the archive is in place, so that a runtime that cannot read
-   * archives refuses the pod rather than see part of it. A file an archive holds with the same bytes is not written
+   * last, each flushed to storage and renamed to its name; then the rest at their paths. The first archive an opening writes
+   * in a pod also holds the subject's file, whose loose copy goes once the archive is in place, so that a runtime that
+   * cannot read archives refuses the pod rather than see part of it; a loose copy an archive holds with the same bytes,
+   * left by a step that stopped before it was removed, or whose removal failed, goes with it. A step looks at the
+   * archives again once its own are in place, and removes them, refusing the step, if the pod would hold a file twice
+   * with other bytes. A file of a snapshot's set too large for an archive is written before the archives, the act's file
+   * in them. A file an archive holds with the same bytes is not written
    * again; one with other bytes is refused.
    */
   async writeStep(
@@ -499,13 +503,15 @@ export class ArchivedFiles implements Files {
     const rest: [string, Uint8Array][] = [];
     for (const file of kept) {
       const [path, bytes] = file;
-      if (this.#layout.inStoredBytes(path)) stored.push(file);
-      else if (
+      const mayBeInArchive =
         this.#layout.requirementsFolder !== undefined &&
-        this.#layout.inSnapshotSet(path) &&
-        bytes.length <= MOST_BYTES
+        this.#layout.inSnapshotSet(path);
+      if (
+        this.#layout.inStoredBytes(path) ||
+        (mayBeInArchive && bytes.length > MOST_BYTES)
       )
-        archived.push(file);
+        stored.push(file);
+      else if (mayBeInArchive) archived.push(file);
       else rest.push(file);
     }
     if (stored.length > 0) await writeEach(this.#files, stored);
@@ -549,23 +555,27 @@ export class ArchivedFiles implements Files {
   async #looseSubject(
     step: ReadonlySet<string>,
     held: Held,
-  ): Promise<[string, Uint8Array][]> {
-    if (this.#subjectFiled) return [];
-    const folder = this.#layout.find(`${CASCADE}Subject`)?.folder;
-    if (folder === undefined) return [];
+  ): Promise<{ moved: [string, Uint8Array][]; stale: string[] }> {
     const moved: [string, Uint8Array][] = [];
+    const stale: string[] = [];
+    if (this.#subjectFiled) return { moved, stale };
+    const folder = this.#layout.find(`${CASCADE}Subject`)?.folder;
+    if (folder === undefined) return { moved, stale };
     for (const path of await this.#files.list(folder)) {
       if (
         step.has(path) ||
-        held.has(path) ||
         !this.#layout.inSnapshotSet(path) ||
         this.#layout.inStoredBytes(path)
       )
         continue;
       const bytes = await this.#files.read(path);
-      if (bytes !== undefined) moved.push([path, bytes]);
+      if (bytes === undefined) continue;
+      const entry = held.get(path);
+      if (entry === undefined) moved.push([path, bytes]);
+      else if (sameBytes(await archiveEntryBytes(this.#files, entry), bytes))
+        stale.push(path);
     }
-    return moved;
+    return { moved, stale };
   }
 
   async #archive(
@@ -573,16 +583,18 @@ export class ArchivedFiles implements Files {
   ): Promise<void> {
     const held = await this.#index();
     await this.#requirementWritten();
-    const moved = await this.#looseSubject(
+    const { moved, stale } = await this.#looseSubject(
       new Set(files.map(([path]) => path)),
       held,
     );
+    const written: string[] = [];
     for (const split of archivesOf([...moved, ...files])) {
       const packed = packZip(split);
       const path = `${this.#folder}${await sha256Hex(packed.bytes)}.zip`;
       await timedAside("archives.write", () =>
         this.#flushed(path, packed.bytes),
       );
+      written.push(path);
       this.#opened.add(path);
       counted("archives.written");
       counted("archives.entries.written", packed.entries.length);
@@ -600,9 +612,31 @@ export class ArchivedFiles implements Files {
             name: entry.name,
           });
     }
-    if (moved.length > 0 && this.#files.remove !== undefined)
-      await this.#files.remove(moved.map(([path]) => path));
+    try {
+      await this.#absorbed(held, await this.#unopened());
+    } catch (error) {
+      await this.#backedOut(written);
+      throw error;
+    }
+    const loose = [...moved.map(([path]) => path), ...stale];
+    if (loose.length > 0 && this.#files.remove !== undefined) {
+      try {
+        await this.#files.remove(loose);
+      } catch {
+        return;
+      }
+    }
     this.#subjectFiled = true;
+  }
+
+  /**
+   * This step's archives are removed, after a look found the pod holding a file twice with other bytes: an archive
+   * another opening wrote while this one wrote its own. The index is read again from what is left.
+   */
+  async #backedOut(archives: readonly string[]): Promise<void> {
+    this.#held = undefined;
+    this.#opened.clear();
+    await this.#files.remove?.(archives);
   }
 
   /** The pod's IRI, a value and no getter, so that a proxy over these files reads it as it reads the host's. */

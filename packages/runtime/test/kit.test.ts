@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import { MemoryFiles } from "../src/files.js";
+import { StepWrites } from "../src/pod.js";
 import {
   podAddressesIn,
   requirementFaults,
@@ -100,6 +101,39 @@ describe("Checking a replayed kit · kitChecks(), shapeFaults(), snapshotFaults(
       );
       await host.write(marker, bytes(line));
       assert.deepEqual(await requirementFaults(host, layout), []);
+    });
+
+    it("reports the requirement's file taken from, or changed in, a pod a step wrote into an archive, read from the host that holds the archive", async () => {
+      const layout = await vocabularyLayout();
+      const host = new MemoryFiles("https://pod.example/");
+      const act =
+        "provenance/imports/dd/dd000000-0000-4000-8000-000000000004.ttl";
+      const step = new StepWrites();
+      step.add(
+        "records/conditions/aa/aa000000-0000-4000-8000-000000000001.ttl",
+        bytes("<#a> a <#Condition> .\n"),
+      );
+      step.act({ name: `https://pod.example/${act}`, path: act, triples: [] });
+      await step.commit(archivedFiles(host, layout));
+      assert.deepEqual(await requirementFaults(host, layout), []);
+      assert.match(
+        (
+          await requirementFaults(
+            await copied(host, { [marker]: undefined }),
+            layout,
+          )
+        )[0] ?? "",
+        /missing, in a pod that holds 1 archive/,
+      );
+      assert.match(
+        (
+          await requirementFaults(
+            await copied(host, { [marker]: bytes("<../> a <#Other> .\n") }),
+            layout,
+          )
+        )[0] ?? "",
+        /not what O4 gives/,
+      );
     });
   });
 
