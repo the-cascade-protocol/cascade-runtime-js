@@ -1,5 +1,6 @@
 import { type Job, type Measured } from "./perf-job.js";
 import { measureAgain } from "./perf-scenarios/after-first-import.js";
+import { measureEachQuery } from "./perf-scenarios/each-query.js";
 import { measureFileOps } from "./perf-scenarios/file-ops.js";
 import { measureFloor } from "./perf-scenarios/floor.js";
 import { measureFresh } from "./perf-scenarios/fresh-first-screen.js";
@@ -27,5 +28,7 @@ export function measure(job: Job): Promise<Measured> {
       return measureQuestionPage(job);
     case "stored":
       return measureStored(job);
+    case "each-query":
+      return measureEachQuery(job);
   }
 }

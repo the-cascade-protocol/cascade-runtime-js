@@ -37,6 +37,7 @@ import { databaseBeside, resolved } from "../src/node/resolved.js";
 import { flatten, loadPlainly } from "./perf-floor.js";
 import { held, rowsOfHeld } from "./perf-held.js";
 import { rowsOfJobs } from "./perf-jobs-held.js";
+import { rowsOfImport, rowsOfQueries } from "./perf-queries-held.js";
 import { profileOf, syntheticPull } from "./import-bench.js";
 import {
   changedBundle,
@@ -3565,6 +3566,219 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
             (value(scenario, measure) ?? 0) > 0,
             `${scenario} ${measure}`,
           );
+    });
+  });
+
+  describe("given every query of the vocabulary asked of one pod on both engines", () => {
+    const rows = rowsOfQueries();
+    const at = (name: string) =>
+      rows.find((row) => row.name === `each-query-synthea-10y/${name}`);
+
+    it("writes the time of each engine, its rows with a fingerprint, whether they agree, and the query that ran past its limit, under the name of the query's file", () => {
+      assert.deepEqual(
+        rows.filter((row) => refused(row) !== undefined),
+        [],
+      );
+      assert.equal(new Set(rows.map(({ name }) => name)).size, rows.length);
+      const lab = "questions-pod-my-lab-results.rq";
+      assert.equal(at(`sparql/${lab}`)?.value, 1.8);
+      assert.equal(at(`sparql/${lab}`)?.kind, "clock");
+      assert.equal(at(`sql/${lab}`)?.value, 0.036);
+      assert.equal(at(`page/${lab}`)?.value, 0.004);
+      assert.equal(at(`rows/${lab}`)?.value, 8100);
+      assert.equal(at(`rows/${lab}`)?.kind, "output");
+      assert.match(at(`rows/${lab}`)?.sha256 ?? "", /^[0-9a-f]{64}$/);
+      assert.equal(at(`equal/${lab}`)?.value, 1);
+      assert.equal(at("equal/questions-pod-what-each-folder-holds.rq")?.value, 0);
+      assert.equal(at("sql/views-lab-results.rq")?.value, 0.2);
+      // A query with no .sql has its reference time and rows and no SQL row and no verdict.
+      assert.equal(at("sparql/derivations-records.rq")?.value, 0.8);
+      assert.equal(at("sql/derivations-records.rq"), undefined);
+      assert.equal(at("equal/derivations-records.rq"), undefined);
+      // The one over its limit says so, in the schema's form: seconds, an output.
+      const over = at("timeout/questions-pod-what-each-folder-holds.rq");
+      assert.equal(over?.value, 60);
+      assert.equal(over?.unit, "s");
+      assert.equal(over?.kind, "output");
+      assert.equal(at(`timeout/${lab}`), undefined);
+      // A query the pod's database cannot run is counted, says why, and is left without a time.
+      assert.equal(at("sparql/tables-agreement.rq"), undefined);
+      assert.equal(at("not-run/tables-agreement.rq")?.value, 1);
+      assert.match(at("not-run/tables-agreement.rq")?.extra ?? "", /reference tables/);
+      assert.match(at(`sparql/${lab}`)?.extra ?? "", /questions\/pod\/My lab results\.rq$/);
+      assert.equal(at("reference-load")?.value, 0.9);
+      assert.equal(at("database-load")?.value, 1.4);
+      assert.equal(at("count/queries")?.value, 6);
+      assert.equal(at("count/with-sql")?.value, 3);
+      assert.equal(at("count/without-sql")?.value, 3);
+      assert.equal(at("count/not-run")?.value, 1);
+    });
+
+    it("has a plain sentence of the glossary for every row it writes", () => {
+      assert.deepEqual(
+        rows.filter(({ name }) => explain(name) === undefined).map((row) => row.name),
+        [],
+      );
+      assert.match(
+        explain("each-query-synthea-10y/sparql/questions-pod-my-lab-results.rq") ?? "",
+        /reference engine/i,
+      );
+      assert.match(
+        explain("each-query-synthea-10y/equal/derivations-records.rq") ?? "",
+        /same rows/i,
+      );
+    });
+
+    it("is a scenario of its own that every build runs, a run may name alone, and a light build runs once", () => {
+      assert.ok((SCENARIOS as readonly string[]).includes("each-query"));
+      assert.ok(parsed([]).plan.scenarios.has("each-query"));
+      assert.ok(parsed(["--light-jobs"]).plan.scenarios.has("each-query"));
+      assert.deepEqual(
+        [...parsed(["--scenario", "each-query"]).plan.scenarios],
+        ["each-query"],
+      );
+    });
+
+    const queries$ = (name: string) =>
+      import(
+        pathToFileURL(
+          fileURLToPath(new URL(`../../../../scripts/${name}`, import.meta.url)),
+        ).href
+      ) as Promise<{
+        queriesKeys(file: object): string[];
+        queriesOf(
+          file: object,
+          key: string,
+        ):
+          | {
+              lines: { id: string; text: string }[];
+              queries: { name: string; sparql?: number; sql?: number }[];
+            }
+          | undefined;
+      }>;
+    const withImport = file([...rowsOfImport(), ...rowsOfQueries()]);
+
+    it("says in plain lines what the adapters' conversion is of the first import, what the SQL versions save, which queries have none and which ran long, read from the rows alone", async () => {
+      const { queriesKeys, queriesOf } = await queries$("perf-queries.mjs");
+      assert.deepEqual(queriesKeys(withImport), ["synthea-10y"]);
+      const page = queriesOf(withImport, "synthea-10y");
+      const text = (id: string) => page?.lines.find((line) => line.id === id)?.text;
+      assert.equal(
+        text("import"),
+        "Of the first import's 10.0 s (measured with the probe on), the Bridge's conversion took 2.50 s (25%), and the adapters' own queries inside it 300 ms (3%).",
+      );
+      assert.equal(
+        text("inside"),
+        "The vocabulary's own queries that the import runs on the reference engine (derivations, views, matching rules) took 600 ms (6%).",
+      );
+      assert.equal(
+        text("sql"),
+        "3 of the 6 queries have a SQL version. On this pod they took 73.8 s on the reference engine and 4.24 s in SQL (17.4 times as fast, 94% less); 1 of them gave other rows.",
+      );
+      assert.equal(
+        text("without"),
+        "3 queries have no SQL version yet; the reference engine took 3.80 s for the 2 of them it could run.",
+      );
+      assert.equal(
+        text("limit"),
+        "1 query ran longer than its 60 s limit on the reference engine: What each folder holds.",
+      );
+      assert.equal(
+        text("slowest"),
+        "What each folder holds: 300 rows; SPARQL 70.0 s; SQL 4.00 s (17.5 times); same rows: no. My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (50.0 times); same rows: yes.",
+      );
+      assert.ok(
+        page?.queries.some(
+          ({ name, sql }) => name === "questions-pod-my-lab-results.rq" && sql === 0.036,
+        ),
+      );
+      // Said alone, a file with no first import still gives the queries' lines and not the import's.
+      const bare = queriesOf(file(rowsOfQueries()), "synthea-10y");
+      assert.equal(bare?.lines.some(({ id }) => id === "import"), false);
+      assert.equal(bare?.lines.some(({ id }) => id === "sql"), true);
+      assert.equal(queriesOf(file(rowsOfImport()), "synthea-10y"), undefined);
+    });
+
+    it("is said by the summary and by the comparison with main, before and after with the change and the multiple for what both files measured, and a file of main's with none does not stop it", () => {
+      const summary = compare.summary(withImport, { markdown: true });
+      assert.match(summary, /What each query costs/);
+      assert.match(summary, /3 of the 6 queries have a SQL version\./);
+      const slower = file(
+        rowsOfQueries().map((row) =>
+          row.name.includes("/sql/") && row.kind === "clock"
+            ? { ...row, value: row.value * 2 }
+            : row,
+        ),
+      );
+      const against = compare.compare(file(rowsOfQueries()), slower, {
+        markdown: true,
+        sameJob: true,
+      });
+      assert.match(against, /What each query costs, main -> this pull request/);
+      assert.match(
+        against,
+        /\| SQL, the 3 queries both ran \| 4\.24 s \| 8\.47 s \| \+100% \(2\.0x slower\) \|/,
+      );
+      assert.match(
+        against,
+        /\| Reference engine, the 3 queries both ran \| 73\.8 s \| 73\.8 s \| same \|/,
+      );
+      assert.match(
+        compare.compare(file([]), withImport, { markdown: true, sameJob: true }),
+        /What each query costs/,
+      );
+    });
+
+    it("asks every query of the vocabulary outside the matcher of a copy of the pod a fresh import left, on both engines, and leaves that pod as it was", async () => {
+      const plan = (...scenarios: Scenario[]): Plan => ({
+        scenarios: new Set(scenarios),
+        sizes: ["synthea-10y"],
+        encryption: "plain",
+        repeats: 1,
+        probe: false,
+      });
+      const alone = (await perfFile(plan("stored"))).results;
+      const { results } = await perfFile(plan("each-query", "stored"));
+      const named = (name: string) =>
+        results.find((row) => row.name === `each-query-synthea-10y/${name}`);
+      assert.deepEqual(
+        results.filter((row) => refused(row) !== undefined),
+        [],
+      );
+      assert.deepEqual(
+        results.filter(({ name }) => explain(name) === undefined).map(({ name }) => name),
+        [],
+      );
+      const vocabulary = (await resolved()).vocabulary;
+      const files = (await vocabulary.list("queries")).filter(
+        (path) => path.endsWith(".rq") && !path.startsWith("queries/matcher/"),
+      );
+      assert.equal(named("count/queries")?.value, files.length);
+      assert.ok(files.length > 80);
+      const ran = (kind: string) =>
+        results.filter(({ name }) => name.includes(`/${kind}/`));
+      assert.ok(ran("sparql").length >= files.length - 10, "nearly every query ran on the reference engine");
+      assert.ok(
+        (named("count/without-sql")?.value ?? 0) > 20,
+        "the 26 derivations have no .sql yet",
+      );
+      const lab = "questions-pod-my-lab-results.rq";
+      for (const group of ["sparql", "sql", "page"])
+        assert.ok((named(`${group}/${lab}`)?.value ?? 0) > 0, group);
+      assert.ok((named("sql/views-lab-results.rq")?.value ?? 0) > 0);
+      assert.equal(named("sql/derivations-records.rq"), undefined);
+      assert.ok((named("sparql/derivations-records.rq")?.value ?? 0) > 0);
+      assert.ok((named("reference-load")?.value ?? 0) > 0);
+      assert.ok((named("database-load")?.value ?? 0) > 0);
+      assert.ok(ran("rows").every(({ sha256 }) => /^[0-9a-f]{64}$/.test(sha256 ?? "")));
+      assert.ok(ran("equal").every(({ value }) => value === 0 || value === 1));
+      assert.equal(named(`equal/${lab}`)?.value, 1, "both engines give the rows of My lab results");
+      for (const measure of ["files/all", "statements/all", "count/pod-records"])
+        assert.equal(
+          results.find((row) => row.name === `stored-synthea-10y/${measure}`)?.value,
+          alone.find((row) => row.name === `stored-synthea-10y/${measure}`)?.value,
+          measure,
+        );
     });
   });
 });

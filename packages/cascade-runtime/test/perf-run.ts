@@ -31,6 +31,10 @@ import {
 } from "./perf-rows.js";
 import { againRows, SCENARIO_OF } from "./perf-scenarios/after-first-import.js";
 import { closeProbedRows, closeRows } from "./perf-scenarios/close.js";
+import {
+  eachQueryRows,
+  eachQueryTotal,
+} from "./perf-scenarios/each-query.js";
 import { fileOpsAt } from "./perf-scenarios/file-ops.js";
 import { floorAt } from "./perf-scenarios/floor.js";
 import {
@@ -132,6 +136,7 @@ async function scenariosAt(
   const needsPod =
     wants("reopen-first-answer") ||
     wants("question-page") ||
+    (wants("each-query") && !encrypted) ||
     wants("reimport-identical") ||
     wants("reimport-changed") ||
     wants("add-one-record") ||
@@ -311,6 +316,21 @@ async function scenariosAt(
         {},
         questionPageRows,
         questionPageTotal,
+      );
+    // Every query of the vocabulary on both engines, over a copy of the pod; a sealed pod keeps no database to ask. A build asks
+    // it once, as the jobs of every day are, and the nightly run asks it as often as any scenario.
+    if (wants("each-query") && !encrypted)
+      await onCopiesOf(
+        "each-query",
+        fresh0,
+        "each-query",
+        {},
+        eachQueryRows,
+        eachQueryTotal,
+        {
+          repeats: plan.lightJobs === true ? 1 : plan.repeats,
+          cpu: plan.lightJobs !== true,
+        },
       );
 
     // The jobs of every day: the same document again, with ten source entries changed, and with one more, each as an import

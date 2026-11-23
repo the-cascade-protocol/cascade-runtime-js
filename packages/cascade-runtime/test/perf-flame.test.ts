@@ -16,6 +16,7 @@ import {
 import { explainSpan, explain } from "./perf-glossary.js";
 import { rowsOfHeld } from "./perf-held.js";
 import { rowsOfJobs } from "./perf-jobs-held.js";
+import { rowsOfImport, rowsOfQueries } from "./perf-queries-held.js";
 import { keptCpu, part, probedRows, tabulated } from "./perf-report.js";
 import { chromeTrace, MAX_TRACKS, selfTimes } from "./perf-trace.js";
 
@@ -871,6 +872,52 @@ describe("Flame graphs of a build · perf-trace.ts, perf-flame.mjs, perf-runs.mj
       assert.doesNotMatch(
         runsPage([run([])], options),
         /after the first import/,
+      );
+    });
+  });
+
+  describe("given a build whose performance file measured every query on both engines", () => {
+    it("shows in the build's entry what each query cost on each engine, apart from the flame graphs", async () => {
+      const { runsPage } = await script<Runs>("perf-runs.mjs");
+      const { queriesOf } = await script<{
+        queriesOf(file: object, key: string): object | undefined;
+      }>("perf-queries.mjs");
+      const queries = queriesOf(
+        { results: [...rowsOfImport(), ...rowsOfQueries()] },
+        "synthea-10y",
+      );
+      assert.ok(queries !== undefined);
+      const run = (queries: object[]) => ({
+        id: "1-aaaaaaa",
+        date: "2026-11-20",
+        event: "push",
+        run: "1",
+        sha: "aaaaaaa",
+        flame: { builds: [] },
+        kept: new Set<string>(),
+        speeds: [],
+        stored: [],
+        jobs: [],
+        queries,
+      });
+      const options = {
+        repo: "owner/repo",
+        pages: "https://site.test/perf",
+        viewer: "https://site.test/perf/speedscope/",
+      };
+      const block =
+        /<div class="box queries">[\s\S]*?<\/table>/.exec(
+          runsPage([run([queries])], options),
+        )?.[0] ?? "";
+      assert.match(block, /<h2>What each query costs<\/h2>/);
+      assert.match(
+        block,
+        /3 of the 6 queries have a SQL version\./,
+      );
+      assert.match(block, /My lab results/);
+      assert.doesNotMatch(
+        runsPage([run([])], options),
+        /What each query costs/,
       );
     });
   });

@@ -19,6 +19,7 @@ export const SCENARIOS = [
   "add-one-record",
   "reopen-after-kill",
   "question-after-update",
+  "each-query",
   "file-ops",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
