@@ -95,7 +95,6 @@ export async function floorAt(
         encrypted: false,
         probed: false,
         folder,
-        claim: [],
       },
       work,
     );

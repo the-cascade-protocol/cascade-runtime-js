@@ -13,8 +13,6 @@ export interface Context {
   readonly work: string;
   readonly log: (line: string) => void;
   readonly flame: Flame;
-  /** The profiles the record's patient has, which a run that names them as the person's own claims. */
-  readonly claim: readonly string[];
   /** The dataset, its digest and its size, as a row says what it was measured on. */
   readonly about: string;
   /** How the headline rows were made: unprobed, a median of the plan's repeats, each in a process of its own. */

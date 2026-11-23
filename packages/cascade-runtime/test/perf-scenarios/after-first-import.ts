@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { loadDataset, pullOf } from "../perf-data.js";
+import { importedAsTheApp, loadDataset, pullOf } from "../perf-data.js";
 import { type Context } from "../perf-context.js";
 import {
   type Job,
@@ -272,12 +272,13 @@ export async function measureAgain(job: Job): Promise<Measured> {
     const opened = pod;
     const marks: { part: string; at: number }[] = [];
     const done = await step("import", () =>
-      opened.import(pull as ReadonlyMap<string, Uint8Array>, {
-        claimProfiles: job.claim,
-        onProgress: ({ part: named }) => {
+      importedAsTheApp(
+        opened,
+        pull as ReadonlyMap<string, Uint8Array>,
+        ({ part: named }) => {
           marks.push({ part: named, at: performance.now() });
         },
-      }),
+      ),
     );
     pull = undefined;
     if (done.refused !== undefined)

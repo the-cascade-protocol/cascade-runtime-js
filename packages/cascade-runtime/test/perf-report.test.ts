@@ -55,6 +55,12 @@ import {
   countRow,
   oneMoreBundle,
   perfFile,
+  importedAsTheApp,
+  LARGE,
+  PER_BUILD,
+  planAt,
+  pullOf,
+  loadDataset,
   unitOfCounter,
   envOf,
   floorRows,
@@ -666,6 +672,44 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
     });
   });
 
+  describe("given the record of a Synthea patient, imported as the person's own", () => {
+    it("shows the person's results when the owner claims the profile the import names, where an import that claims none shows nothing", async () => {
+      const data = await loadDataset("synthea-10y");
+      const bundle = data.bundle as {
+        entry: { resource: { resourceType: string } }[];
+      };
+      const few = {
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          ...bundle.entry.filter(
+            ({ resource }) => resource.resourceType === "Patient",
+          ),
+          ...bundle.entry
+            .filter(({ resource }) => resource.resourceType === "Observation")
+            .slice(0, 3),
+        ],
+      };
+      const results = async (claiming: boolean) => {
+        const pod = await openPod();
+        try {
+          const pull = pullOf(data, few);
+          if (claiming) await importedAsTheApp(pod, pull);
+          else await pod.import(pull);
+          return (await pod.ask("pod/My lab results")).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      assert.equal(
+        await results(false),
+        0,
+        "a record about no one known to be the subject is left out",
+      );
+      assert.ok((await results(true)) > 0, "claimed, its results are shown");
+    });
+  });
+
   describe("given a record to load as plainly as SQL can", () => {
     const entry = (resource: object) => ({ resource });
     const gz = async (bundle: object): Promise<string> => {
@@ -1206,6 +1250,56 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.match(text, /different cpu model/);
     });
 
+    it("says that two files on a different Oxigraph build are not read against each other, and names the build in the file it writes", () => {
+      const on = (build: string) => ({
+        ...hosted("linux 6.8.0-1017-azure", "AMD EPYC 7763"),
+        env: {
+          ...hosted("linux 6.8.0-1017-azure", "AMD EPYC 7763").env,
+          profile: `runtime-perf fresh-first-screen; Oxigraph ${build} build; headline unprobed median of 3`,
+        },
+      });
+      assert.match(
+        compare.compare(on("wasm"), on("native")),
+        /different Oxigraph builds/,
+      );
+      assert.doesNotMatch(
+        compare.compare(on("native"), on("native")),
+        /Oxigraph build/,
+      );
+      assert.match(
+        envOf({
+          scenarios: new Set(SCENARIOS),
+          sizes: ["synthea-10y"],
+          encryption: "auto",
+          repeats: 3,
+          probe: true,
+        }).profile,
+        /Oxigraph (native|wasm) build/,
+      );
+    });
+
+    it("says in the file's profile how many runs the headline is the median of, once the large size is run once", () => {
+      const plan = {
+        scenarios: new Set(SCENARIOS),
+        encryption: "auto" as const,
+        repeats: 3,
+        probe: false,
+        largeOnce: true,
+      };
+      assert.match(
+        envOf({ ...plan, sizes: ["synthea-10y", LARGE] }).profile,
+        /headline unprobed median of 3, the large size once/,
+      );
+      assert.match(
+        envOf({ ...plan, sizes: [LARGE] }).profile,
+        /headline unprobed one run$/,
+      );
+      assert.match(
+        envOf({ ...plan, sizes: ["synthea-10y"] }).profile,
+        /headline unprobed median of 3$/,
+      );
+    });
+
     it("names no job in the environment the harness writes", () => {
       const keys = ["GITHUB_ACTIONS", "RUNNER_OS", "RUNNER_NAME"];
       const was = keys.map((key) => process.env[key]);
@@ -1358,6 +1452,36 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         /They differ in: vocabulary: main fffffff, this pull request eeeeeee/,
       );
       assert.match(text, /as a push to main does/);
+    });
+
+    it("says the pods differ, and that the times are not the same work, when main's pod and this build's hold a different number of statements, and says nothing when they hold the same", () => {
+      const holding = (file: typeof main, statements: number) => ({
+        ...file,
+        results: [
+          ...file.results,
+          {
+            name: "stored-synthea-10y/statements/all",
+            unit: "statements",
+            value: statements,
+            kind: "count" as const,
+          },
+        ],
+      });
+      const differs = compare.comparison(holding(pull, 29_829), {
+        sameJob: holding(main, 19_636),
+      });
+      assert.match(
+        differs,
+        /The pods differ \(synthea-10y: main 19,636 statements, this pull request 29,829 statements\); times are not the same work\./,
+      );
+      const same = compare.comparison(holding(pull, 19_636), {
+        sameJob: holding(main, 19_636),
+      });
+      assert.doesNotMatch(same, /The pods differ/);
+      assert.doesNotMatch(
+        compare.comparison(pull, { sameJob: main }),
+        /The pods differ/,
+      );
     });
 
     it("says in plain words that totals are not comparable when the two runs landed on different CPUs, and still gives the table", () => {
@@ -3432,6 +3556,24 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         "named, it runs",
       );
       assert.ok(parsed([]).plan.scenarios.has("add-one-record"));
+    });
+
+    it("runs the large size once, with each job once and no CPU profile, when the plan says so, and leaves the per-build size as it was", () => {
+      const asked = parsed(["--size", "synthea-10y,synthea-lifetime"]).plan;
+      assert.equal(asked.largeOnce, false, "every size in full unless asked");
+      assert.deepEqual(planAt(asked, LARGE), asked);
+      const once = parsed([
+        "--size",
+        "synthea-10y,synthea-lifetime",
+        "--large-once",
+      ]).plan;
+      assert.equal(once.largeOnce, true);
+      assert.deepEqual(planAt(once, PER_BUILD), once);
+      const large = planAt(once, LARGE);
+      assert.equal(large.repeats, 1);
+      assert.equal(large.lightJobs, true);
+      assert.equal(large.cpuProfile, false);
+      assert.equal(large.probe, once.probe, "the probed run stays");
     });
 
     it("explains every row the jobs write, in the glossary, with a sentence of the job's own for its total", () => {

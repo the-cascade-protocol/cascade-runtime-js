@@ -3,7 +3,9 @@ import { existsSync } from "node:fs";
 import { availableParallelism, cpus, release } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { usedOxigraph } from "@cascade-runtime/runtime";
 import { componentsOf, findRoot } from "@cascade-runtime/runtime/node";
+import { LARGE } from "./perf-data.js";
 import { type Plan } from "./perf-plan.js";
 import { type PerfFile } from "./perf-rows.js";
 import { resolved } from "../src/node/resolved.js";
@@ -102,6 +104,15 @@ export function envOf(plan: Plan): PerfFile["env"] {
     cpus: availableParallelism(),
     node: process.versions.node,
     host: "node",
-    profile: `runtime-perf ${[...plan.scenarios].join("+")}; headline unprobed median of ${plan.repeats}${plan.probe ? ", stages from one probed run" : ""}`,
+    profile: `runtime-perf ${[...plan.scenarios].join("+")}; Oxigraph ${usedOxigraph().name} build; headline unprobed ${takenAs(plan)}${plan.probe ? ", stages from one probed run" : ""}`,
   };
+}
+
+/** How many runs a headline is the median of: `planAt` runs the large size once, so a plan with it says which sizes had one run. */
+function takenAs(plan: Plan): string {
+  if (plan.largeOnce !== true || !plan.sizes.includes(LARGE))
+    return `median of ${plan.repeats}`;
+  return plan.sizes.every((size) => size === LARGE)
+    ? "one run"
+    : `median of ${plan.repeats}, the large size once`;
 }
