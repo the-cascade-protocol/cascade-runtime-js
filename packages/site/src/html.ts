@@ -41,6 +41,8 @@ export function markup(
 
 const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js";
 
+const GITHUB = "https://github.com/the-cascade-protocol";
+
 /** The stylesheet of the website's three faces. */
 export const FONTS =
   "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap";
@@ -62,12 +64,23 @@ export interface Chrome {
 /** No link to the website and no build date. */
 export const PLAIN: Chrome = {};
 
-/** A website page's path, or the hub's address, per nav item. */
-const NAV: readonly (readonly [string, string | null])[] = [
-  ["Architecture", "/#architecture"],
-  ["Build", "/build/"],
-  ["Standards", "/standards/"],
-  ["Contribute", "/contribute/"],
+/** A website page's path per nav item; the hub is part of Developers. */
+const NAV: readonly (readonly [string, string])[] = [
+  ["How it works", "/how-it-works/"],
+  ["For patients", "/patients/"],
+  ["For clinicians", "/clinicians/"],
+  ["Developers", "/developers/"],
+  ["Community", "/community/"],
+];
+
+const CURRENT = "/developers/";
+
+/** The Developers row under the header: a website page's path, or the hub's address, per item. */
+const SUBNAV: readonly (readonly [string, string | null])[] = [
+  ["Architecture", "/developers/"],
+  ["Start building", "/developers/build/"],
+  ["Guides", "/developers/guides/"],
+  ["Built on standards", "/developers/standards/"],
   ["Reference ↗", null],
 ];
 
@@ -79,11 +92,18 @@ export const chromeHead = markup`<link rel="preconnect" href="https://fonts.goog
 
 const navLinks = (chrome: Chrome, current: boolean) =>
   NAV.map(([label, path]) =>
-    path !== null && chrome.website === undefined
+    chrome.website === undefined
       ? markup`<span>${label}</span>
 `
-      : markup`<a href="${path === null ? `${HUB}/` : chrome.website + path}"${current && path === null ? new Html(' aria-current="page"') : ""}>${label}</a>
+      : markup`<a href="${chrome.website + path}"${current && path === CURRENT ? new Html(' aria-current="page"') : ""}>${label}</a>
 `,
+  );
+
+const subnavLinks = (chrome: Chrome) =>
+  SUBNAV.map(([label, path]) =>
+    path !== null && chrome.website === undefined
+      ? markup`<span>${label}</span>`
+      : markup`<a href="${path === null ? `${HUB}/` : chrome.website + path}"${path === null ? new Html(' aria-current="page"') : ""}>${label}</a>`,
   );
 
 /** The box that searches the hub's terms, rules, decisions and pages: shown by `search.js` once it has loaded. */
@@ -96,12 +116,12 @@ const searchBox = (hubRoot: string) => markup`<div class="sx-find-wrap">
 </div>
 `;
 
-/** The website's strip and header, the hub being the nav's "Reference"; with `hubRoot` (the address of the hub's root from the page) and `chrome.search`, the search box under the bar. */
+/** The website's strip and header of its Developers section, then its Developers row, the hub being the row's "Reference"; with `hubRoot` (the address of the hub's root from the page) and `chrome.search`, the search box under the bar. */
 export function chromeHeader(chrome: Chrome, hubRoot?: string): Html {
   const { website } = chrome;
-  return markup`<div class="sx-strip">Alpha${
+  return markup`<div class="sx-strip">Alpha · We're looking for development partners.${
     website !== undefined &&
-    markup`: <a href="${website}/community/status/">see what works today →</a>`
+    markup` <a href="${website}/community/partners/">Build with us →</a>`
   }</div>
 <header class="sx-header">
 <div class="sx-bar">
@@ -119,9 +139,11 @@ ${navLinks(chrome, false)}</nav>
 </details>
 </div>
 ${chrome.search === true && hubRoot !== undefined && searchBox(hubRoot)}</header>
+<div class="sx-subbar"><nav class="b-wrap" aria-label="Developers">${subnavLinks(chrome)}</nav></div>
 `;
 }
 
+/** A footer column: a website page's path, or an address of its own, per link. */
 const column = (
   website: string,
   heading: string,
@@ -129,7 +151,8 @@ const column = (
 ) =>
   markup`<div><h2>§ ${heading}</h2><ul>
 ${links.map(
-  ([label, path]) => markup`<li><a href="${website + path}">${label}</a></li>
+  ([label, path]) =>
+    markup`<li><a href="${path.startsWith("/") ? website + path : path}">${label}</a></li>
 `,
 )}</ul></div>
 `;
@@ -142,37 +165,31 @@ export function chromeFooter(chrome: Chrome): Html {
 ${
   website !== undefined &&
   markup`<div class="sx-footer-cols">
-${column(website, "Protocol", [
-  ["The architecture", "/#architecture"],
-  ["Built on standards", "/standards/"],
-  ["How we know it works", "/community/status/"],
-  ["Built on Cascade", "/case-studies/"],
-  ["AI models", "/understand/models/"],
-  ["Site map", "/site-map/"],
-])}${column(website, "Build", [
-    ["Start building", "/build/"],
-    ["Previous version", "/v0/"],
+${column(website, "Cascade Protocol", [
+  ["How it works", "/how-it-works/"],
+  ["For patients and families", "/patients/"],
+  ["For clinicians and researchers", "/clinicians/"],
+  ["Built on Cascade", "/built-on-cascade/"],
+  ["Status", "/community/status/"],
+])}${column(website, "Developers", [
+    ["Architecture", "/developers/"],
+    ["Start building", "/developers/build/"],
+    ["Guides", "/developers/guides/"],
+    ["Built on standards", "/developers/standards/"],
+    ["Reference", `${HUB}/`],
   ])}${column(website, "Community", [
-    ["Help shape it", "/contribute/"],
     ["Partner with us", "/community/partners/"],
-    ["Talk with us", "/contribute/#talk"],
-    ["Status", "/community/status/"],
+    ["Contribute", "/community/contribute/"],
     ["Build notes", "/blog/"],
-    ["GitHub", "/contribute/#repos"],
-  ])}<div><h2>§ Working toward a standard</h2>
-<p><a href="${website}/contribute/" style="color: var(--link)">Help shape it →</a></p>
-</div>
-</div>
+    ["GitHub ↗", GITHUB],
+  ])}${column(website, "About", [
+    ["About the project", "/about/"],
+    ["Trademark policy", "/legal/trademarks.html"],
+  ])}</div>
 `
 }<div class="sx-footer-legal">
 <span>Cascade Protocol™ is a trademark of Cascade Agentic Labs LLC. Spec CC BY 4.0 · code Apache 2.0.</span>
-${
-  website !== undefined &&
-  markup`<a href="${website}/legal/trademarks.html">Trademark policy</a>
-<a href="${website}/legal/privacy.html">POTS Check privacy</a>
-<a href="${website}/legal/terms.html">POTS Check terms</a>
-`
-}</div>
+</div>
 ${
   chrome.built !== undefined &&
   markup`<p class="sx-footer-built">Built on ${chrome.built}.</p>

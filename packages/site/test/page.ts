@@ -127,6 +127,7 @@ export function readPage(whole: string, page?: string): Page {
   const markup = whole
     .replace(/<a class="b-skip"[^>]*>[^<]*<\/a>\s*/, "")
     .replace(/<div class="sx-strip">[\s\S]*?<\/header>\s*/, "")
+    .replace(/<div class="sx-subbar">[\s\S]*?<\/div>\s*/, "")
     .replace(/<footer class="sx-footer">[\s\S]*?<\/footer>\s*/, "");
   return {
     h1: first(/<h1(?:\s[^>]*)?>([\s\S]*?)<\/h1>/, markup),

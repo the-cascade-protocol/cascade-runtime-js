@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 env:
-  # Where the hub's header, strip and footer link the website. At go-live this one value becomes https://cascadeprotocol.org.
-  WEBSITE_URL: https://site-docs.cascadeprotocol-org.pages.dev
+  # Where the hub's header, strip and footer link the website, and where scripts/sync-chrome.mjs reads its css/chrome.css.
+  WEBSITE_URL: https://cascadeprotocol.org
 
 jobs:
   # What a mistake of a minute's mending shows red from, about two minutes in, while the long jobs go on: the website's

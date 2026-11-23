@@ -19,6 +19,7 @@ import { chromeStyles, STYLESHEET, websiteChrome } from "../src/stylesheet.js";
 const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
 const WEBSITE = "https://website.example";
 const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js/";
+const GITHUB = "https://github.com/the-cascade-protocol";
 
 type Pages = Map<string, string>;
 
@@ -72,6 +73,12 @@ before(async () => {
   off = (await built({ built: BUILT })).pages;
 });
 
+/** The Developers row under the header. */
+const subbar = (html: string) => {
+  const at = html.indexOf(`<div class="sx-subbar">`);
+  return at === -1 ? "" : html.slice(at, html.indexOf("</nav></div>", at));
+};
+
 /** The attributes of each `<a>` of a block of HTML. */
 const links = (html: string) =>
   [...html.matchAll(/<a\b([^>]*)>/g)].map((match) => match[1] ?? "");
@@ -85,6 +92,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           `<a class="b-skip" href="#main">`,
           `<div class="sx-strip">`,
           `<header class="sx-header">`,
+          `<div class="sx-subbar">`,
           `<main id="main">`,
           `<footer class="sx-footer">`,
         ].map((marker) => html.indexOf(marker));
@@ -100,11 +108,11 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
       }
     });
 
-    it("shows the approved strip and nav, the nav's reference marked as the page it is on", () => {
+    it("shows the Developers section's strip, nav and row, the nav's Developers and the row's reference marked as the page it is on", () => {
       for (const [path, html] of pages) {
         assert.ok(
           html.includes(
-            `<div class="sx-strip">Alpha: <a href="${WEBSITE}/community/status/">see what works today →</a></div>`,
+            `<div class="sx-strip">Alpha · We're looking for development partners. <a href="${WEBSITE}/community/partners/">Build with us →</a></div>`,
           ),
           path,
         );
@@ -118,54 +126,74 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         );
         assert.deepEqual(
           [...nav.matchAll(/<a [^>]*>([^<]*)<\/a>/g)].map(([, label]) => label),
-          ["Architecture", "Build", "Standards", "Contribute", "Reference ↗"],
+          [
+            "How it works",
+            "For patients",
+            "For clinicians",
+            "Developers",
+            "Community",
+          ],
           path,
         );
         assert.match(
           header,
-          /<a href="[^"]*" aria-current="page">Reference ↗<\/a>/,
+          /<a href="[^"]*" aria-current="page">Developers<\/a>/,
           path,
         );
         assert.equal(header.split("aria-current").length, 2, path);
+        const row = subbar(html);
+        assert.match(
+          row,
+          /<a href="[^"]*" aria-current="page">Reference ↗<\/a>/,
+          path,
+        );
+        assert.equal(row.split("aria-current").length, 2, path);
       }
     });
 
     it("lists the website's nav and footer by label and path, in its order and columns", () => {
       const expected = {
         nav: [
-          ["Architecture", "/#architecture"],
-          ["Build", "/build/"],
-          ["Standards", "/standards/"],
-          ["Contribute", "/contribute/"],
+          ["How it works", "/how-it-works/"],
+          ["For patients", "/patients/"],
+          ["For clinicians", "/clinicians/"],
+          ["Developers", "/developers/"],
+          ["Community", "/community/"],
+        ],
+        row: [
+          ["Architecture", "/developers/"],
+          ["Start building", "/developers/build/"],
+          ["Guides", "/developers/guides/"],
+          ["Built on standards", "/developers/standards/"],
           ["Reference ↗", HUB],
         ],
         columns: {
-          "§ Protocol": [
-            ["The architecture", "/#architecture"],
-            ["Built on standards", "/standards/"],
-            ["How we know it works", "/community/status/"],
-            ["Built on Cascade", "/case-studies/"],
-            ["AI models", "/understand/models/"],
-            ["Site map", "/site-map/"],
+          "§ Cascade Protocol": [
+            ["How it works", "/how-it-works/"],
+            ["For patients and families", "/patients/"],
+            ["For clinicians and researchers", "/clinicians/"],
+            ["Built on Cascade", "/built-on-cascade/"],
+            ["Status", "/community/status/"],
           ],
-          "§ Build": [
-            ["Start building", "/build/"],
-            ["Previous version", "/v0/"],
+          "§ Developers": [
+            ["Architecture", "/developers/"],
+            ["Start building", "/developers/build/"],
+            ["Guides", "/developers/guides/"],
+            ["Built on standards", "/developers/standards/"],
+            ["Reference", HUB],
           ],
           "§ Community": [
-            ["Help shape it", "/contribute/"],
             ["Partner with us", "/community/partners/"],
-            ["Talk with us", "/contribute/#talk"],
-            ["Status", "/community/status/"],
+            ["Contribute", "/community/contribute/"],
             ["Build notes", "/blog/"],
-            ["GitHub", "/contribute/#repos"],
+            ["GitHub ↗", GITHUB],
+          ],
+          "§ About": [
+            ["About the project", "/about/"],
+            ["Trademark policy", "/legal/trademarks.html"],
           ],
         },
-        legal: [
-          ["Trademark policy", "/legal/trademarks.html"],
-          ["POTS Check privacy", "/legal/privacy.html"],
-          ["POTS Check terms", "/legal/terms.html"],
-        ],
+        legal: [],
       };
       const pairs = (html: string) =>
         [...html.matchAll(/<a href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map(
@@ -182,13 +210,14 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         html.indexOf("</nav>"),
       );
       assert.deepEqual(pairs(nav), expected.nav, message);
+      assert.deepEqual(pairs(subbar(html)), expected.row, message);
       const footer = html.slice(html.indexOf(`<footer class="sx-footer">`));
       const cols = footer.slice(
         0,
         footer.indexOf('<div class="sx-footer-legal">'),
       );
       const found: Record<string, string[][]> = {};
-      for (const part of cols.split("<div><h2>").slice(1, 4)) {
+      for (const part of cols.split("<div><h2>").slice(1, 5)) {
         found[part.slice(0, part.indexOf("</h2>"))] = pairs(part);
       }
       assert.deepEqual(found, expected.columns, message);
@@ -199,13 +228,15 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
       );
     });
 
-    it("builds every link of the chrome from the website address it was given, bar the hub's own", () => {
+    it("builds every link of the chrome from the website address it was given, bar the hub's own and the organization's", () => {
       for (const [path, html] of pages) {
         const chrome =
           html.slice(
             html.indexOf(`<div class="sx-strip">`),
             html.indexOf("</header>"),
-          ) + html.slice(html.indexOf(`<footer class="sx-footer">`));
+          ) +
+          subbar(html) +
+          html.slice(html.indexOf(`<footer class="sx-footer">`));
         assert.ok(!chrome.includes("cascadeprotocol.org"), path);
         const hrefs = links(chrome).map(
           (attributes) => /href="([^"]*)"/.exec(attributes)?.[1] ?? "",
@@ -213,34 +244,9 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         assert.ok(hrefs.length > 20, path);
         for (const href of hrefs)
           assert.ok(
-            href.startsWith(`${WEBSITE}/`) || href === HUB,
-            `${path}: ${href} is neither under the website address nor the hub`,
+            href.startsWith(`${WEBSITE}/`) || href === HUB || href === GITHUB,
+            `${path}: ${href} is neither under the website address nor the hub's or the organization's`,
           );
-        const footer = html.slice(html.indexOf(`<footer class="sx-footer">`));
-        assert.ok(
-          footer.includes(`href="${WEBSITE}/contribute/#repos">GitHub<`),
-          path,
-        );
-        assert.ok(
-          footer.includes(
-            `href="${WEBSITE}/community/status/">How we know it works<`,
-          ),
-          path,
-        );
-        assert.ok(
-          footer.includes(`href="${WEBSITE}/v0/">Previous version<`),
-          path,
-        );
-        assert.ok(!footer.includes("(previous version)"), path);
-        assert.ok(footer.includes(`href="${WEBSITE}/contribute/"`), path);
-        assert.ok(
-          footer.includes(`href="${WEBSITE}/contribute/#talk">Talk with us<`),
-          path,
-        );
-        assert.ok(footer.includes("§ Working toward a standard"), path);
-        assert.ok(!footer.includes("We build on existing standards"), path);
-        assert.ok(!footer.includes("Talk with Jed and Jay"), path);
-        assert.ok(!footer.includes("§ Alpha"), path);
       }
     });
 
@@ -255,7 +261,12 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         assert.ok(!chrome.includes(WEBSITE), `${path} links the website`);
         assert.ok(!chrome.includes("cascadeprotocol.org"), path);
         assert.ok(!chrome.includes("/understand/"), path);
-        assert.ok(html.includes(`<div class="sx-strip">Alpha</div>`), path);
+        assert.ok(
+          html.includes(
+            `<div class="sx-strip">Alpha · We're looking for development partners.</div>`,
+          ),
+          path,
+        );
         const footer = html.slice(html.indexOf(`<footer class="sx-footer">`));
         assert.deepEqual(links(footer), [], path);
         assert.ok(!footer.includes("<h2>"), `${path} has a column`);
@@ -263,12 +274,8 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           footer.includes("is a trademark of Cascade Agentic Labs"),
           path,
         );
-        const header = html.slice(
-          html.indexOf(`<header class="sx-header">`),
-          html.indexOf("</header>"),
-        );
         assert.match(
-          header,
+          subbar(html),
           /<a href="https:\/\/the-cascade-protocol\.github\.io\/cascade-runtime-js\/" aria-current="page">Reference ↗<\/a>/,
           path,
         );
@@ -290,7 +297,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         );
       const on = front({ website: WEBSITE, built: BUILT });
       assert.ok(on.includes(`Built on ${BUILT}.`));
-      assert.ok(on.includes(`href="${WEBSITE}/contribute/"`));
+      assert.ok(on.includes(`href="${WEBSITE}/community/contribute/"`));
       const plain = front({ built: BUILT });
       assert.ok(plain.includes(`Built on ${BUILT}.`));
       assert.ok(!plain.includes(WEBSITE));
@@ -475,7 +482,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         assert.equal(run.status, 0, run.stderr);
         const page = readFileSync(join(out, "index.html"), "utf8");
         const footer = page.slice(page.indexOf(`<footer class="sx-footer">`));
-        assert.ok(footer.includes(`href="${WEBSITE}/contribute/"`));
+        assert.ok(footer.includes(`href="${WEBSITE}/community/contribute/"`));
         assert.ok(page.includes(`<a class="sx-logo" href="${WEBSITE}/">`));
         assert.ok(!page.includes("cascadeprotocol.org"));
       } finally {

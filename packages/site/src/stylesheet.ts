@@ -11,13 +11,14 @@ export const websiteChrome = (scope: string): string =>
   COPY.slice(COPY.indexOf("\n") + 1).replaceAll(/:root(?=\s*\{)/g, scope);
 
 /**
- * What the hub adds to the website's chrome: the search box, and the rules of the nav, menu and footer the
- * website's pages have no use for.
+ * What the hub adds to the website's chrome: the search box, and the rules of the nav, menu, Developers row and footer
+ * the website's pages have no use for.
  */
 const HUB_ADDITIONS = `.sx-nav { padding: 0; margin: 0; border: 0; }
 .sx-nav span, .sx-menu nav span { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; color: var(--ink);
             font-family: var(--sans); font-size: 15px; text-decoration: none; border-bottom: 2px solid transparent; }
 .sx-menu, .sx-menu nav { margin: 0; }
+.sx-subbar span { color: var(--ink-2); padding: 4px 0; }
 .sx-menu nav span { display: flex; min-height: 52px; padding: 0; font-family: var(--serif); font-size: 24px;
                     border-bottom: 1px solid var(--rule-soft); }
 .sx-find-wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter) 12px; }
@@ -51,8 +52,8 @@ export const STYLESHEET = `${chromeStyles(":root")}body { font: 17px/1.6 var(--s
        -webkit-font-smoothing: antialiased; }
 main, nav.hub-nav { max-width: 68rem; margin: 0 auto; padding: 0 1rem; }
 main { padding-bottom: 3rem; overflow-wrap: break-word; }
-.sx-header + main { padding-top: 72px; }
-@media (max-width: 760px) { .sx-header + main { padding-top: 48px; } }
+.sx-subbar + main { padding-top: 72px; }
+@media (max-width: 760px) { .sx-subbar + main { padding-top: 48px; } }
 nav.hub-nav { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; padding-top: .75rem; padding-bottom: .75rem;
               border-bottom: 1px solid var(--rule); margin-bottom: 1rem; }
 a { color: var(--link); text-underline-offset: 3px; }
