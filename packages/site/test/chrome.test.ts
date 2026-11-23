@@ -181,6 +181,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
             ["Guides", "/developers/guides/"],
             ["Built on standards", "/developers/standards/"],
             ["Reference", HUB],
+            ["For AI agents (llms.txt)", "/llms.txt"],
           ],
           "§ Community": [
             ["Partner with us", "/community/partners/"],
