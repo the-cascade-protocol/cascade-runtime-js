@@ -3820,6 +3820,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
               queries: { name: string; sparql?: number; sql?: number }[];
             }
           | undefined;
+        queriesHtml(page: object, options?: object): string;
       }>;
     const withImport = file([...rowsOfImport(), ...rowsOfQueries()]);
 
@@ -3995,7 +3996,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         page.lines.find((line) => line.id === "reference-failed")?.text ?? "",
         /1 query failed on the reference engine: lab-results/,
       );
-      const html = queriesHtml(page, { heading: "" }) as string;
+      const html = queriesHtml(page, { heading: "" });
       assert.match(html, /the reference engine failed: out of memory/);
       assert.doesNotMatch(html, /not asked: the reference engine failed/);
     });
