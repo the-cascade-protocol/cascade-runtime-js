@@ -19,6 +19,7 @@ Generated from the files of `packages/cascade-runtime/test/perf-glossary/`; edit
 | `add-one-record` | A pod that already holds a person's record is given the same file with one new laboratory result at its end, as when a hospital adds a result after the last pull. |
 | `reopen-after-kill` | A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the pod has no saved database, so it is built again from every file it holds. |
 | `question-after-update` | A pod that took in an update (the file with 10 laboratory results changed) and was closed is opened again and answers its first question. |
+| `each-query` | Every query of the vocabulary (the derivations, lenses, views, labels, questions and table queries), asked of a copy of the pod a fresh import left: on the reference engine over the pod's own statements and, for the ones that have a SQL version, in SQL on a database holding the same statements, with what each gave compared. |
 
 ## What a pod holds
 
@@ -85,6 +86,7 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `add-one-record/total` | Opening a pod that already holds the record, importing the file with one more laboratory result and asking a first page of the lab results: what a person waits for after one new result arrives. |
 | `reopen-after-kill/total` | Opening a pod that was stopped before it closed and answering its first read: what a person waits for after the app was stopped without closing the pod. |
 | `question-after-update/total` | Opening a pod after an update that was closed properly and answering its first read, against the same read of a pod right after its first import: whether the first question after an update is slower. |
+| `each-query/total` | Filling the reference engine and a database from the pod's statements, making every view's screen, and asking every query of the vocabulary once on the reference engine and, where it has one, in SQL. |
 | `total` | The headline: the whole scenario from start to finish, the median of the runs. |
 | `open` | Opening the pod. |
 | `import` | Importing into the pod: the whole record for a new pod, and for a pod that holds the record already the same file again, with some entries changed, or with one more. |
@@ -118,6 +120,8 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `database/tables` | Bytes the database's tables take, from SQLite's dbstat table; not given where the SQLite build has none. |
 | `database/indexes` | Bytes the database's indexes take, from SQLite's dbstat table; not given where the SQLite build has none. |
 | `first-answer` | A first page (20 answers) of the lab results, asked straight after the import, as an app does to redraw its screen. |
+| `reference-load` | Filling the reference engine's store with the pod's statements, read from the pod's own database, so that both engines read the same statements. |
+| `database-load` | Filling a database with the same statements and making every view's screen in it: the work that a SQL version of a view or a question stands on. |
 | `absent-check/in-flight-*` | The time to ask whether a file is there, when it is not, for one file; `<name>` such questions in flight at once. The runtime asks this before it writes a file. |
 | `create/in-flight-*` | The time to create one new small file and write its bytes; `<name>` files in flight at once. |
 | `create-rename/in-flight-*` | The time to create one small file under a temporary name and rename it over its real name, as a pod's folder does so that no reader sees half a file; `<name>` files in flight at once. |
@@ -127,6 +131,13 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `predicates/*` | How many statements in the pod's files have a property from the `<name>` vocabulary (cascade is Cascade's own, prov is PROV-O, pav is PAV, dct is Dublin Core terms, rdf is RDF itself, other is any other: mainly rdfs for labels, oa for where in a document a revision's source sits, solid and obo). |
 | `database/table-*` | Bytes the database's table `<name>` takes, one of the largest. |
 | `database/index-*` | Bytes the database's index `<name>` takes, one of the largest. |
+| `sparql/*` | The time the reference engine takes to answer `<name>` over the whole pod. |
+| `sql/*` | The time the pod's database takes to answer `<name>` in SQL. |
+| `page/*` | The time the pod's database takes to give the first page of 20 entries of `<name>`. |
+| `rows/*` | How many rows the reference engine gave for `<name>`, with a fingerprint of them. |
+| `equal/*` | 1 when the SQL version of `<name>` gave the same rows as the reference engine, 0 when it did not; the note says how the rows differ, or why the SQL version gave none. |
+| `timeout/*` | The reference engine took longer than its limit of 60 seconds for `<name>`; the value is the limit in seconds. It is not stopped at the limit, so its time and rows are in the rows of the same name. |
+| `not-run/*` | `<name>` was not asked of the pod: the note says why. |
 
 ## Stages of the probed run
 
@@ -268,6 +279,10 @@ Rows named `<scenario>-<dataset>/stage/<stage>`: where time goes inside one run 
 | `archives.open` | Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds. |
 | `archives.write` | Writing the files a step adds as archives: each archive's bytes written under another name and flushed to storage, then renamed to its name. One archive replaces a file for each of its files. |
 | `scenario.first-answer` | Asking for a first page of the lab results straight after the import, so the screen can be redrawn. |
+| `scenario.reference-load` | Filling the reference engine's store with the pod's statements. |
+| `scenario.database-load` | Filling a database with the pod's statements and making every view's screen. |
+| `each-query.sparql` | One query asked of the pod on the reference engine; the calls are the queries that were asked. |
+| `each-query.sql` | One query asked of the pod in SQL; the calls are the queries that have a SQL version, and the pages asked. |
 | `bridge.query-*.rq` | The Bridge's query for `<name>`, which pulls those out of the converted source. Sits inside `arrivals.convert`. |
 | `build.query-*.ttl` | Building the `<name>` answer file by asking the pod's facts its question. Sits inside `build.queried`. |
 | `view.build-*.ttl` | Writing the `<name>` answer file from the question's rows. Sits inside `build.queried`. |
@@ -350,6 +365,10 @@ Rows named `<scenario>-<dataset>/count/<count>`.
 | `database-found` | 1 if the pod's saved database was beside it when it was opened again, otherwise 0: a process stopped before it closed leaves none, and the pod is then built from every file. |
 | `files-read` | How many of the pod's files the reopened pod had to read to be built again: every file that holds statements, as the pod's layout says. |
 | `statements-read` | How many statements those files hold. |
+| `queries` | How many queries of the vocabulary outside the matcher there are, each asked once. |
+| `with-sql` | How many of them have a SQL version beside the query. |
+| `without-sql` | How many have none yet: every derivation, the lenses and some questions. They are answered by the reference engine alone. |
+| `not-run` | How many could not be asked of the pod: the table queries read reference tables the pod's database does not hold. |
 | `*.graph.quadsvisited` | How many individual facts the searches inside '`<name>`' looked at. |
 | `*.graph.scans` | How many times the in-memory facts were searched end to end inside '`<name>`'. |
 | `*.store.queries` | How many fact-store questions '`<name>`' put. |

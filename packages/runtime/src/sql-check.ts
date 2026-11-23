@@ -60,7 +60,7 @@ const XSD_STRING = `${XSD}string`;
 const SCREEN_PARTS = ["tables", "fill", "finish"] as const;
 
 /** One row of an answer: each column's term as N-Triples, or null where unbound. */
-type Row = readonly (string | null)[];
+export type Row = readonly (string | null)[];
 
 /** A query of the vocabulary's with a `.sql` beside it. */
 export interface Ported {
@@ -421,11 +421,13 @@ function labelled(db: Database, labels: ReadonlyMap<string, string>): void {
  * every `finish`, and gives why each ported `.sql` that cannot be answered cannot, by its `.rq`'s path: a view whose part
  * throws, named with the part, its later parts not run; labels.sql where its labels cannot be made; and a `.sql` that
  * reads a table of a screen that failed. The other screens are made whole. Only a view under `queries/views/` is a
- * screen.
+ * screen. `spent` is told the seconds each part of a view, and of the labels, took, by the `.rq`'s path, so that a caller
+ * can say what making each screen cost.
  */
 export function madeScreens(
   db: Database,
   ported: readonly Ported[],
+  spent?: (rq: string, seconds: number) => void,
 ): Map<string, string> {
   const failed = new Map<string, string>();
   const thrown = new Set<string>();
@@ -455,6 +457,7 @@ export function madeScreens(
         reading(query.rq, read);
         continue;
       }
+      const started = performance.now();
       try {
         db.exec(parts.get(part) ?? "");
       } catch (error) {
@@ -464,6 +467,7 @@ export function madeScreens(
           `the screen of ${sqlPath(query.rq)} fails in its ${part} part: ${messageOf(error)}`,
         );
       }
+      spent?.(query.rq, (performance.now() - started) / 1000);
     }
     if (part !== "fill" || labels === undefined || failed.has(LABELS)) continue;
     const read = readsFailed(
@@ -474,6 +478,7 @@ export function madeScreens(
       reading(LABELS, read);
       continue;
     }
+    const started = performance.now();
     try {
       labelled(db, labels);
     } catch (error) {
@@ -482,6 +487,7 @@ export function madeScreens(
         `the labels of ${sqlPath(LABELS)} cannot be made: ${messageOf(error)}`,
       );
     }
+    spent?.(LABELS, (performance.now() - started) / 1000);
   }
   for (const { rq, sql } of ported) {
     if (failed.has(rq)) continue;
@@ -909,7 +915,7 @@ export function keyedFillFailures(
 
 const CONSTRUCT_FORM = /^\s*CONSTRUCT\b/i;
 
-function isConstruct(text: string): boolean {
+export function isConstruct(text: string): boolean {
   return CONSTRUCT_FORM.test(
     text.replace(/^\s*(#.*|PREFIX\s.*|BASE\s.*)$/gm, ""),
   );
@@ -919,7 +925,7 @@ const ntOf = (term: Term | undefined): string | null =>
   term === undefined ? null : sqlNt(sqlTermOf(term));
 
 /** What the `.rq` gives over the union, bound to the record if one is given: its columns and rows. */
-async function rqAnswer(
+export async function rqAnswer(
   union: Union,
   text: string,
   record?: string,
@@ -1085,7 +1091,7 @@ const shown = (names: readonly string[], row: Row): string =>
 
 const rowKey = (row: Row): string => JSON.stringify(row);
 
-function counted(
+export function counted(
   rows: readonly Row[],
 ): Map<string, { row: Row; count: number }> {
   const found = new Map<string, { row: Row; count: number }>();
@@ -1158,7 +1164,7 @@ export function compared(
 const PAGED = /:page_size\b/;
 
 /** A list question's whole list, or its page of `pageSize` entries after a key: its rows and each row's `page_key`. */
-function paged(
+export function paged(
   db: Database,
   sql: string,
   pageSize: number | null,
@@ -1169,7 +1175,7 @@ function paged(
 }
 
 /** The `.sql`'s answer as its `.rq`'s: a view's through its `triples` part, a list question's whole, `page_key` dropped. */
-function sqlRows(
+export function sqlRows(
   db: Database,
   sql: string,
 ): { columns: readonly string[]; rows: Row[] } {
@@ -1237,7 +1243,7 @@ function pageFailures(db: Database, sql: string): string[] {
  * a record the pod does not hold gives no rows, the `.sql` not run, since an empty `asked` is the whole pod. The
  * question is asked of the whole pod again after.
  */
-function askedRows(
+export function askedRows(
   db: Database,
   sql: string,
   records: readonly string[],
@@ -1253,7 +1259,7 @@ function askedRows(
 }
 
 /** Each record the pod puts in an entry, as its IRI. */
-function recordsInEntries(db: Database): string[] {
+export function recordsInEntries(db: Database): string[] {
   return db
     .prepare(
       "SELECT DISTINCT t.lex FROM quad q JOIN term t ON t.id = q.s " +
@@ -1330,7 +1336,7 @@ const lensOf = (path: string | undefined): string | undefined =>
  * What `read` gives of the union as labels.rq reads it, before it is run: without the rdfs:label statements of the file
  * the layout says labels.rq writes, the file's other statements kept. The store is put back after.
  */
-async function beforeLabels<T>(
+export async function beforeLabels<T>(
   union: Union,
   read: (before: Union) => Promise<T>,
 ): Promise<T> {

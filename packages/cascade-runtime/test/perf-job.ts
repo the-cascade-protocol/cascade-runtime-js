@@ -14,6 +14,7 @@ import { explainSpan } from "./perf-glossary.js";
 import { type DatasetId } from "./perf-data.js";
 import { type Scenario } from "./perf-plan.js";
 import { type Added, type Again } from "./perf-scenarios/after-first-import.js";
+import { type EachQuery } from "./perf-scenarios/each-query.js";
 import { type Stored } from "./perf-scenarios/stored.js";
 import { fixed, part, type Tabulated, tabulated } from "./perf-rows.js";
 import { chromeTrace } from "./perf-trace.js";
@@ -40,6 +41,7 @@ export interface Job {
     | "question-page"
     | "floor"
     | "stored"
+    | "each-query"
     | "file-ops";
   /** For `again`: how the document being imported differs from the first one. */
   readonly again?: Again;
@@ -75,6 +77,8 @@ export interface Measured {
   readonly fileOps?: FileOpsRun;
   /** What the pod holds, counted, for the stored scenario. */
   readonly stored?: Stored;
+  /** What each query of the vocabulary took on each engine, for the each-query scenario. */
+  readonly eachQuery?: EachQuery;
   readonly seen?: Tabulated;
   /** The close alone, for a fresh run: its own probe. */
   readonly closeSeen?: Tabulated;

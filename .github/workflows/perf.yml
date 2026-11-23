@@ -35,6 +35,10 @@ name: perf
 #   `reopen-after-kill` and `question-after-update` scenarios), each on a copy of the pod the first import left: /perf/, /perf/runs/, the
 #   summary and the comment have a line for each under "What people do after the first import". A pull request and a push run each
 #   once and leave out `add-one-record`, on Linux and on the Windows and macOS legs alike; the nightly run runs all five three times.
+# - Every run also asks every query of the vocabulary of a copy of the pod the first import left, on the reference engine and, where
+#   the query has a SQL version, in SQL (the `each-query` scenario): /perf/, /perf/runs/, the summary and the comment say what the
+#   adapters' conversion is of the first import and what the SQL versions save, under "What each query costs". A pull request and a
+#   push, and the nightly run, ask them once and without a probe.
 # - A hand-started run can name one scenario (`fresh-first-screen,floor` is the import and its floor) and one size.
 # - Linux is not the only system a person runs this on. A push to main, the nightly run and a hand-started run that asks for
 #   `windows`, `macos` or `all` systems also run the same per-build scenario on a GitHub-hosted Windows runner and a macOS one
@@ -80,6 +84,8 @@ on:
             add-one-record,
             reopen-after-kill,
             question-after-update,
+            each-query,
+            "fresh-first-screen,each-query",
             "reimport-identical,reimport-changed,add-one-record,reopen-after-kill,question-after-update",
           ]
         default: all
@@ -321,6 +327,15 @@ jobs:
           CASCADE_BRIDGE_PIN: ${{ steps.main-bridge.outputs.pin }}
         run: |
           set -euo pipefail
+          # A scenario this build has and main's harness has not (a hand-started run naming it) would only make main's run throw "no
+          # scenario ...": main is not measured then, and the comparison falls back as it does for a main that gave no file.
+          scenarios=$(sed -n 's/.*--scenario \([^ ]*\).*/\1/p' <<< "$ARGS")
+          for scenario in ${scenarios//,/ }; do
+            if ! grep -q "\"$scenario\"" packages/cascade-runtime/test/perf-plan.ts; then
+              echo "::notice::main's harness has no scenario $scenario, so main is not measured in this run"
+              exit 0
+            fi
+          done
           unset GITHUB_EVENT_PATH
           export GITHUB_REF_NAME="$MAIN_BRANCH" GITHUB_REF="refs/heads/$MAIN_BRANCH"
           # shellcheck disable=SC2086

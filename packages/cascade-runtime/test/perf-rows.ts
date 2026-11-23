@@ -10,6 +10,8 @@ export interface Row {
   readonly samples?: number;
   readonly range?: string;
   readonly extra?: string;
+  /** The fingerprint of what an output row counts, so two builds can be said to hold the same; only on an `output` row. */
+  readonly sha256?: string;
 }
 
 export interface PerfFile {

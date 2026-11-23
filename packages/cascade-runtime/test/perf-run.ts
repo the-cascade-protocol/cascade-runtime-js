@@ -26,6 +26,7 @@ import {
 } from "./perf-rows.js";
 import { againRows, SCENARIO_OF } from "./perf-scenarios/after-first-import.js";
 import { closeProbedRows, closeRows } from "./perf-scenarios/close.js";
+import { eachQueryRows, eachQueryTotal } from "./perf-scenarios/each-query.js";
 import { fileOpsAt } from "./perf-scenarios/file-ops.js";
 import { floorAt } from "./perf-scenarios/floor.js";
 import {
@@ -124,6 +125,7 @@ async function scenariosAt(
   const needsPod =
     wants("reopen-first-answer") ||
     wants("question-page") ||
+    (wants("each-query") && !encrypted) ||
     wants("reimport-identical") ||
     wants("reimport-changed") ||
     wants("add-one-record") ||
@@ -239,7 +241,7 @@ async function scenariosAt(
       runs: readonly Measured[],
     ) => Row[],
     probedTotal: (probed: Measured) => number,
-    { repeats = plan.repeats, keep = false, cpu = true } = {},
+    { repeats = plan.repeats, keep = false, cpu = true, probe = true } = {},
   ): Promise<{ runs: Measured[]; kept?: string }> => {
     const name = nameOf(scenario, dataset, encrypted);
     const runs: Measured[] = [];
@@ -257,7 +259,7 @@ async function scenariosAt(
       rows.push(
         ...scenarioRows({ ...ctx, how: howOf(runs.length) }, name, runs),
       );
-      if (plan.probe) {
+      if (plan.probe && probe) {
         log(`${where}: ${scenario}, probed`);
         const { ran: probed } = await onACopy(from, kind, more, {
           probed: true,
@@ -303,6 +305,20 @@ async function scenariosAt(
         {},
         questionPageRows,
         questionPageTotal,
+      );
+    // Every query of the vocabulary on both engines, over a copy of the pod; a sealed pod keeps no database to ask. It is asked once,
+    // by every run, with no probe and no CPU profile: on a real pod of the large size, on a laptop, the reference engine took
+    // about 19 minutes for the few questions it answers slowly (a hosted runner has not been measured on it), so a median of three
+    // and a probed run of it would be an hour or more, and what each query took is what the page reads, not where the time went.
+    if (wants("each-query") && !encrypted)
+      await onCopiesOf(
+        "each-query",
+        fresh0,
+        "each-query",
+        {},
+        eachQueryRows,
+        eachQueryTotal,
+        { repeats: 1, cpu: false, probe: false },
       );
 
     // The jobs of every day: the same document again, with ten source entries changed, and with one more, each as an import

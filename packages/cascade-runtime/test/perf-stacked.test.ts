@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { explain } from "./perf-glossary.js";
 import { held, rowsOfHeld } from "./perf-held.js";
 import { rowsOfJobs } from "./perf-jobs-held.js";
+import { rowsOfImport, rowsOfQueries } from "./perf-queries-held.js";
 
 const script = async <T>(name: string): Promise<T> =>
   (await import(
@@ -992,6 +993,46 @@ describe("The stacked performance page · perf-stacked.mjs", () => {
         repo: "owner/repo",
       });
       assert.doesNotMatch(none, /What people do after the first import/);
+    });
+  });
+
+  describe("given a perf-data checkout whose newest build measured every query on both engines", () => {
+    it("writes a section What each query costs with the lines of the build and a table of each query's two times and whether they agree, and sets no limit on any", async () => {
+      const { pages } = await script<Stacked>("perf-stacked.mjs");
+      const data = await mkdtemp(join(tmpdir(), "perf-stacked-data-"));
+      const out = await mkdtemp(join(tmpdir(), "perf-stacked-out-"));
+      scratch.push(data, out);
+      const day = join(data, "runtime", "2026", "11", "20");
+      await mkdir(day, { recursive: true });
+      await writeFile(
+        join(day, "100-aaaaaaa-push.json"),
+        JSON.stringify({ results: [...rowsOfImport(), ...rowsOfQueries()] }),
+      );
+      pages({ data, out, repo: "owner/repo" });
+      const page = await readFile(join(out, "index.html"), "utf8");
+      assert.match(page, /<h2>What each query costs<\/h2>/);
+      const block =
+        /<section class="queries"[\s\S]*?<\/section>/.exec(page)?.[0] ?? "";
+      const text = block.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+      for (const line of [
+        "Of the first import's 10.0 s (measured with the probe on), the Bridge's conversion took 2.50 s (25%), and the adapters' own queries inside it 300 ms (3%).",
+        "3 of the 6 queries have a SQL version. On the 2 queries whose rows matched they took 3.80 s on the reference engine and 236 ms in SQL (16.1 times as fast, 94% less); 1 gave other rows and is left out.",
+        "My lab results 8,100 1.80 s 36.0 ms 50.0 times as fast yes",
+        "What each folder holds 300 70.0 s 4.00 s 17.5 times as fast no",
+        "My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (SQL 50.0 times as fast); same rows: yes.",
+      ])
+        assert.ok(text.includes(line), line);
+      assert.match(text, /agreement/i);
+      assert.match(text, /647 source entries/);
+      assert.doesNotMatch(block, /threshold|alarm|too slow/i);
+    });
+
+    it("has no section for a build that measured no query", async () => {
+      const { shape, stackedPage } = await script<Stacked>("perf-stacked.mjs");
+      const none = stackedPage(shape([file(1, 3, { a: 1 })]), {
+        repo: "owner/repo",
+      });
+      assert.doesNotMatch(none, /What each query costs/);
     });
   });
 

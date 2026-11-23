@@ -46,18 +46,19 @@ export function jobsKeys(file) {
   ];
 }
 
-const whole = (value) => Math.round(value).toLocaleString("en-US");
+export const whole = (value) => Math.round(value).toLocaleString("en-US");
 /** A multiple with one decimal under a hundred, whole above: 0.3, 4.0, 120. */
-const ratio = (value) => (value >= 100 ? whole(value) : value.toFixed(1));
+export const ratio = (value) =>
+  value >= 100 ? whole(value) : value.toFixed(1);
 /** A time as a person reads it: 800 ms, 2.40 s, 12.3 s. */
-const took = (value) => {
+export const took = (value) => {
   if (value >= 100) return `${value.toFixed(0)} s`;
   if (value >= 10) return `${value.toFixed(1)} s`;
   if (value >= 1) return `${value.toFixed(2)} s`;
   if (value < 0.001) return `${(value * 1_000_000).toFixed(0)} us`;
   return `${(value * 1000).toFixed(value >= 0.1 ? 0 : 1)} ms`;
 };
-const plural = (count, one, many = `${one}s`) =>
+export const plural = (count, one, many = `${one}s`) =>
   `${whole(count)} ${count === 1 ? one : many}`;
 /** ` (4.0 x the first import)` for a time against the one it is read against; nothing without one. */
 const against = (value, base, what) =>
@@ -188,7 +189,7 @@ export function jobsOf(file, key) {
 /** The size a page's pod was measured at, as a person reads it: "647 source entries", "16,833 source entries, measured nightly". */
 export const jobsTitle = (page) => storedTitle(page);
 
-const escaped = (text) =>
+export const escaped = (text) =>
   String(text).replace(
     /[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],

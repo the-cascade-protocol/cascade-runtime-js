@@ -44,6 +44,29 @@ export * from "./replay.js";
 export * from "./saved-output-bridge.js";
 export * from "./shapes.js";
 export * from "./shown.js";
+export {
+  askedWhole,
+  graphsOfDump,
+  loadStatements,
+  sqlDatabaseFunctions,
+  sqlParts,
+  STATEMENTS_SCHEMA,
+} from "./statements.js";
+export {
+  askedRows,
+  beforeLabels,
+  compared,
+  counted,
+  finalOrder,
+  isConstruct,
+  madeScreens,
+  paged,
+  portedQueries,
+  recordsInEntries,
+  rqAnswer,
+  type Row as AnswerRow,
+  sqlRows,
+} from "./sql-check.js";
 export * from "./step.js";
 export * from "./store.js";
 export * from "./story.js";

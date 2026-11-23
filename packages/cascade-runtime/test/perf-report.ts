@@ -45,6 +45,7 @@ export * from "./perf-rows.js";
 export * from "./perf-run.js";
 export * from "./perf-scenarios/after-first-import.js";
 export * from "./perf-scenarios/close.js";
+export * from "./perf-scenarios/each-query.js";
 export * from "./perf-scenarios/file-ops.js";
 export * from "./perf-scenarios/floor.js";
 export * from "./perf-scenarios/fresh-first-screen.js";
