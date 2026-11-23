@@ -77,12 +77,14 @@ CI runs on every pull request, and a red check is a reason not to merge. Two che
 and **`ready-to-merge`**. `compatibility` reports the result of the first five jobs below (and `runtime tests` on the
 nightly run); `ready-to-merge` is its own check.
 
-- **`lint, types and generated files`**: the type check, the lint and formatting, and that the website's chrome is
-  copied as it is (`node scripts/sync-chrome.mjs --check`). It takes about a minute and nothing waits for it, so a
-  mistake of these kinds shows red while the long jobs run.
+- **`lint and types`**: the type check, the lint and formatting, and that the website's chrome is copied as it is
+  (`node scripts/sync-chrome.mjs --check`). It takes about two minutes and no test job waits for it (only `compatibility` does), so a mistake of
+  these kinds shows red while the long jobs run. The chrome check passes, with a warning on the run, whenever the
+  website's preview cannot be read, which today is always (it answers with a Cloudflare Access sign-in page); it
+  catches a stale copy only where the website can be read.
 - **`tests and conformance`**: the suite, run once: the test files each package's `test/spec.json` lists as
   `randomOrder` in a random order (a test that needs another to run first fails here; the seed is in the log), then the
-  others as written. On a nightly run it also runs the conformance command over the vocabulary and the adapters, on the
+  others as written. On a nightly run, or one started by hand, it also runs the conformance command over the vocabulary and the adapters, on the
   WebAssembly build; on a pull request that is the next job's, which runs it once, on the native build, and the cases
   that assert on its report. Then the check
   that its results read as a specification: every test in a file a package lists as `shaped` sits under a capability heading listed in its

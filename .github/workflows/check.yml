@@ -21,11 +21,13 @@ env:
   WEBSITE_URL: https://site-docs.cascadeprotocol-org.pages.dev
 
 jobs:
-  # What a mistake of a minute's mending shows red from, about a minute in, while the long jobs go on: the website's
-  # chrome copied stale, a type error, a lint or formatting error. Nothing here waits for another job and nothing waits
-  # for it. The steps run whatever the one before found, so one run shows every red there is. `compatibility` requires it.
+  # What a mistake of a minute's mending shows red from, about two minutes in, while the long jobs go on: the website's
+  # chrome copied stale, a type error, a lint or formatting error. Nothing here waits for another job; `compatibility`
+  # waits for it and requires it. The steps run whatever the one before found, so one run shows every red there is, except
+  # that the type check and the lint need the install. The chrome check passes, with a warning on the run, while the
+  # website's preview cannot be read (it now answers with a Cloudflare Access sign-in page).
   fast:
-    name: lint, types and generated files
+    name: lint and types
     if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -48,17 +50,18 @@ jobs:
         uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
         with:
           checkout-only: "true"
-      # The website owns the chrome: red when packages/site/src/chrome.css differs from the website's; it reads only the
-      # website, so it runs before the install.
+      # The website owns the chrome: red when packages/site/src/chrome.css differs from the website's, when the website
+      # can be read; when it cannot, the script exits 0 and warns. It reads only the website, so it runs before the install.
       - name: The website's chrome is copied as it is
         run: node scripts/sync-chrome.mjs --check
-      - run: npm ci
+      - id: install
+        run: npm ci
         if: ${{ !cancelled() }}
       - name: Types
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run typecheck
       - name: Lint and formatting
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
   # Before a merge and nightly: a pair of pull requests is proven together before either merges. Two jobs side by side,
@@ -72,7 +75,6 @@ jobs:
       CASCADE_TEST_OFFLINE: "1"
     permissions:
       contents: read
-      pull-requests: write
     defaults:
       run:
         working-directory: cascade-runtime-js
@@ -122,7 +124,8 @@ jobs:
       # For the Bridge's pick below. Off a pull request the start step merges the pull requests a Depends-On: line names
       # here into this checkout and runs compatibility.json's host setup, `npm ci`, before the conformance command, so the
       # steps after it run on that merge's lockfile; they run only once it has, which a conformance report shows.
-      - run: npm ci
+      - id: install
+        run: npm ci
       # The Bridge's build, picked with the job's token and kept for the conformance command the start step runs, which
       # holds none.
       - run: npm run --silent bridge
@@ -166,12 +169,12 @@ jobs:
           if-no-files-found: warn
       # The suite is run once, in two parts. First the test files each package's test/spec.json lists as randomOrder, in a
       # random order: one that needs another to run first fails here. The seed is in the log; rerun with
-      # --test-random-seed=N to repeat it. The type check and the lint are the `lint, types and generated files` job's.
+      # --test-random-seed=N to repeat it. The type check and the lint are the `lint and types` job's.
       # On a pull request the conformance report is asserted on in the native job, which wrote it, so the cases that read
       # it are skipped here.
       - name: Tests in random order
         id: listed
-        if: ${{ !cancelled() && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
         shell: bash
         run: |
           skip=()
@@ -184,14 +187,14 @@ jobs:
       # this Linux runner, about three times the slowest of the CI runs it names). A stage over its budget, or gone from the
       # run, is measured once more, and fails here, named, only if it is over in both runs.
       - name: Import time budget
-        if: ${{ !cancelled() && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
         run: npm run bench:import -- 1000 --budget packages/cascade-runtime/test/import-budget.json
       # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite and keeps its report:
       # once a night, not twice. The JUnit reports of the two parts are read for the test page's shape below, as the
       # `runtime-tests` job reads its own.
       - name: The tests not listed as randomOrder
         id: suite
-        if: ${{ !cancelled() && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
         shell: bash
         run: |
           skip=()
@@ -760,7 +763,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          echo "lint, types and generated files: ${FAST}; tests and conformance: ${TESTS}; on the native build: ${NATIVE}; docs site: ${BROWSER}; starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS}; database on each system: ${DATABASE}; runtime tests: ${RUNTIME_TESTS}"
+          echo "lint and types:${FAST}; tests and conformance: ${TESTS}; on the native build: ${NATIVE}; docs site: ${BROWSER}; starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS}; database on each system: ${DATABASE}; runtime tests: ${RUNTIME_TESTS}"
           [ "${FAST}" = success ] && [ "${TESTS}" = success ] && [ "${NATIVE}" = success ] && [ "${BROWSER}" = success ] || exit 1
           # The suite runs in `runtime-tests` on the nightly run, where `tests and conformance` leaves it out. On a pull
           # request or a hand-started run that job is skipped, and the suite ran in `tests and conformance`.
