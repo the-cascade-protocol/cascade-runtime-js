@@ -21,6 +21,55 @@ env:
   WEBSITE_URL: https://site-docs.cascadeprotocol-org.pages.dev
 
 jobs:
+  # Which of the jobs that run after the merge a pull request runs as well. On a push, nightly and by hand every one runs;
+  # on a pull request the ones that guard the starter, the installed package and the docs site run only when the pull
+  # request touches what they guard, so that a change to the runtime's own code waits for lint, tests, conformance and
+  # the package alone. Each flag is read from the pull request's files and body at the time the job runs, so a re-run
+  # after the body gained a Depends-On line sees it. A change to this workflow does not set a flag: a pull request that
+  # edits it shows its moved jobs by `gh workflow run check.yml --ref <branch>`, which runs them all.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs: ${{ steps.which.outputs.docs }}
+      starter: ${{ steps.which.outputs.starter }}
+      install: ${{ steps.which.outputs.install }}
+    steps:
+      - id: which
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PULL: ${{ github.event.pull_request.number }}
+          # docs: the pages' sources and builders, every Markdown file, the browser build and its tests.
+          DOCS: '^(docs/|scripts/|packages/(site|evals)/|packages/cascade-runtime/(src/browser|test-browser|pack)/)|\.md$|^package(-lock)?\.json$'
+          # starter: the action that checks the starter kit out; a Depends-On line naming a starter kit pull request is read below.
+          STARTER: '^\.github/actions/starter/'
+          # install: what is packed and installed: a manifest or lock, the pack, the SQLite binding's code, the developer
+          # stories, cascade-mcp and the workflow that installs.
+          INSTALL: '(^|/)package(-lock)?\.json$|^packages/cascade-runtime/pack/|^packages/runtime/src/(node/sqlite|database|pod-database)\.ts$|^developer-story/|^packages/mcp/|^\.github/workflows/installed\.yml$'
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            printf '%s\n' docs=true starter=true install=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PULL}/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          body=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PULL}" --jq '(.body // "") | gsub("\r"; "")')
+          touches() { if grep -Eq "$1" <<< "$files"; then echo true; else echo false; fi; }
+          # The line the starter action reads: the pair of pull requests is proven together before either merges.
+          starter=$(touches "$STARTER")
+          if grep -iEq '^[[:space:]]*Depends-On:[[:space:]]*(https://github\.com/)?the-cascade-protocol/cascade-starter-kit(#|/pull/)[0-9]+' <<< "$body"; then starter=true; fi
+          {
+            echo "docs=$(touches "$DOCS")"
+            echo "starter=$starter"
+            echo "install=$(touches "$INSTALL")"
+          } | tee -a "$GITHUB_OUTPUT"
+
   # What a mistake of a minute's mending shows red from, about two minutes in, while the long jobs go on: the website's
   # chrome copied stale, a type error, a lint or formatting error. Nothing here waits for another job; `compatibility`
   # waits for it and requires it. The steps run whatever the one before found, so one run shows every red there is, except
@@ -437,9 +486,12 @@ jobs:
         run: npm test -- --test-skip-pattern="Reporting a conformance run"
 
   # The docs site as Pages would serve it: `build-pages` runs the same command, and this job keeps the tree it wrote.
+  # After the merge, on a push, nightly and by hand; on a pull request only when it touches what the site is built from
+  # (`changes`).
   browser:
     name: docs site
-    if: ${{ github.event_name != 'push' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
     runs-on: ubuntu-latest
     env:
       CASCADE_ROWS_CACHE: ${{ github.workspace }}/cascade-runtime-js/.rows-cache
@@ -588,8 +640,8 @@ jobs:
 
   # The addresses on other sites that the tree links, asked once each with retries: a 404 is red, a host that does not
   # answer is a warning. Alone and after `docs site`, since asking about five hundred addresses takes a minute, and not
-  # in `compatibility`, since a host that moved a page is not this pull request's doing. Not nightly: `live links` asks the
-  # same addresses of the deployed site then, and the outside is asked once a night.
+  # in `compatibility`, since a host that moved a page is not this pull request's doing. It runs wherever `docs site` does
+  # but nightly, when `live links` asks the same addresses of the deployed site.
   external-links:
     name: external links
     needs: browser
@@ -612,13 +664,14 @@ jobs:
           path: build
       - run: node scripts/link-check.mjs --only-external build/external-links.json
 
-  # The reverse check: the starter kit's own tests and checks, run on this commit's tarball. A change the starter must
+  # The reverse check: the starter kit's own tests and checks, run on this commit's tarball, after the merge (push, nightly and
+  # by hand) and on a pull request that names a starter kit pull request on Depends-On. A change the starter must
   # follow lands as a pair: this pull request's body carries `Depends-On: https://github.com/the-cascade-protocol/cascade-starter-kit/pull/<n>`
   # (the start action refuses the short form), and the starter is then taken at that pull request's head instead of its main.
   starter-kit:
     name: starter-kit
-    if: ${{ github.event_name != 'push' && !startsWith(github.base_ref, 'alpha/') }}
-    needs: package
+    if: ${{ needs.changes.outputs.starter == 'true' && !startsWith(github.base_ref, 'alpha/') }}
+    needs: [package, changes]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     # Four parts side by side, each on its own runner: the starter's suites, its browser tests, and the made app without
@@ -706,14 +759,14 @@ jobs:
           cd "$RUNNER_TEMP"
           node "$STARTER/check/starter.ts" "$STARTER"/build/create-cascade-app-*.tgz --runtime "$TARBALL" ${WITH:+--with "$WITH"}
 
-  # The made app on the other systems, as the deleted installed.yml `starter` job ran it: windows on a pull request,
-  # windows and macos on a push, the nightly run and by hand. `compatibility` waits for it: an app that does not install on
-  # windows is no pass. The starter is taken exactly as `starter-kit` takes it; only the build of the command and the
+  # The made app on the other systems, as the deleted installed.yml `starter` job ran it: windows and macos on a push, the
+  # nightly run and by hand; windows on a pull request that `changes` says runs the starter. `compatibility` waits for it:
+  # an app that does not install on windows is no pass. The starter is taken exactly as `starter-kit` takes it; only the build of the command and the
   # app's check run, not the starter's suites.
   starter-systems:
     name: starter (${{ matrix.os }})
-    if: ${{ !startsWith(github.base_ref, 'alpha/') }}
-    needs: package
+    if: ${{ needs.changes.outputs.starter == 'true' && !startsWith(github.base_ref, 'alpha/') }}
+    needs: [package, changes]
     strategy:
       fail-fast: false
       matrix:
@@ -758,12 +811,13 @@ jobs:
           node "$STARTER/check/starter.ts" "$STARTER"/build/create-cascade-app-*.tgz --runtime "$TARBALL"
 
   # The packed package's native SQLite binding, installed from the tarball on Node 22 as an app installs it, and opened
-  # sealed with a key, on linux and macos on arm and x64, on a pull request too. The app's second install is `npm ci` from
+  # sealed with a key, on linux and macos on arm and x64, after the merge and on a pull request that changes what is
+  # packed or installed (`changes`). The app's second install is `npm ci` from
   # the lock its first wrote, the install that ran node-gyp on the binding when it carried what builds it from source.
   database-systems:
     name: database (${{ matrix.os }})
-    if: ${{ !startsWith(github.base_ref, 'alpha/') }}
-    needs: package
+    if: ${{ needs.changes.outputs.install == 'true' && !startsWith(github.base_ref, 'alpha/') }}
+    needs: [package, changes]
     strategy:
       fail-fast: false
       matrix:
@@ -816,20 +870,28 @@ jobs:
             console.log("sealed database reopened with its key and refused another");
           '
 
-  # The name branch protection requires. A part that was skipped is no pass, except starter-kit, the starter on the other
-  # systems and the database on each system, on a pull request into an alpha/ branch.
+  # The name branch protection requires. It reports the jobs that run on the event: on a pull request the lint, the tests,
+  # the conformance run and the package, and each job `changes` says the pull request runs; on a nightly run or one started
+  # by hand every job. A job `changes` leaves out of a pull request is skipped and is no red; a job it says runs, or that
+  # runs on this event, must have succeeded, so a skipped one is no pass (`package` is needed so that a failed pack, which
+  # skips the jobs after it, cannot pass as their skip). Never on a push, where each job shows its own result. The starter,
+  # the starter on the other systems and the database are skipped on a pull request into an alpha/ branch as well.
   compatibility:
     name: compatibility
     needs:
       [
+        changes,
         fast,
         tests,
         conformance-native,
         tests-native,
+        package,
         browser,
         starter-kit,
         starter-systems,
         database-systems,
+        linux,
+        other-systems,
         runtime-tests,
       ]
     if: ${{ !cancelled() && github.event_name != 'push' }}
@@ -837,33 +899,61 @@ jobs:
     permissions: {}
     steps:
       - env:
+          CHANGES: ${{ needs.changes.result }}
           FAST: ${{ needs.fast.result }}
           TESTS: ${{ needs.tests.result }}
           CONFORMANCE_NATIVE: ${{ needs.conformance-native.result }}
           TESTS_NATIVE: ${{ needs.tests-native.result }}
+          PACKAGE: ${{ needs.package.result }}
           BROWSER: ${{ needs.browser.result }}
           STARTER: ${{ needs.starter-kit.result }}
           STARTER_SYSTEMS: ${{ needs.starter-systems.result }}
           DATABASE: ${{ needs.database-systems.result }}
+          LINUX: ${{ needs.linux.result }}
+          OTHER_SYSTEMS: ${{ needs.other-systems.result }}
           RUNTIME_TESTS: ${{ needs.runtime-tests.result }}
+          RUN_DOCS: ${{ needs.changes.outputs.docs }}
+          RUN_STARTER: ${{ needs.changes.outputs.starter }}
+          RUN_INSTALL: ${{ needs.changes.outputs.install }}
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          echo "lint and types:${FAST}; tests and conformance: ${TESTS}; conformance on the native build: ${CONFORMANCE_NATIVE}; tests on the native build: ${TESTS_NATIVE}; docs site: ${BROWSER}; starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS}; database on each system: ${DATABASE}; runtime tests: ${RUNTIME_TESTS}"
-          [ "${FAST}" = success ] && [ "${TESTS}" = success ] && [ "${CONFORMANCE_NATIVE}" = success ] && [ "${BROWSER}" = success ] || exit 1
-          # The suite runs on the native build off a pull request only: on a pull request it runs once, on the WebAssembly
-          # build, in `tests and conformance`, and `tests (native)` is skipped by that rule alone.
-          if [ "${EVENT}" != pull_request ]; then [ "${TESTS_NATIVE}" = success ] || exit 1; fi
+          echo "changes: ${CHANGES}; lint and types: ${FAST}; tests and conformance: ${TESTS}; conformance on the native build: ${CONFORMANCE_NATIVE}; tests on the native build: ${TESTS_NATIVE}; package: ${PACKAGE}; docs site: ${BROWSER} (wanted: ${RUN_DOCS}); starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS} (wanted: ${RUN_STARTER}); database on each system: ${DATABASE}, package installed on linux: ${LINUX}, on the other systems: ${OTHER_SYSTEMS} (wanted: ${RUN_INSTALL}); runtime tests: ${RUNTIME_TESTS}"
+          bad=0
+          # A job that runs on every event.
+          always() { [ "$2" = success ] || { echo "::error title=compatibility::$1 is $2, not success"; bad=1; }; }
+          # A job that runs when `changes` says so, and is skipped otherwise; a pull request into an integration branch
+          # skips the ones marked `integration`; `any` ones are not.
+          wanted() {
+            if [ "$3" = true ] && { [ "$4" != integration ] || [[ "${BASE}" != alpha/* ]]; }; then
+              [ "$2" = success ] || { echo "::error title=compatibility::$1 is $2, and ran on this event, so it must be success"; bad=1; }
+            else
+              [ "$2" = success ] || [ "$2" = skipped ] || { echo "::error title=compatibility::$1 is $2, not success or skipped"; bad=1; }
+            fi
+          }
+          always changes "${CHANGES}"
+          always "lint and types" "${FAST}"
+          always "tests and conformance" "${TESTS}"
+          always "conformance (native)" "${CONFORMANCE_NATIVE}"
+          always package "${PACKAGE}"
+          wanted "docs site" "${BROWSER}" "${RUN_DOCS}" any
+          wanted starter-kit "${STARTER}" "${RUN_STARTER}" integration
+          wanted "starter on the other systems" "${STARTER_SYSTEMS}" "${RUN_STARTER}" integration
+          wanted database "${DATABASE}" "${RUN_INSTALL}" integration
+          # The package installed, and `tests (native)`, run off a pull request only: on a pull request `tests and
+          # conformance` runs the suite once, on the WebAssembly build, and these are skipped by that rule alone.
+          if [ "${EVENT}" = pull_request ]; then
+            wanted "package installed on linux" "${LINUX}" "${RUN_INSTALL}" any
+            wanted "package installed on the other systems" "${OTHER_SYSTEMS}" "${RUN_INSTALL}" any
+          else
+            always "package installed on linux" "${LINUX}"
+            always "package installed on the other systems" "${OTHER_SYSTEMS}"
+            always "tests (native)" "${TESTS_NATIVE}"
+          fi
           # The suite runs in `runtime-tests` on the nightly run, where `tests and conformance` leaves it out. On a pull
           # request or a hand-started run that job is skipped, and the suite ran in `tests and conformance`.
-          if [ "${EVENT}" = schedule ]; then [ "${RUNTIME_TESTS}" = success ] || exit 1; fi
-          # These do not run on a pull request into an integration branch; they are skipped by that rule alone.
-          for result in "${STARTER}" "${STARTER_SYSTEMS}" "${DATABASE}"; do
-            case "${BASE}" in
-              alpha/*) [ "${result}" = skipped ] || [ "${result}" = success ] || exit 1 ;;
-              *) [ "${result}" = success ] || exit 1 ;;
-            esac
-          done
+          if [ "${EVENT}" = schedule ]; then always "runtime tests" "${RUNTIME_TESTS}"; fi
+          exit "$bad"
 
   # The conformance run of main that the Pages tree shows. `tests and conformance` is skipped on a push and its report is
   # not kept for the site, so this job runs the start action alone, on a push and nightly, and keeps the report with the
@@ -1263,13 +1353,14 @@ jobs:
           PAGES_URL: https://the-cascade-protocol.github.io/cascade-runtime-js/
           COMMIT: ${{ github.sha }}
 
-  # The deployed site once its deploy is served, and nightly: every link of every page, each README's Docs block and the
-  # addresses on other sites, and a newcomer's walk from the front page and from each README. Nothing waits for it; a dead
-  # link or a README without the hub's link fails the run.
+  # The deployed site, nightly and by hand, not on a push: every link of every page, each README's Docs block and the
+  # addresses on other sites, and a newcomer's walk from the front page and from each README. The other sites it asks fail
+  # about one push in four, which kept main red for what is no code check; `external links` asks the same addresses of the
+  # built tree on a push. Nothing waits for it; a dead link or a README without the hub's link fails the run.
   live-links:
     name: live links
     needs: [pages, live]
-    if: ${{ !cancelled() && needs.pages.outputs.deployed == 'true' && (needs.live.result == 'success' || needs.live.result == 'skipped') }}
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.pages.outputs.deployed == 'true' && (needs.live.result == 'success' || needs.live.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -1386,16 +1477,19 @@ jobs:
             cascade-runtime-js/build/release-notes.md
           if-no-files-found: error
 
-  # The package installed and used as a person would, on the systems `release` waits for.
+  # The package installed and used as a person would, on the systems `release` waits for. After the merge, nightly and by hand,
+  # and on a pull request that changes what is packed or installed (`changes`).
   linux:
-    needs: package
+    needs: [package, changes]
+    if: ${{ needs.changes.outputs.install == 'true' }}
     uses: ./.github/workflows/installed.yml
     with:
       systems: '["ubuntu-latest"]'
 
   # The same jobs on the systems that finish last: nothing needs them, so a release does not wait, and a failure still fails the run.
   other-systems:
-    needs: package
+    needs: [package, changes]
+    if: ${{ needs.changes.outputs.install == 'true' }}
     uses: ./.github/workflows/installed.yml
     with:
       systems: ${{ github.event_name == 'pull_request' && '["windows-latest"]' || '["windows-latest", "macos-latest"]' }}

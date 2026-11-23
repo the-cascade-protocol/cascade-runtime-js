@@ -74,8 +74,26 @@ node scripts/test.mjs --listed --test-randomize --test-random-seed=N
 ## What a pull request must pass
 
 CI runs on every pull request, and a red check is a reason not to merge. Two checks are required, **`compatibility`**
-and **`ready-to-merge`**. `compatibility` reports the result of the first six jobs below (and `runtime tests` on the
-nightly run); `ready-to-merge` is its own check.
+and **`ready-to-merge`**. `compatibility` reports the result of the jobs a pull request runs (and, on the nightly run
+and a run started by hand, every job below that runs after the merge); `ready-to-merge` is its own check.
+
+A pull request waits for the jobs that can show a logic break: `lint and types`, `tests and conformance`,
+`conformance (native)` and `package`. The jobs that guard a platform, the starter, the installed package or the docs site run
+after the merge, on a push to `main`, nightly and on a run started by hand, where a red one is the next fix; `git bisect`
+finds the commit. A pull request also runs one of them when it touches what that job guards (the `changes` job reads the
+files and the body):
+
+- `docs site` and `external links`, when it changes `docs/`, `scripts/`, `packages/site/`, `packages/evals/`, the browser build and
+  its tests (`packages/cascade-runtime/src/browser`, `test-browser`, `pack`), any Markdown file, or the root `package.json`
+  or lock.
+- `starter-kit (...)` and `starter (windows-latest)`, when it names a starter kit pull request on a `Depends-On:` line, or changes
+  `.github/actions/starter/`.
+- `database (...)` and `package-install (...)`, when it changes a `package.json` or lock, `packages/cascade-runtime/pack/`, the
+  SQLite binding's code (`packages/runtime/src/node/sqlite.ts`, `database.ts`, `pod-database.ts`), `developer-story/`,
+  `packages/mcp/` or `.github/workflows/installed.yml`.
+
+A change to `.github/workflows/check.yml` sets none of them: run `gh workflow run check.yml --ref <branch>`, which runs every
+job, to see what the change does to the jobs it moves. `live links` asks the deployed site, and runs nightly and by hand only.
 
 - **`lint and types`**: the type check, the lint and formatting, and that the website's chrome is copied as it is
   (`node scripts/sync-chrome.mjs --check`). It takes about two minutes and no test job waits for it (only `compatibility` does), so a mistake of
@@ -97,15 +115,17 @@ nightly run); `ready-to-merge` is its own check.
 - **`tests (native)`**: the suite on the native build. It runs on a push to main and nightly, not on a pull request,
   where the suite runs once, in `tests and conformance`, on the WebAssembly build. A test that fails only on the native
   build is found after the merge, and a red main is the next fix.
-- **`docs site`**: builds the package and the pages, and runs the browser tests in Chromium.
-- **`starter-kit (...)`**: four jobs (`suites`, `browser`, `app`, and `app, chat,mcp`) in which this pull request's
+- **`docs site`**: builds the package and the pages, and runs the browser tests in Chromium. After the merge, and on a
+  pull request that touches the site's sources.
+- **`starter-kit (...)`**: after the merge, and on a pull request that names a starter kit pull request: four jobs (`suites`, `browser`, `app`, and `app, chat,mcp`) in which this pull request's
   package, packed, is run under the [starter kit](https://github.com/the-cascade-protocol/cascade-starter-kit)'s tests, so a change
   that breaks the app a person starts from is seen before it merges.
 - **`ready-to-merge`**: holds a pull request until every pull request it depends on can merge (see "A change that spans
   two repositories").
 
-Other jobs run too: `starter (<system>)` makes an app on each system the package supports, `package` packs the package,
-`package-install (<system>)` installs it, and `external links` checks the links of the built pages.
+Other jobs run too: `package` packs the package on every pull request; after the merge `starter (<system>)` makes an app on
+each system the package supports, `package-install (<system>)` and `database (<system>)` install it and open a sealed
+database, and `external links` checks the links of the built pages.
 
 ## Working on this repository
 
@@ -262,12 +282,12 @@ Each is named, as `runtime/rules.md` N8 says, by its tree at the commit it is
 at, so an EARL report names the same entries on every machine.
 
 CI runs the compatibility check on every pull request and nightly, never on a
-push to `main`. `compatibility.json` declares this repository to it as a
+push to `main`, where each job shows its own result. `compatibility.json` declares this repository to it as a
 runtime: it checks the vocabulary and the adapters out beside this repository,
 picked as any counterpart is, and runs `npm run conformance` on them. The tests
-and the pod build then read those checkouts. The check is two jobs side by side,
-the tests with conformance and the browser, and `compatibility` is the job that
-reports once both have. CI publishes each kit's pod and site,
+and the pod build then read those checkouts. On a pull request the check is the
+jobs side by side that "What a pull request must pass" lists, and `compatibility` is the job that
+reports once they have. CI publishes each kit's pod and site,
 Alex's, Priya's, Martin's and Tamsin's, as an artifact, and on a push to `main` builds the pages from the head of every
 default branch and deploys them.
 
