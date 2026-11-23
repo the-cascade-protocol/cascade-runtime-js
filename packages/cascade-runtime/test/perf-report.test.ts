@@ -720,6 +720,30 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
     });
   });
 
+  describe("given the lifetime record of a Synthea patient, whose Bundle names its entries urn:uuid:, imported as a hospital's pull is", () => {
+    it("writes a handful of files for one entry more, where a record named from the document is named again whole", async () => {
+      const data = await loadDataset(LARGE);
+      const some = {
+        ...(data.bundle as { entry: object[] }),
+        entry: (data.bundle as { entry: object[] }).entry.slice(0, 300),
+      };
+      const pod = await openPod();
+      try {
+        await importedAsTheApp(pod, pullOf(data, some));
+        const more = await importedAsTheApp(
+          pod,
+          pullOf(data, oneMoreBundle(some).bundle),
+        );
+        assert.ok(
+          more.wrote.length <= 12,
+          `one entry more wrote ${more.wrote.length} files`,
+        );
+      } finally {
+        await pod.close();
+      }
+    });
+  });
+
   describe("given a record to load as plainly as SQL can", () => {
     const entry = (resource: object) => ({ resource });
     const gz = async (bundle: object): Promise<string> => {
