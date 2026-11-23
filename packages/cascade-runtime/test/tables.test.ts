@@ -23,6 +23,7 @@ import {
   withTables,
 } from "@cascade-runtime/runtime";
 import {
+  archivedFiles,
   checkouts,
   type Components,
   findRoot,
@@ -2504,7 +2505,7 @@ describe("Opening a pod with newer reference tables · openPod(), pod.opened, po
         const kept = (tables: readonly string[]) =>
           keptPod(
             { ...parts, tables: withCurrent(tables) },
-            new FolderFiles(midway),
+            archivedFiles(new FolderFiles(midway), parts.layout),
             new Answers(answers, "test"),
           );
         readUnder = await (await kept(atGate))?.rows(QUESTION);

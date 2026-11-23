@@ -19,6 +19,7 @@ import {
   FolderFiles,
   readConfig,
   resolveVocabulary,
+  unpack,
 } from "@cascade-runtime/runtime/node";
 import {
   findingName,
@@ -602,9 +603,11 @@ describe("Recording a write a model proposed in a pod's files · podReads().writ
       retraction: retraction.id!,
     };
     await reads.close();
-    for (const name of await readdir(join(folder, "p"), { recursive: true }))
+    const loose = join(folder, "p-unpacked");
+    await unpack(join(folder, "p"), loose, (await resolved()).layout);
+    for (const name of await readdir(loose, { recursive: true }))
       if (name.endsWith(".ttl"))
-        files.set(name, await readFile(join(folder, "p", name), "utf8"));
+        files.set(name, await readFile(join(loose, name), "utf8"));
   });
 
   let ids: { entry: string; judgment: string; retraction: string };
@@ -614,11 +617,9 @@ describe("Recording a write a model proposed in a pod's files · podReads().writ
 
   after(() => rm(folder, { recursive: true, force: true, maxRetries: 5 }));
 
-  /** The files of the pod now: the same as the snapshot unless something was written. */
+  /** The files of the pod's folder now, its archives among them: the same as the snapshot unless something was written. */
   const filesNow = async () =>
-    (await readdir(join(folder, "p"), { recursive: true }))
-      .filter((name) => name.endsWith(".ttl"))
-      .sort();
+    (await readdir(join(folder, "p"), { recursive: true })).sort();
 
   /** What the check says of `proposal`, and what a write of it answers, over a fresh read of the pod; nothing is written. */
   async function refusedBy(proposal: Proposal) {

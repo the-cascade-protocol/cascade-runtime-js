@@ -15,6 +15,8 @@ const PIM = "http://www.w3.org/ns/pim/space#";
 const PRECEDENCE = [`${PROV}invalidated`, `${PROV}used`];
 export const SYNC = `${CASCADE}SyncFromAnotherWriter`;
 const ZIP = "https://www.iana.org/assignments/media-types/application/zip";
+/** An archive's name in its folder (N9): the SHA-256 of its bytes in lowercase hex, adding `.zip`. */
+export const ARCHIVE_NAME = /^[0-9a-f]{64}\.zip$/;
 /** A file stem N9 gives: a UUID, or a SHA-256 in lower-case hex. */
 export const FILE_STEM =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64})$/;
@@ -37,6 +39,8 @@ export class Placement {
     readonly holdsRecords: boolean = false,
     /** The media type of the archives of the pod's files this folder holds (cascade:holdsFilesInArchivesOfMediaType), by its IANA IRI. */
     readonly archivesOfMediaType?: string,
+    /** Whether this folder holds the files that say what a runtime must be able to do to read the pod (cascade:holdsRequirementsForReadingAPod). */
+    readonly holdsRequirements: boolean = false,
   ) {}
 
   /** The path of the file holding the thing named `name`: this placement's file, or one in `folder` or its own. */
@@ -65,6 +69,8 @@ export class Layout {
   readonly actFolders: readonly string[];
   /** The folder of the archives that hold the pod's files (X1), always ZIP; undefined when the layout gives none. */
   readonly archivesFolder: string | undefined;
+  /** The folder of the files that say what reading the pod requires (O4), outside every snapshot's set; undefined when the layout gives none. */
+  readonly requirementsFolder: string | undefined;
 
   private constructor(turtle: string, placements: readonly Placement[]) {
     this.turtle = turtle;
@@ -100,6 +106,17 @@ export class Layout {
         `${LAYOUT_FILE} gives archives this runtime cannot read: one folder of ${ZIP} is all it reads`,
       );
     this.archivesFolder = held?.folder;
+    const requirements = placements.filter(
+      ({ holdsRequirements }) => holdsRequirements,
+    );
+    if (
+      requirements.length > 1 ||
+      (requirements.length === 1 && requirements[0]?.folder === undefined)
+    )
+      throw new Error(
+        `${LAYOUT_FILE} gives requirements one folder or none, and no file`,
+      );
+    this.requirementsFolder = requirements[0]?.folder;
   }
 
   /** The layout of the Turtle placed as `read` placed it, such as its placements read back from JSON: no store is needed. */
@@ -121,6 +138,7 @@ export class Layout {
             placed.writtenAlways,
             placed.holdsRecords,
             placed.archivesOfMediaType,
+            placed.holdsRequirements,
           ),
       ),
     );
@@ -137,7 +155,7 @@ export class Layout {
       PREFIX cascade: <${CASCADE}>
       PREFIX solid: <${SOLID}>
       PREFIX dct: <${DCT}>
-      SELECT ?placement ?kind ?file ?folder ?filedWith ?forSubjectsOf ?fanOut ?writtenBy ?title ?storesBytes ?writtenAlways ?holdsRecords ?archives WHERE {
+      SELECT ?placement ?kind ?file ?folder ?filedWith ?forSubjectsOf ?fanOut ?writtenBy ?title ?storesBytes ?writtenAlways ?holdsRecords ?archives ?requirements WHERE {
         ?placement a cascade:Placement .
         OPTIONAL { ?placement solid:forClass ?kind } OPTIONAL { ?placement solid:instance ?file }
         OPTIONAL { ?placement solid:instanceContainer ?folder } OPTIONAL { ?placement cascade:filedWith ?filedWith }
@@ -146,6 +164,7 @@ export class Layout {
         OPTIONAL { ?placement cascade:storesBytes ?storesBytes } OPTIONAL { ?placement cascade:writtenAlways ?writtenAlways }
         OPTIONAL { ?placement cascade:holdsRecords ?holdsRecords }
         OPTIONAL { ?placement cascade:holdsFilesInArchivesOfMediaType ?archives }
+        OPTIONAL { ?placement cascade:holdsRequirementsForReadingAPod ?requirements }
       }`);
     const seen = new Set<string>();
     const placements = rows.map((row) => {
@@ -177,6 +196,7 @@ export class Layout {
         value("writtenAlways") === "true",
         value("holdsRecords") === "true",
         value("archives"),
+        value("requirements") === "true",
       );
     });
     return new Layout(turtle, placements);
@@ -194,17 +214,30 @@ export class Layout {
    * so is any other file in those folders, such as a `.DS_Store`, `.acl` or `.meta`. The syncs' folder is outside it.
    */
   inSnapshotSet(path: string): boolean {
-    if (path.startsWith(this.viewsFolder)) return false;
+    if (path.startsWith(this.viewsFolder) || this.inRequirements(path))
+      return false;
     if (this.syncsFolder !== undefined && path.startsWith(this.syncsFolder))
       return false;
     return this.#namedInAFolder(path);
   }
 
-  /** Whether the layout uses the path: a file it gives by itself, or one named as N9 names a file in a folder it gives. */
+  /** Whether the path is in the requirements' folder: a requirement's file (O4), which is no file of the pod. */
+  inRequirements(path: string): boolean {
+    return (
+      this.requirementsFolder !== undefined &&
+      path.startsWith(this.requirementsFolder)
+    );
+  }
+
+  /**
+   * Whether the layout uses the path: a file it gives by itself, or one named as N9 names a file in a folder it gives,
+   * a requirement's file (O4) aside, which a host keeps unsealed.
+   */
   uses(path: string): boolean {
     return (
-      this.placements.some(({ file }) => file === path) ||
-      this.#namedInAFolder(path)
+      !this.inRequirements(path) &&
+      (this.placements.some(({ file }) => file === path) ||
+        this.#namedInAFolder(path))
     );
   }
 
@@ -387,6 +420,7 @@ export class Layout {
   loads(path: string): boolean {
     return (
       this.isRdf(path) &&
+      !this.inRequirements(path) &&
       !path.slice(path.lastIndexOf("/") + 1).startsWith("._") &&
       (path.endsWith(".ttl") ||
         this.placements.some(({ file }) => file === path))

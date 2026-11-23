@@ -1,18 +1,6 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
-
-/** Every file under `folder`, as paths relative to it with `/`, in name order. */
-async function filesUnder(folder: string, at = folder): Promise<string[]> {
-  const found: string[] = [];
-  for (const entry of await readdir(at, { withFileTypes: true }))
-    found.push(
-      ...(entry.isDirectory()
-        ? await filesUnder(folder, join(at, entry.name))
-        : [relative(folder, join(at, entry.name)).replaceAll("\\", "/")]),
-    );
-  return found.sort();
-}
+import { archivedFiles, FolderFiles } from "@cascade-runtime/runtime/node";
+import { resolved } from "../src/node/resolved.js";
 
 /** The label of a blank node as the store gives it: up to 32 hex digits (a leading zero is dropped), drawn at random on every run. */
 const BLANK = /_:[0-9a-f]{16,32}\b/g;
@@ -29,7 +17,8 @@ function masked(text: string): string {
 }
 
 /**
- * The sha256 of what a plain pod's folder holds: each file's path and content, in name order, so two folders have the
+ * The sha256 of what a plain pod's folder holds: each file's path and content, in name order, wherever the folder keeps it,
+ * at its own path or in an archive (X1), so two folders have the
  * same fingerprint only when they hold the same files with the same statements, save that the labels of blank nodes
  * (which the judgments' provenance has) are masked (see `masked`). An encrypted pod's files are sealed with a random
  * key and nonces, so no two runs of it have the same bytes: take the fingerprint of a plain pod of the same record.
@@ -44,9 +33,10 @@ export async function folderFingerprint(
   folder: string,
 ): Promise<{ sha256: string; files: number }> {
   const hash = createHash("sha256");
-  const files = await filesUnder(folder);
+  const pod = archivedFiles(new FolderFiles(folder), (await resolved()).layout);
+  const files = await pod.list("");
   for (const path of files) {
-    const bytes = await readFile(join(folder, path));
+    const bytes = Buffer.from((await pod.read(path)) ?? new Uint8Array());
     const content = /\.(ttl|nt|nq|trig)$/.test(path)
       ? masked(bytes.toString("utf8"))
       : bytes;

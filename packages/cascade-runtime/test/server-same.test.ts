@@ -4,8 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { KeptBuild, type Rebuilding } from "@cascade-runtime/runtime";
 import {
+  type Files,
+  KeptBuild,
+  type Rebuilding,
+} from "@cascade-runtime/runtime";
+import {
+  archivedFiles,
   FolderFiles,
   findRoot,
   localVocabulary,
@@ -188,8 +193,21 @@ describe("Keeping an open pod's answers current · pod.ask()", () => {
         return row.record;
       };
 
+      /** The pod's files as a reader opening them at each call takes them, for the pod writes archives this test's reads must see. */
+      const freshArchives: Files = {
+        iri: new FolderFiles(folder).iri,
+        read: (path) =>
+          archivedFiles(new FolderFiles(folder), parts.layout).read(path),
+        list: (path) =>
+          archivedFiles(new FolderFiles(folder), parts.layout).list(path),
+        write: (path, bytes) =>
+          archivedFiles(new FolderFiles(folder), parts.layout).write(
+            path,
+            bytes,
+          ),
+      };
       const rebuilding: Rebuilding = {
-        pod: new FolderFiles(folder),
+        pod: freshArchives,
         layout: parts.layout,
         address: pod.address,
         newStore: parts.newStore,

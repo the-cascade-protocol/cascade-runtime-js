@@ -315,7 +315,7 @@ describe("Reading a pod's files from archives · ArchivedFiles, archivedFiles()"
       const path = await archived(host, archive);
       const files = new ArchivedFiles(host, layout);
       await assert.rejects(
-        files.read(CARD),
+        files.list(""),
         (error: unknown) =>
           error instanceof Refusal &&
           error.message.includes(path) &&

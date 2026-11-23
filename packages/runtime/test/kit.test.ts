@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import { MemoryFiles } from "../src/files.js";
+import { StepWrites } from "../src/pod.js";
 import {
   podAddressesIn,
+  requirementFaults,
   snapshotFaults,
   usedByNoActivity,
 } from "../src/kit.js";
@@ -10,8 +13,8 @@ import { OxigraphStore } from "../src/oxigraph-store.js";
 import { Shapes } from "../src/shapes.js";
 import { archivedFiles } from "../src/archives.js";
 import { cleosReplay, copied } from "./cleo.js";
-import { vocabulary } from "./vocabulary.js";
-import { packed } from "./zip.js";
+import { layout as vocabularyLayout, vocabulary } from "./vocabulary.js";
+import { archived, packed, zipOf } from "./zip.js";
 
 const PROV = "http://www.w3.org/ns/prov#";
 const RDF_TYPE = iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -66,6 +69,70 @@ describe("Checking a replayed kit · kitChecks(), shapeFaults(), snapshotFaults(
           used("https://ns.cascadeprotocol.org/cascade#MatcherRun"),
         ),
         [],
+      );
+    });
+  });
+
+  /** Check 5 holds a pod that holds an archive to the requirement's file O4 names. */
+  describe("requirementFaults(pod, layout)", () => {
+    const marker =
+      "format/4c0299bfcb615af1d3456fb1755dea6e0229b4852c7890bae85f0328c453a95d.ttl";
+    const line =
+      "<../> <http://purl.org/dc/terms/requires> <https://ns.cascadeprotocol.org/cascade#ReadingFilesHeldInArchives> .\n";
+
+    it("reports an archive with no requirement's file or one holding other bytes, and passes the file O4 gives or a pod with no archive", async () => {
+      const layout = await vocabularyLayout();
+      const host = new MemoryFiles("https://pod.example/");
+      assert.deepEqual(await requirementFaults(host, layout), []);
+      await archived(
+        host,
+        zipOf([
+          {
+            path: "subject/aa/aa000000-0000-4000-8000-000000000001.ttl",
+            bytes: bytes("<#s> a <#Subject> .\n"),
+          },
+        ]),
+      );
+      assert.match((await requirementFaults(host, layout))[0] ?? "", /missing/);
+      await host.write(marker, bytes("<../> a <#Other> .\n"));
+      assert.match(
+        (await requirementFaults(host, layout))[0] ?? "",
+        /not what O4 gives/,
+      );
+      await host.write(marker, bytes(line));
+      assert.deepEqual(await requirementFaults(host, layout), []);
+    });
+
+    it("reports the requirement's file taken from, or changed in, a pod a step wrote into an archive, read from the host that holds the archive", async () => {
+      const layout = await vocabularyLayout();
+      const host = new MemoryFiles("https://pod.example/");
+      const act =
+        "provenance/imports/dd/dd000000-0000-4000-8000-000000000004.ttl";
+      const step = new StepWrites();
+      step.add(
+        "records/conditions/aa/aa000000-0000-4000-8000-000000000001.ttl",
+        bytes("<#a> a <#Condition> .\n"),
+      );
+      step.act({ name: `https://pod.example/${act}`, path: act, triples: [] });
+      await step.commit(archivedFiles(host, layout));
+      assert.deepEqual(await requirementFaults(host, layout), []);
+      assert.match(
+        (
+          await requirementFaults(
+            await copied(host, { [marker]: undefined }),
+            layout,
+          )
+        )[0] ?? "",
+        /missing, in a pod that holds 1 archive/,
+      );
+      assert.match(
+        (
+          await requirementFaults(
+            await copied(host, { [marker]: bytes("<../> a <#Other> .\n") }),
+            layout,
+          )
+        )[0] ?? "",
+        /not what O4 gives/,
       );
     });
   });

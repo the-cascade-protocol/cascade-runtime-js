@@ -35,6 +35,7 @@ import {
   resolve,
   resolveVocabulary,
   siblingsOf,
+  archivedFiles,
 } from "@cascade-runtime/runtime/node";
 import type * as Published from "cascade-runtime/published";
 import { explorerArguments } from "../hub/explorer-arguments.js";
@@ -193,7 +194,7 @@ async function writeSite(
     vocabulary: vocabulary.files,
     layout: vocabulary.layout,
     build: vocabulary.build,
-    pod,
+    pod: archivedFiles(pod, vocabulary.layout, () => new OxigraphStore()),
     lens: lens ?? vocabulary.config.lens,
     defaultLens: vocabulary.config.lens,
     newStore: () => new OxigraphStore(),
@@ -714,7 +715,7 @@ async function ask(args: string[]): Promise<number> {
     );
   }
   const { store } = await podDataset(
-    pod,
+    archivedFiles(pod, vocabulary.layout, () => new OxigraphStore()),
     vocabulary.layout,
     vocabulary.build,
     values.lens ?? vocabulary.config.lens,

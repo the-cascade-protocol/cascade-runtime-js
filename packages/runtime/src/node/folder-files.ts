@@ -22,7 +22,7 @@ import {
   relative as relativePath,
   sep,
 } from "node:path";
-import { pid } from "node:process";
+import { pid, platform } from "node:process";
 import { pathToFileURL } from "node:url";
 import { type Files, relative, sameBytes } from "../files.js";
 import { timedAside } from "../probe.js";
@@ -88,6 +88,36 @@ async function retried<T>(doing: () => Promise<T>): Promise<T> {
 
 const renamedOver = (from: string, to: string): Promise<void> =>
   retried(() => rename(from, to));
+
+/** Writes the file as `writeFile` does, new, and flushes its bytes to storage before closing it. */
+async function writtenAndFlushed(
+  path: string,
+  bytes: Uint8Array,
+  isNew: boolean,
+): Promise<void> {
+  const handle = await open(path, isNew ? "wx" : "w");
+  try {
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Flushes a folder's entries, so a rename in it survives a power cut; Windows opens no folder, and a system that refuses is passed over. */
+async function flushedFolder(folder: string): Promise<void> {
+  if (platform === "win32") return;
+  try {
+    const handle = await open(folder, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    // A file system that cannot flush a folder keeps its names as it keeps them.
+  }
+}
 
 /**
  * The handle each file's ranged reads share, and its size: opened by the first, and closed once a turn of the event loop
@@ -403,7 +433,12 @@ export class FolderFiles implements Files {
   }
 
   write(pathOrIri: string, bytes: Uint8Array): Promise<void> {
-    return this.#again(pathOrIri, () => this.#write(pathOrIri, bytes));
+    return this.#again(pathOrIri, () => this.#write(pathOrIri, bytes, false));
+  }
+
+  /** As `write`, the bytes flushed to storage before the rename, and the folder after it where the system lets one be. */
+  writeFlushed(pathOrIri: string, bytes: Uint8Array): Promise<void> {
+    return this.#again(pathOrIri, () => this.#write(pathOrIri, bytes, true));
   }
 
   /**
@@ -433,7 +468,11 @@ export class FolderFiles implements Files {
     if (failure !== undefined) throw failure.error;
   }
 
-  async #write(pathOrIri: string, bytes: Uint8Array): Promise<void> {
+  async #write(
+    pathOrIri: string,
+    bytes: Uint8Array,
+    flush: boolean,
+  ): Promise<void> {
     const local = this.#local(pathOrIri);
     const at = await this.#writable(pathOrIri);
     const writing = join(
@@ -442,7 +481,9 @@ export class FolderFiles implements Files {
     );
     try {
       await timedAside("files.write.file", () =>
-        writeFile(writing, bytes, this.#refuse ? { flag: "wx" } : {}),
+        flush
+          ? writtenAndFlushed(writing, bytes, this.#refuse)
+          : writeFile(writing, bytes, this.#refuse ? { flag: "wx" } : {}),
       );
       const state = await enter(local, () => false, "renames");
       try {
@@ -453,6 +494,7 @@ export class FolderFiles implements Files {
         state.renames -= 1;
         settled(local, state);
       }
+      if (flush) await flushedFolder(dirname(at));
     } catch (error) {
       await rm(writing, { force: true }).catch(() => undefined);
       throw error;

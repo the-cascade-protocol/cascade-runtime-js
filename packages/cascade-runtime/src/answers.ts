@@ -1,7 +1,11 @@
 import { documentName, type Files } from "@cascade-runtime/runtime";
 import type { Row } from "./pod.js";
 
-/** What a pod is, as `pod.json` holds it beside the pod's answers. */
+/**
+ * What a pod is, as `pod.json` holds it beside the pod's answers. A pod's file holds the subject as `filedSubject`, never
+ * as `subject`: a runtime from before archives, which reads `subject` to open a pod without looking for the subject's
+ * file, would otherwise open a pod whose subject's file is in an archive, seeing none of what is in them.
+ */
 export interface Described {
   readonly address: string;
   readonly subject: string;
@@ -44,6 +48,27 @@ export function answerKey(computed: Computed): Promise<string> {
   return documentName(new TextEncoder().encode(JSON.stringify(computed)));
 }
 
+/** What the JSON says a pod is, with the subject given as `filedSubject` or, as a published pod and a pod written before archives give it, `subject`. */
+export function describedBy(read: unknown): Described | undefined {
+  const found = read as
+    (Partial<Described> & { readonly filedSubject?: unknown }) | undefined;
+  const subject = found?.filedSubject ?? found?.subject;
+  return typeof found?.address === "string" &&
+    typeof subject === "string" &&
+    typeof found.title === "string"
+    ? {
+        address: found.address,
+        subject,
+        title: found.title,
+        titled: found.titled !== false,
+        ...(Array.isArray(found.tables) &&
+        found.tables.every((version) => typeof version === "string")
+          ? { tables: found.tables as readonly string[] }
+          : {}),
+      }
+    : undefined;
+}
+
 async function json(files: Files, path: string): Promise<unknown> {
   const bytes = await files.read(path);
   if (bytes === undefined) return undefined;
@@ -70,6 +95,8 @@ export class Answers {
   readonly #files: Files;
   #kept: Promise<Kept> | undefined;
   #described: Promise<Described | undefined> | undefined;
+  /** Whether the file read gives the subject as `subject`, which `describe` writes again as `filedSubject`. */
+  #legacy = false;
 
   constructor(
     files: Files,
@@ -81,36 +108,27 @@ export class Answers {
   /** What `pod.json` says the pod is, if it says. */
   described(): Promise<Described | undefined> {
     this.#described ??= json(this.#files, DESCRIBED).then((read) => {
-      const found = read as Partial<Described> | undefined;
-      return typeof found?.address === "string" &&
-        typeof found.subject === "string" &&
-        typeof found.title === "string"
-        ? {
-            address: found.address,
-            subject: found.subject,
-            title: found.title,
-            titled: found.titled !== false,
-            ...(Array.isArray(found.tables) &&
-            found.tables.every((version) => typeof version === "string")
-              ? { tables: found.tables as readonly string[] }
-              : {}),
-          }
-        : undefined;
+      this.#legacy =
+        (read as { subject?: unknown } | undefined)?.subject !== undefined;
+      return describedBy(read);
     });
     return this.#described;
   }
 
-  /** Writes `pod.json`, unless it says this already. */
+  /** Writes `pod.json`, unless it says this already in the shape a pod's is written in now. */
   async describe(described: Described): Promise<void> {
     const found = await this.described();
     if (
+      this.#legacy ||
       found?.address !== described.address ||
       found.subject !== described.subject ||
       found.title !== described.title ||
       found.titled !== described.titled
     ) {
       this.#described = Promise.resolve(described);
-      await written(this.#files, DESCRIBED, described);
+      this.#legacy = false;
+      const { subject, ...rest } = described;
+      await written(this.#files, DESCRIBED, { ...rest, filedSubject: subject });
     }
   }
 

@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
@@ -49,8 +50,10 @@ import {
   checkouts,
   findRoot,
   FolderFiles,
+  archivedFiles,
   headerIn,
   localVocabulary,
+  unpack,
 } from "@cascade-runtime/runtime/node";
 import { probing } from "@cascade-runtime/runtime/probe";
 import { pullFiles } from "../src/connect/index.js";
@@ -404,7 +407,7 @@ async function parentsOf(
   const done = await of.enter(await entryFor(of, session), { match: false });
   assert.equal(done.refused, undefined);
   const triples = await new OxigraphStore().parse(
-    await readFile(join(at, ...(done.wrote.at(-1) ?? "").split("/"))),
+    (await podAt(at).read(done.wrote.at(-1) ?? "")) ?? new Uint8Array(),
     of.address,
   );
   const values = (local: string) =>
@@ -2113,9 +2116,8 @@ describe("Recording the owner's judgment · pod.judge()", () => {
             named,
           ),
         );
-        const text = await readFile(
-          join(pods, "judged-from", ...(filed.wrote[0] ?? "").split("/")),
-          "utf8",
+        const text = new TextDecoder().decode(
+          await podAt(join(pods, "judged-from")).read(filed.wrote[0] ?? ""),
         );
         const again = await into.pod.judge(text);
         const read = (of: Pod) =>
@@ -2553,6 +2555,9 @@ describe("Opening a pod again · openPod()", () => {
 
     it("builds again when a file of the snapshot set was removed from the pod", async () => {
       const at = await copiedWithBuild(first, "set-file-removed");
+      await unpack(at, `${at}-loose`, kept.layout);
+      await rm(at, { recursive: true });
+      await rename(`${at}-loose`, at);
       const removed = (await filesIn(at))
         .map((file) => relative(at, file).split(sep).join("/"))
         .find(
@@ -4108,6 +4113,33 @@ async function logicalIn(at: string, derive: DeriveKey): Promise<string[]> {
   return new EncryptedFiles(files, key, { index }).list("");
 }
 
+/** The pod's files in the folder as a reader takes them, each at its own path or in an archive. */
+function podAt(at: string): Files {
+  return archivedFiles(new FolderFiles(at), kept.layout);
+}
+
+/** A copy of the pod in the folder with every file at its own path, and what is kept beside it but its kept answers. */
+async function looseCopy(from: string, name: string): Promise<string> {
+  const at = join(pods, name);
+  await unpack(from, at, kept.layout);
+  await cp(answersBeside(from).folder, answersBeside(at).folder, {
+    recursive: true,
+  });
+  await rm(join(answersBeside(at).folder, "answers.json"), { force: true });
+  return at;
+}
+
+/** The parts of a runtime from before archives: its folder is the host's own files, each at its path, so it writes none. */
+function looseParts(): Parts {
+  return {
+    ...kept,
+    folder: (path, iri) => ({
+      files: new FolderFiles(path, iri, { refuseLinks: true }),
+      name: basename(path),
+    }),
+  };
+}
+
 /** A copy of the folder, its sealed answers beside it left behind. */
 async function copied(from: string, name: string): Promise<string> {
   const at = join(pods, name);
@@ -4145,7 +4177,7 @@ async function sealedCopy(
   to: string,
   derive: DeriveKey,
 ): Promise<void> {
-  const plain = new FolderFiles(from);
+  const plain = podAt(from);
   const files = new FolderFiles(to);
   const made = await newHeader(WORDS, derive);
   assert.ok(await madeNewPod(files, made));
@@ -4173,12 +4205,17 @@ describe("Opening a pod whose files are held in archives · openPod()", () => {
     kept.layout.inSnapshotSet(path) && !kept.layout.inStoredBytes(path);
 
   it("opens with every file an archive may hold in one archive as the same pod, answering as before; a torn archive fails the open, naming it", async () => {
-    const at = await copied((await alexPod()).folder, "packed-alex");
+    const at = await looseCopy((await alexPod()).folder, "packed-alex");
     const bare: { -readonly [K in keyof Parts]: Parts[K] } = { ...kept };
     delete bare.answers;
     delete bare.builtBeside;
-    const asked = async () => {
-      const pod = await openPodWith(bare, at);
+    const looseBare: { -readonly [K in keyof Parts]: Parts[K] } = {
+      ...looseParts(),
+    };
+    delete looseBare.answers;
+    delete looseBare.builtBeside;
+    const asked = async (parts: Parts = bare) => {
+      const pod = await openPodWith(parts, at);
       try {
         return {
           who: [pod.address, pod.subject],
@@ -4189,7 +4226,7 @@ describe("Opening a pod whose files are held in archives · openPod()", () => {
         await pod.close();
       }
     };
-    const loose = await asked();
+    const loose = await asked(looseBare);
     const files = new FolderFiles(at);
     const archive = await packedFolder(
       files,
@@ -4211,9 +4248,9 @@ describe("Opening a pod whose files are held in archives · openPod()", () => {
   });
 
   it("opens a packed pod by the app's default path, its answers beside it, as the pod it was loose; a loose twin of an archived file with other bytes fails the first question, naming it", async () => {
-    const at = await copied((await alexPod()).folder, "packed-alex-default");
-    const asked = async () => {
-      const pod = await openPodWith(kept, at);
+    const at = await looseCopy((await alexPod()).folder, "packed-alex-default");
+    const asked = async (parts: Parts = kept) => {
+      const pod = await openPodWith(parts, at);
       try {
         return {
           who: [pod.address, pod.subject],
@@ -4224,7 +4261,7 @@ describe("Opening a pod whose files are held in archives · openPod()", () => {
         await pod.close();
       }
     };
-    const loose = await asked();
+    const loose = await asked(looseParts());
     const files = new FolderFiles(at);
     const held = (await files.list("")).filter(archivable);
     await packedFolder(files, held);
@@ -4287,6 +4324,140 @@ describe("Opening a pod whose files are held in archives · openPod()", () => {
     } finally {
       await pod.close();
     }
+  });
+});
+
+/**
+ * A pod opened on a folder keeps what its steps write that never changes in archives, one for each step, in the folder
+ * the layout gives them (X1, W1): the first archive in a pod holds its subject's file, so that a runtime that cannot
+ * read archives, which would see only the files at their own paths, opens no part of it. A pod of any other kind of
+ * host, or a sealed one, keeps its files as it did.
+ */
+describe("Writing a pod's files into archives · openPod()", () => {
+  const GRAPHS = {
+    query:
+      "SELECT (COUNT(DISTINCT ?g) AS ?graphs) WHERE { GRAPH ?g { ?s ?p ?o } }",
+  };
+  /**
+   * The parts of a runtime from before archives: its folder is the host's own files, each read and written at its path,
+   * and the answers' `pod.json` is read for the `subject` it gave a pod and no other key.
+   */
+  const beforeArchives = (): Parts => ({
+    ...looseParts(),
+    answers: {
+      runtime: "test",
+      at: (folder) => {
+        const beside = answersBeside(folder);
+        return {
+          iri: beside.iri,
+          list: (path) => beside.list(path),
+          write: (path, bytes) => beside.write(path, bytes),
+          read: async (path) => {
+            const bytes = await beside.read(path);
+            if (path !== "pod.json" || bytes === undefined) return bytes;
+            const older = JSON.parse(new TextDecoder().decode(bytes)) as Record<
+              string,
+              unknown
+            >;
+            delete older.filedSubject;
+            return new TextEncoder().encode(JSON.stringify(older));
+          },
+        };
+      },
+    },
+  });
+  const archivesIn = async (at: string): Promise<string[]> =>
+    (await readdir(join(at, "archives")).catch(() => [])).sort();
+  const asked = async (parts: Parts, at: string) => {
+    const pod = await openPodWith(parts, at);
+    try {
+      return {
+        who: [pod.address, pod.subject],
+        rows: await pod.ask(QUESTION),
+        graphs: await pod.ask(GRAPHS),
+      };
+    } finally {
+      await pod.close();
+    }
+  };
+
+  it("keeps a fresh pod's files that never change in archives named by their bytes, the requirement's file beside them, and asks as the pod unpacked loose; a runtime from before archives refuses it", async () => {
+    const at = (await alexPod()).folder;
+    const archives = await archivesIn(at);
+    assert.ok(
+      archives.length >= 4,
+      `the pod's creation and its three imports, each one archive, not ${archives.length}`,
+    );
+    for (const archive of archives)
+      assert.equal(
+        archive,
+        `${createHash("sha256")
+          .update(await readFile(join(at, "archives", archive)))
+          .digest("hex")}.zip`,
+      );
+    const loose = (await filesIn(at))
+      .map((path) => relative(at, path).split(sep).join("/"))
+      .filter((path) => !path.startsWith("archives/"));
+    assert.deepEqual(
+      loose.filter(
+        (path) =>
+          kept.layout.inSnapshotSet(path) && !kept.layout.inStoredBytes(path),
+      ),
+      [],
+      "no file an archive may hold is at its own path",
+    );
+    assert.ok(
+      loose.includes(
+        "format/4c0299bfcb615af1d3456fb1755dea6e0229b4852c7890bae85f0328c453a95d.ttl",
+      ),
+    );
+    const described = JSON.parse(
+      await readFile(join(answersBeside(at).folder, "pod.json"), "utf8"),
+    ) as Record<string, unknown>;
+    assert.equal(
+      "subject" in described,
+      false,
+      "pod.json no longer lets a runtime from before archives skip the search for the subject's file",
+    );
+
+    const unpacked = join(pods, "unpacked-alex");
+    await unpack(at, unpacked, kept.layout);
+    await cp(answersBeside(at).folder, answersBeside(unpacked).folder, {
+      recursive: true,
+    });
+    assert.deepEqual(await asked(kept, unpacked), await asked(kept, at));
+
+    await assert.rejects(openPodWith(beforeArchives(), at));
+  });
+
+  it("packs a pod made loose when it is next written, its subject's file with the first archive, so a runtime from before archives refuses it then and not before", async () => {
+    const at = join(pods, "loose-then-packed");
+    const old = beforeArchives();
+    const first = await openPodWith(old, at);
+    await first.import(exported("x-e2"), { match: false });
+    await first.close();
+    assert.deepEqual(await archivesIn(at), [], "written loose");
+    const before = await asked(old, at);
+
+    const pod = await openPodWith(kept, at);
+    await pod.import(exported("x-e4"), { match: false });
+    await pod.close();
+    const archives = await archivesIn(at);
+    assert.ok(archives.length >= 1);
+    assert.deepEqual(
+      await filesIn(join(at, "subject")).catch(() => []),
+      [],
+      "the subject's file is in the archive, not at its path",
+    );
+    assert.equal((await asked(kept, at)).who[0], before.who[0]);
+    await assert.rejects(openPodWith(old, at));
+  });
+
+  it("writes none of an encrypted pod's files into an archive, and no requirement's file", async () => {
+    const { folder } = await sealedAlexPod();
+    const names = await readdir(folder);
+    assert.ok(!names.includes("archives"), names.join());
+    assert.ok(!names.includes("format"), names.join());
   });
 });
 
@@ -4437,7 +4608,7 @@ describe("Publishing a pod for a browser · answersToPublish(), samplesToPublish
 
   /** The pod as a page reads it: its files and the published answers kept under the runtime. */
   const reading = (runtime: string) =>
-    keptPod(pageParts(), new FolderFiles(folder), new Answers(files, runtime));
+    keptPod(pageParts(), podAt(folder), new Answers(files, runtime));
 
   /** The app's tables but for `about`, which fails: a lookup answered from a file does not ask them. */
   const unread = () =>
@@ -4453,7 +4624,7 @@ describe("Publishing a pod for a browser · answersToPublish(), samplesToPublish
   before(async () => {
     alex = await readingAlex();
     folder = (await alexPod()).folder;
-    const own = new FolderFiles(folder);
+    const own = podAt(folder);
     const podFiles = new Map<string, Uint8Array>();
     for (const path of await own.list("")) {
       const bytes = await own.read(path);

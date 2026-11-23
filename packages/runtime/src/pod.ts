@@ -170,14 +170,16 @@ export class StepWrites {
   }
 
   /**
-   * One `writeAll` of every file where the pod has no `writeMany`, which a pod that takes a batch whole, or none, is
-   * given. Else the files of a wave in a row go to `writeMany`, and the rest, in a row, to `writeAll`, one run
-   * after another in the order given.
+   * One `writeStep` of every file where the pod keeps a step's files together (a host that keeps archives), which
+   * orders them as W1 says. Else one `writeAll` of every file where the pod has no `writeMany`, which a pod that takes a
+   * batch whole, or none, is given. Else the files of a wave in a row go to `writeMany`, and the rest, in a row, to
+   * `writeAll`, one run after another in the order given.
    */
   async #write(
     pod: Files,
     fresh: readonly (readonly [string, Uint8Array])[],
   ): Promise<void> {
+    if (pod.writeStep !== undefined) return pod.writeStep(fresh);
     if (pod.writeMany === undefined) return writeAll(pod, fresh);
     let run: (readonly [string, Uint8Array])[] = [];
     let wave: number | undefined;
