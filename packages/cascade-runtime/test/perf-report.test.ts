@@ -1422,7 +1422,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       });
       assert.match(
         differs,
-        /The pods differ \(synthea-10y: main 19,636 statements, this pull request 29,829\); times are not the same work\./,
+        /The pods differ \(synthea-10y: main 19,636 statements, this pull request 29,829 statements\); times are not the same work\./,
       );
       const same = compare.comparison(holding(pull, 19_636), {
         sameJob: holding(main, 19_636),

@@ -170,6 +170,34 @@ export function bridgeLine(main, pull, subject = "this pull request", how) {
   return `The two runs read different Bridge builds: main's run read ${short(one)} (the newest build of its default branch, as a push to main reads it); ${subject}'s read ${short(other)} (${reason}). The change below includes the Bridge's.`;
 }
 
+/**
+ * The sentence that the two pods differ, with each size's count of statements, where the pod main's run made and the pod this
+ * build's made hold a different number of them (a change to what the pod holds is then a change of the work, not of its speed);
+ * empty where they hold the same or a file has no count.
+ */
+export function podsLine(main, pull, subject = "this pull request") {
+  const counts = (file) =>
+    new Map(
+      (file.results ?? [])
+        .filter((row) => /^stored-.+\/statements\/all$/.test(row.name))
+        .map((row) => [
+          row.name.split("/")[0].slice("stored-".length),
+          row.value,
+        ]),
+    );
+  const was = counts(main);
+  const now = counts(pull);
+  const differ = [...now.keys()]
+    .filter((size) => was.has(size) && was.get(size) !== now.get(size))
+    .map(
+      (size) =>
+        `${size}: main ${was.get(size).toLocaleString("en-US")} statements, ${subject} ${now.get(size).toLocaleString("en-US")} statements`,
+    );
+  return differ.length === 0
+    ? ""
+    : `The pods differ (${differ.join("; ")}); times are not the same work.`;
+}
+
 /** The components other than the runtime and the Bridge that the two files read at different commits, one line each. */
 export function otherComponents(main, pull, subject = "this pull request") {
   const names = new Set([
@@ -880,6 +908,8 @@ export function comparison(
       ),
       "",
     );
+    const pods = podsLine(sameJob, pull, subject);
+    if (pods !== "") out.push(quote(pods), "");
     out.push(
       "Unprobed medians; no threshold, nothing here fails the run.",
       "",
