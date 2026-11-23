@@ -307,9 +307,9 @@ async function scenariosAt(
         questionPageTotal,
       );
     // Every query of the vocabulary on both engines, over a copy of the pod; a sealed pod keeps no database to ask. It is asked once,
-    // by every run, with no probe and no CPU profile: on a real pod of the large size the reference engine takes most of an hour
-    // for the few questions it answers slowly (the first import itself takes about an hour there), so a median of three and a
-    // probed run of it would be hours more, and what each query took is what the page reads, not where inside it the time went.
+    // by every run, with no probe and no CPU profile: on a real pod of the large size, on a laptop, the reference engine took
+    // about 19 minutes for the few questions it answers slowly (a hosted runner has not been measured on it), so a median of three
+    // and a probed run of it would be an hour or more, and what each query took is what the page reads, not where the time went.
     if (wants("each-query") && !encrypted)
       await onCopiesOf(
         "each-query",

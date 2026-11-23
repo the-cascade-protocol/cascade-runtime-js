@@ -29,7 +29,7 @@
     },
     {
       "startsWith": "equal/",
-      "says": "1 when the SQL version of {name} gave the same rows as the reference engine, 0 when it did not."
+      "says": "1 when the SQL version of {name} gave the same rows as the reference engine, 0 when it did not; the note says how the rows differ, or why the SQL version gave none."
     },
     {
       "startsWith": "timeout/",

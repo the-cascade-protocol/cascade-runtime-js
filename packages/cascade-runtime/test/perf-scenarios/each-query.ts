@@ -5,6 +5,7 @@ import {
   type AnswerRow,
   askedRows,
   askedWhole,
+  beforeLabels,
   compared,
   counted,
   type Database,
@@ -19,6 +20,7 @@ import {
   recordsInEntries,
   rqAnswer,
   sqlDatabaseFunctions,
+  sqlParts,
   sqlRows,
   STATEMENTS_SCHEMA,
   Union,
@@ -309,9 +311,6 @@ interface Asked {
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const NOT_COMPARED_LABELS =
-  "labels.sql rewrites the pod's labels, and the pod already holds them, so its rows are not compared with the reference engine's";
-
 /** One query of the vocabulary on both engines. */
 async function oneQuery(asked: Asked): Promise<QueryRun> {
   const { path, rqText, sql, union, db } = asked;
@@ -327,16 +326,26 @@ async function oneQuery(asked: Asked): Promise<QueryRun> {
     rqText.includes("?record") &&
     (sql === undefined || /\basked\b/.test(sql));
   const bound = keyed ? asked.records : [];
+  // The pod already holds the labels labels.rq writes, and it only gives a label to what has none: asked of the pod as it is it
+  // does a different job, and gives no rows, from the one labels.sql does. It is asked of the pod as it was before them.
+  const unlabelled =
+    rq === "labels.rq" && sql !== undefined && sqlParts(sql).size > 0;
   let names: readonly string[] = [];
   let want: AnswerRow[] = [];
   let sparql = 0;
   try {
     for (const record of keyed ? bound : [undefined]) {
-      const started = performance.now();
-      const answer = await timed("each-query.sparql", () =>
-        rqAnswer(union, rqText, record),
-      );
-      sparql += (performance.now() - started) / 1000;
+      const answered = async (over: Union) => {
+        const started = performance.now();
+        const answer = await timed("each-query.sparql", () =>
+          rqAnswer(over, rqText, record),
+        );
+        sparql += (performance.now() - started) / 1000;
+        return answer;
+      };
+      const answer = unlabelled
+        ? await beforeLabels(union, answered)
+        : await answered(union);
       names = answer.names;
       want = want.concat(answer.rows);
     }
@@ -379,24 +388,17 @@ async function oneQuery(asked: Asked): Promise<QueryRun> {
       timedSync("each-query.sql", () => paged(db, sql, QUERY_PAGE, null));
       page = (performance.now() - started) / 1000;
     } catch (error) {
-      return {
-        ...base,
-        sql: sqlSeconds,
-        why: `a page of the .sql fails: ${messageOf(error)}`,
-      };
+      return { ...base, why: `a page of the .sql fails: ${messageOf(error)}` };
     }
   }
-  const comparable = rq !== "labels.rq";
-  const why = !comparable
-    ? NOT_COMPARED_LABELS
-    : keyed
-      ? disagreement(names, want, got, names, construct, rqText, true)
-      : disagreement(names, want, got, columns, construct, rqText, false);
+  const why = keyed
+    ? disagreement(names, want, got, names, construct, rqText, true)
+    : disagreement(names, want, got, columns, construct, rqText, false);
   return {
     ...base,
     sql: sqlSeconds,
     ...(page !== undefined && { page }),
-    ...(comparable && { equal: why === undefined }),
+    equal: why === undefined,
     ...(why !== undefined && { why }),
   };
 }
@@ -506,11 +508,15 @@ export function eachQueryRows(
           `${query.rq}; the first ${QUERY_PAGE} entries`,
         ),
       );
-    if (query.equal !== undefined)
+    // A .sql that gave no answer, or a page of it that failed, is a SQL version that did not give the rows: 0, with why.
+    const answered =
+      query.equal ??
+      (query.hasSql && query.why !== undefined ? false : undefined);
+    if (answered !== undefined)
       rows.push(
         outputRow(
           `${name}/equal/${row}`,
-          query.equal ? 1 : 0,
+          answered ? 1 : 0,
           query.why ?? query.rq,
         ),
       );

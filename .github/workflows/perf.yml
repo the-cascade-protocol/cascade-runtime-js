@@ -320,6 +320,15 @@ jobs:
           CASCADE_BRIDGE_PIN: ${{ steps.main-bridge.outputs.pin }}
         run: |
           set -euo pipefail
+          # A scenario this build has and main's harness has not (a hand-started run naming it) would only make main's run throw "no
+          # scenario ...": main is not measured then, and the comparison falls back as it does for a main that gave no file.
+          scenarios=$(sed -n 's/.*--scenario \([^ ]*\).*/\1/p' <<< "$ARGS")
+          for scenario in ${scenarios//,/ }; do
+            if ! grep -q "\"$scenario\"" packages/cascade-runtime/test/perf-plan.ts; then
+              echo "::notice::main's harness has no scenario $scenario, so main is not measured in this run"
+              exit 0
+            fi
+          done
           unset GITHUB_EVENT_PATH
           export GITHUB_REF_NAME="$MAIN_BRANCH" GITHUB_REF="refs/heads/$MAIN_BRANCH"
           # shellcheck disable=SC2086

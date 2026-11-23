@@ -45,7 +45,6 @@ export * from "./saved-output-bridge.js";
 export * from "./shapes.js";
 export * from "./shown.js";
 export {
-  askedOf,
   askedWhole,
   graphsOfDump,
   loadStatements,
@@ -55,6 +54,7 @@ export {
 } from "./statements.js";
 export {
   askedRows,
+  beforeLabels,
   compared,
   counted,
   finalOrder,

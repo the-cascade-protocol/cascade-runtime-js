@@ -135,7 +135,7 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `sql/*` | The time the pod's database takes to answer `<name>` in SQL. |
 | `page/*` | The time the pod's database takes to give the first page of 20 entries of `<name>`. |
 | `rows/*` | How many rows the reference engine gave for `<name>`, with a fingerprint of them. |
-| `equal/*` | 1 when the SQL version of `<name>` gave the same rows as the reference engine, 0 when it did not. |
+| `equal/*` | 1 when the SQL version of `<name>` gave the same rows as the reference engine, 0 when it did not; the note says how the rows differ, or why the SQL version gave none. |
 | `timeout/*` | The reference engine took longer than its limit of 60 seconds for `<name>`; the value is the limit in seconds. It is not stopped at the limit, so its time and rows are in the rows of the same name. |
 | `not-run/*` | `<name>` was not asked of the pod: the note says why. |
 

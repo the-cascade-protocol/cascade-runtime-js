@@ -1336,7 +1336,7 @@ const lensOf = (path: string | undefined): string | undefined =>
  * What `read` gives of the union as labels.rq reads it, before it is run: without the rdfs:label statements of the file
  * the layout says labels.rq writes, the file's other statements kept. The store is put back after.
  */
-async function beforeLabels<T>(
+export async function beforeLabels<T>(
   union: Union,
   read: (before: Union) => Promise<T>,
 ): Promise<T> {

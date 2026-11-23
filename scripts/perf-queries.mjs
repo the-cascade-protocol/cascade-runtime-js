@@ -15,7 +15,7 @@ export const QUERIES_ROW =
 
 /** What the section is about, for the pages: what is asked, of what, and how the figures are made. */
 export const QUERIES_ABOUT =
-  "Every query of the vocabulary outside the matcher is asked of a copy of the pod a fresh import left. The reference engine answers each from the pod's own statements; a query that has a SQL version is also answered by the pod's database, which holds the same statements, and the rows of the two are compared. A view's or the labels' SQL time includes making the screen the view stands on, which a pod does as it changes. A question about one record is asked of five records chosen by position, and the five times are added up. A derivation has no SQL version yet, so it has the reference engine's time alone. The first import's figures are from its run with the probe on, which slows some work, so they are shares of that run. Counts are exact and times are one reading each, never a median, since every run asks the queries once: the questions the reference engine answers slowly take minutes on the large size.";
+  "Every query of the vocabulary outside the matcher is asked of a copy of the pod a fresh import left. The reference engine answers each from the pod's own statements; a query that has a SQL version is also answered by the pod's database, which holds the same statements, and the rows of the two are compared. The labels are asked of the reference engine over the pod as it was before the labels they write, so that both engines do the same job, and a SQL version that gave other rows or none is left out of the time the SQL versions are said to save. A view's or the labels' SQL time includes making the screen the view stands on, which a pod does as it changes. A question about one record is asked of five records chosen by position, and the five times are added up. A derivation has no SQL version yet, so it has the reference engine's time alone. The first import's figures are from its run with the probe on, which slows some work, so they are shares of that run. Counts are exact and times are one reading each, never a median, since every run asks the queries once: the questions the reference engine answers slowly take minutes on the large size.";
 
 const KINDS = [
   ["question", "Questions"],
@@ -51,6 +51,12 @@ export function queriesKeys(file) {
     ),
   ];
 }
+
+/** How much faster or slower one engine's time is than the other's, in words that name the direction: `17.5 times as fast`. */
+const against = (reference, sql) =>
+  sql <= reference
+    ? `${ratio(reference / sql)} times as fast`
+    : `${ratio(sql / reference)} times as slow`;
 
 const pct = (share) =>
   share > 0 && share < 0.005 ? "<1%" : `${Math.round(share * 100)}%`;
@@ -162,23 +168,51 @@ export function queriesOf(file, key) {
     );
   }
   const withSql = at("count/with-sql") ?? 0;
-  if (withSql > 0 && both.length > 0) {
-    const reference = sum(both, ({ sparql }) => sparql);
-    const sql = sum(both, (one) => one.sql);
-    const differing = both.filter(({ equal }) => equal === 0).length;
+  // The time of the SQL versions is read over the queries whose rows matched the reference engine's: a SQL version that gave other
+  // rows, or none, did other work, and its time says nothing of what SQL saves.
+  const matched = both.filter(({ equal }) => equal === 1);
+  const differing = both.filter(({ equal }) => equal === 0).length;
+  const loose = both.filter(({ equal }) => equal === undefined).length;
+  if (withSql > 0) {
+    const left = [
+      ...(differing > 0
+        ? [
+            `${differing} gave other rows and ${differing === 1 ? "is" : "are"} left out`,
+          ]
+        : []),
+      ...(loose > 0
+        ? [
+            `${loose} ${loose === 1 ? "was" : "were"} not compared and ${loose === 1 ? "is" : "are"} left out`,
+          ]
+        : []),
+    ];
+    const reference = sum(matched, ({ sparql }) => sparql);
+    const sql = sum(matched, (one) => one.sql);
     const speed =
       sql <= reference
-        ? `${ratio(reference / sql)} times as fast, ${pct(1 - sql / reference)} less`
-        : `${ratio(sql / reference)} times as slow, ${pct(sql / reference - 1)} more`;
+        ? `${against(reference, sql)}, ${pct(1 - sql / reference)} less`
+        : `${against(reference, sql)}, ${pct(sql / reference - 1)} more`;
     line(
       "sql",
-      `${withSql} of the ${total} ${total === 1 ? "query" : "queries"} ${withSql === 1 ? "has" : "have"} a SQL version. On this pod they took ${took(reference)} on the reference engine and ${took(sql)} in SQL (${speed})${
-        differing === 0 ? "" : `; ${differing} of them gave other rows`
-      }.`,
+      `${withSql} of the ${total} ${total === 1 ? "query" : "queries"} ${withSql === 1 ? "has" : "have"} a SQL version. ${
+        matched.length === 0
+          ? "None gave rows that matched the reference engine's"
+          : `On the ${plural(matched.length, "query", "queries")} whose rows matched they took ${took(reference)} on the reference engine and ${took(sql)} in SQL (${speed})`
+      }${left.length === 0 ? "" : `; ${left.join("; ")}`}.`,
     );
   }
+  const failed = ran.filter(
+    ({ sql, equal }) => sql === undefined && equal === 0,
+  );
+  if (failed.length > 0)
+    line(
+      "failed",
+      `${failed.length} ${failed.length === 1 ? "query has" : "queries have"} a SQL version that gave no answer: ${failed.map(({ label }) => label).join(", ")}.`,
+    );
   const without = at("count/without-sql") ?? 0;
-  const alone = ran.filter(({ sql }) => sql === undefined);
+  const alone = ran.filter(
+    ({ sql, equal }) => sql === undefined && equal === undefined,
+  );
   if (without > 0)
     line(
       "without",
@@ -195,7 +229,7 @@ export function queriesOf(file, key) {
     .slice(0, 3)
     .map(
       (one) =>
-        `${one.label}: ${plural(one.rows ?? 0, "row")}; SPARQL ${took(one.sparql)}; SQL ${took(one.sql)} (${ratio(one.sparql / one.sql)} times); same rows: ${one.equal === 1 ? "yes" : one.equal === 0 ? "no" : "not compared"}.`,
+        `${one.label}: ${plural(one.rows ?? 0, "row")}; SPARQL ${took(one.sparql)}; SQL ${took(one.sql)} (SQL ${against(one.sparql, one.sql)}); same rows: ${one.equal === 1 ? "yes" : one.equal === 0 ? "no" : "not compared"}.`,
     );
   if (slowest.length > 0) line("slowest", slowest.join(" "));
 
@@ -226,17 +260,18 @@ function queryRow(one) {
       : "";
   if (one.sparql === undefined)
     return `<tr><td${note}>${escaped(one.label)}</td><td class="n" colspan="6">not asked: ${escaped(one.why ?? "")}</td></tr>`;
-  const speed =
-    one.sql === undefined ? "" : `${ratio(one.sparql / one.sql)} times`;
+  const speed = one.sql === undefined ? "" : against(one.sparql, one.sql);
   const same =
     one.sql === undefined
-      ? ""
+      ? one.equal === 0
+        ? "no answer"
+        : ""
       : one.equal === 1
         ? "yes"
         : one.equal === 0
           ? "no"
           : "not compared";
-  return `<tr><td${note}>${escaped(one.label)}</td>${cell(whole(one.rows ?? 0))}${cell(took(one.sparql))}${cell(one.sql === undefined ? "" : took(one.sql))}${cell(speed)}${cell(same)}${cell(one.page === undefined ? "" : took(one.page))}</tr>`;
+  return `<tr><td${note}>${escaped(one.label)}</td>${cell(whole(one.rows ?? 0))}${cell(took(one.sparql))}${cell(one.sql === undefined ? "" : took(one.sql))}${cell(speed)}${same === "no answer" ? `<td class="n" title="${escaped(one.why ?? "")}">${same}</td>` : cell(same)}${cell(one.page === undefined ? "" : took(one.page))}</tr>`;
 }
 
 /**
@@ -261,7 +296,7 @@ export function queriesHtml(page, { heading = "" } = {}) {
 ${page.lines.map(({ text }) => `<li>${escaped(text)}</li>`).join("\n")}
 </ul>
 <div class="scroll"><table class="speed">
-<thead><tr><th>Query</th><th class="n">Rows</th><th class="n">Reference engine</th><th class="n">SQL</th><th class="n">SQL, times as fast</th><th class="n">Same rows</th><th class="n">First page of 20, SQL</th></tr></thead>
+<thead><tr><th>Query</th><th class="n">Rows</th><th class="n">Reference engine</th><th class="n">SQL</th><th class="n">SQL against the reference engine</th><th class="n">Same rows</th><th class="n">First page of 20, SQL</th></tr></thead>
 <tbody>
 ${groups.join("\n")}
 </tbody>
