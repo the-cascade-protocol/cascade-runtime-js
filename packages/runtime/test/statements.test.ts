@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 import { earl } from "../src/conformance.js";
 import { MemoryFiles, readText } from "../src/files.js";
 import { openDatabase } from "../src/node/sqlite.js";
+import { PodDatabase } from "../src/pod-database.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import {
   compared,
@@ -202,6 +203,17 @@ const screen = (name: string, fill: string, clearsAll = false): string =>
     `SELECT NULL AS s, NULL AS p, NULL AS o FROM ${name}`,
   ].join("\n");
 
+/** A question in two parts: its prepare makes, each time it is asked, the table its answer reads, from a tally of the times asked. */
+const ASKED_IN_PARTS = [
+  "-- part: prepare",
+  "CREATE TEMP TABLE IF NOT EXISTS times_asked (n INTEGER);",
+  "INSERT INTO times_asked VALUES (1);",
+  "DROP TABLE IF EXISTS temp.asked_now;",
+  "CREATE TEMP TABLE asked_now AS SELECT count(*) AS n FROM times_asked;",
+  "-- part: answer",
+  "SELECT '<urn:x:asked-' || n || '>' AS entry FROM asked_now",
+].join("\n");
+
 const FILLED = (name: string): string =>
   `INSERT INTO ${name} SELECT o, s FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope);`;
 
@@ -366,6 +378,42 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
         keys: ["34D69677.", "mnmp~"],
       },
     );
+  });
+
+  it("gives a question in the parts prepare and answer the rows of its answer, after running its prepare statements each time it is asked, and a question in no part as before", () => {
+    assert.deepEqual(sqlAnswer(db, ASKED_IN_PARTS), {
+      columns: ["entry"],
+      rows: [["<urn:x:asked-1>"]],
+    });
+    assert.deepEqual(sqlAnswer(db, ASKED_IN_PARTS).rows, [["<urn:x:asked-2>"]]);
+    assert.deepEqual(sqlAnswer(db, "SELECT '<urn:x:a>' AS entry"), {
+      columns: ["entry"],
+      rows: [["<urn:x:a>"]],
+    });
+  });
+
+  it("asks a pod's database a question in the parts prepare and answer, its statements compiled once on the connection, as it asks a question in no part", async () => {
+    const files = new MemoryFiles("https://example.test/vocabulary/");
+    await files.write(STATEMENTS_SCHEMA, new Uint8Array());
+    const database = await PodDatabase.opened(
+      {
+        open: ({ functions }) => openDatabase(":memory:", { functions }),
+        builtWhole: async () => undefined,
+        remove: async () => undefined,
+        exists: async () => true,
+      },
+      new MemoryFiles("https://example.test/pod/"),
+      files,
+    );
+    assert.deepEqual(database.answer(ASKED_IN_PARTS), {
+      rows: [{ entry: "urn:x:asked-1" }],
+    });
+    assert.deepEqual(database.answer(ASKED_IN_PARTS), {
+      rows: [{ entry: "urn:x:asked-2" }],
+    });
+    assert.deepEqual(database.answer("SELECT '<urn:x:a>' AS entry"), {
+      rows: [{ entry: "urn:x:a" }],
+    });
   });
 
   it("splits a part into its statements at each ; outside a string, a quoted name and a comment, so each is compiled once and run again", () => {
