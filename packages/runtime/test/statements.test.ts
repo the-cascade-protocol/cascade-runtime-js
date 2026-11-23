@@ -652,6 +652,79 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     }
   });
 
+  it("writes the labels file's labels back in one transaction with statements prepared once, however many rows labels.sql gives", async () => {
+    const ran = async (rows: number) => {
+      const pod = await twoEntries([
+        {
+          graph: "urn:x:layout",
+          ntriples: [
+            `_:placement <${CASCADE}writtenByQueryPath> "labels.rq" .`,
+            "_:placement <http://www.w3.org/ns/solid/terms#instance> <urn:x:labels> .",
+          ].join("\n"),
+        },
+      ]);
+      let depth = 0;
+      const counted = { prepared: 0, writtenAlone: 0, transactions: 0 };
+      const watched: Database = {
+        prepare: (sql) => {
+          counted.prepared += 1;
+          const statement = pod.prepare(sql);
+          return {
+            all: (...given) => statement.all(...given),
+            iterate: (...given) => statement.iterate(...given),
+            get: (...given) => statement.get(...given),
+            columns: () => statement.columns(),
+            run: (...given) => {
+              if (depth === 0) counted.writtenAlone += 1;
+              return statement.run(...given);
+            },
+          };
+        },
+        exec: (sql) => pod.exec(sql),
+        transaction: (work) => {
+          counted.transactions += 1;
+          depth += 1;
+          try {
+            return pod.transaction(work);
+          } finally {
+            depth -= 1;
+          }
+        },
+        close: () => pod.close(),
+      };
+      try {
+        const failed = madeScreens(watched, [
+          {
+            rq: "queries/labels.rq",
+            rqText: "",
+            sql: [
+              "-- part: fill",
+              "SELECT 1;",
+              "-- part: triples",
+              `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${rows}) ` +
+                `SELECT '<urn:x:thing-' || i || '>' AS s, '<${LABEL}>' AS p, '"label ' || i || '"' AS o FROM n`,
+            ].join("\n"),
+          },
+        ]);
+        assert.deepEqual([...failed], []);
+        const written = pod
+          .prepare(
+            "SELECT count(*) AS n FROM quad WHERE g = (SELECT id FROM term WHERE nt = '<urn:x:labels>')",
+          )
+          .get()?.n;
+        assert.equal(written, rows);
+        return counted;
+      } finally {
+        pod.close();
+      }
+    };
+    const few = await ran(3);
+    const many = await ran(60);
+    assert.deepEqual(many, few);
+    assert.equal(many.writtenAlone, 0);
+    assert.equal(many.transactions, 1);
+  });
+
   it("reports a screen whose fill, keyed to a record, does not give the tables a whole fill gives", async () => {
     for (const [clearsAll, wanted] of [
       [false, 0],

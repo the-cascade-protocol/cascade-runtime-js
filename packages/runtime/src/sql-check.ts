@@ -380,45 +380,54 @@ function unlabelled(db: Database): void {
   ).run(file, `<${LABEL}>`);
 }
 
-/** The id of the term the N-Triples text writes, made where the pod has none. */
-function termId(db: Database, nt: string): number {
-  const held = db.prepare("SELECT id FROM term WHERE nt = ?").get(nt)?.id;
-  if (held !== undefined) return Number(held);
-  const term = parsedNt(nt);
-  db.prepare(
+/** Gives the id of the term the N-Triples text writes, made where the pod has none, from statements prepared once. */
+function termIdsOf(db: Database): (nt: string) => number {
+  const find = db.prepare("SELECT id FROM term WHERE nt = ?");
+  const make = db.prepare(
     "INSERT INTO term (nt, kind, lex, datatype, lang, instant, day) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(
-    nt,
-    term.kind,
-    term.kind === BLANK ? null : term.value,
-    term.datatype ?? null,
-    term.lang ?? null,
-    instantKey(term),
-    dayKey(term),
   );
-  return Number(db.prepare("SELECT id FROM term WHERE nt = ?").get(nt)?.id);
+  return (nt) => {
+    const held = find.get(nt)?.id;
+    if (held !== undefined) return Number(held);
+    const term = parsedNt(nt);
+    make.run(
+      nt,
+      term.kind,
+      term.kind === BLANK ? null : term.value,
+      term.datatype ?? null,
+      term.lang ?? null,
+      instantKey(term),
+      dayKey(term),
+    );
+    return Number(find.get(nt)?.id);
+  };
 }
 
 /**
  * The labels file's rdfs:label statements made again from labels.sql, as a runtime writes the file: its `fill` run, the
- * file's labels deleted and its `triples` rows put in the file's graph. Left as it is where the pod has no such graph.
+ * file's labels deleted and its `triples` rows put in the file's graph, in one transaction. Left as it is where the pod has
+ * no such graph.
  */
 function labelled(db: Database, labels: ReadonlyMap<string, string>): void {
   const file = labelsFile(db);
   if (file === undefined) return;
   db.exec(labels.get("fill") ?? "");
   const { rows } = sqlAnswer(db, labels.get("triples") ?? "");
-  db.prepare(
+  const termId = termIdsOf(db);
+  const clear = db.prepare(
     "DELETE FROM quad WHERE g = ? AND p = (SELECT id FROM term WHERE nt = ?)",
-  ).run(file, `<${LABEL}>`);
+  );
   const put = db.prepare(
     "INSERT OR IGNORE INTO quad (s, p, o, g) VALUES (?, ?, ?, ?)",
   );
-  for (const [s, p, o] of rows) {
-    if (s == null || p == null || o == null)
-      throw new Error("labels.sql gives a triple with an unbound term");
-    put.run(termId(db, s), termId(db, p), termId(db, o), file);
-  }
+  db.transaction(() => {
+    clear.run(file, `<${LABEL}>`);
+    for (const [s, p, o] of rows) {
+      if (s == null || p == null || o == null)
+        throw new Error("labels.sql gives a triple with an unbound term");
+      put.run(termId(s), termId(p), termId(o), file);
+    }
+  });
 }
 
 /**
