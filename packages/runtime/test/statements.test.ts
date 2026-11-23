@@ -189,7 +189,12 @@ async function heldByOxigraph(): Promise<{ made: Term[]; held: string[] }> {
 }
 
 /** A screen of one table, each entry and its record, whose fill clears the whole table when `clearsAll`. */
-const screen = (name: string, fill: string, clearsAll = false): string =>
+const screen = (
+  name: string,
+  fill: string,
+  clearsAll = false,
+  finish = "",
+): string =>
   [
     "-- part: tables",
     `CREATE TABLE ${name} (entry INTEGER PRIMARY KEY, record INTEGER NOT NULL) STRICT;`,
@@ -199,9 +204,17 @@ const screen = (name: string, fill: string, clearsAll = false): string =>
       : `DELETE FROM ${name} WHERE entry IN (SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope));`,
     fill,
     "-- part: finish",
+    finish,
     "-- part: triples",
     `SELECT NULL AS s, NULL AS p, NULL AS o FROM ${name}`,
   ].join("\n");
+
+const IN_SCOPE = `SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope)`;
+
+/** A finish that gives each entry in scope its row of `shown_in_entry`, first deleting the rows of those entries unless `keeps`. */
+const SHOWN = (name: string, keeps = false): string =>
+  `${keeps ? "" : `DELETE FROM shown_in_entry WHERE type = '<urn:x:${name}>' AND source IN (${IN_SCOPE});`}
+INSERT INTO shown_in_entry (file, type, entry, label, record, source) SELECT 'urn:x:file', '<urn:x:${name}>', 'urn:x:entry', NULL, record, entry FROM ${name} WHERE entry IN (${IN_SCOPE});`;
 
 /** A question in two parts: its prepare makes, each time it is asked, the table its answer reads, from a tally of the times asked. */
 const ASKED_IN_PARTS = [
@@ -590,6 +603,28 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           line,
           /record \d+ unchanged: s holds \[\] a whole fill does not, and lacks/,
         );
+      pod.close();
+    }
+  });
+
+  it("reports a finish whose rows of shown_in_entry, which no screen makes, a keyed run does not give as a whole fill does", async () => {
+    for (const [keeps, wanted] of [
+      [false, 0],
+      [true, 2],
+    ] as const) {
+      const pod = await twoEntries();
+      const views = [
+        {
+          rq: "queries/views/s.rq",
+          rqText: "",
+          sql: screen("s", FILLED("s"), false, SHOWN("s", keeps)),
+        },
+      ];
+      assert.deepEqual([...madeScreens(pod, views).keys()], []);
+      const found = keyedFillFailures(pod, views);
+      assert.equal(found.length, wanted, found.join("\n"));
+      for (const line of found)
+        assert.match(line, /record \d+ unchanged: shown_in_entry holds \[/);
       pod.close();
     }
   });
