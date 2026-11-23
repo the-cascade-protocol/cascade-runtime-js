@@ -320,6 +320,7 @@ export async function partsOf(
         files: archivedFiles(
           new FolderFiles(folder, iri, { refuseLinks: true }),
           layout,
+          newStore,
         ),
         name: basename(folder),
       };

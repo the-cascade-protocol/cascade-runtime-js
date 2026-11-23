@@ -7,6 +7,7 @@ import {
 } from "../archives.js";
 import type { Files } from "../files.js";
 import type { Layout } from "../layout.js";
+import { OxigraphStore } from "../oxigraph-store.js";
 import { FolderFiles } from "./folder-files.js";
 
 /** How many files `unpack` holds in hand at once. */
@@ -21,6 +22,7 @@ export async function catFile(
   const bytes = await archivedFiles(
     new FolderFiles(pod, undefined, { refuseLinks: true }),
     layout,
+    () => new OxigraphStore(),
   ).read(path);
   if (bytes === undefined)
     throw new Error(`the pod in ${pod} holds no ${path}`);
@@ -70,6 +72,7 @@ export async function unpack(
     const pod: Files = archivedFiles(
       new FolderFiles(from, undefined, { refuseLinks: true }),
       layout,
+      () => new OxigraphStore(),
     );
     reading = {
       paths: await pod.list(""),

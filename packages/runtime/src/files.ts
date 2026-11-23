@@ -30,6 +30,16 @@ export interface Files {
    */
   writeMany?(files: Iterable<readonly [string, Uint8Array]>): Promise<void>;
   /**
+   * Writes the file whole or not at all, and, before it returns, flushes its bytes to storage: a file that is at its
+   * path after a crash or a power cut is whole. For a host whose `write` leaves its bytes to the system.
+   */
+  writeFlushed?(pathOrIri: string, bytes: Uint8Array): Promise<void>;
+  /**
+   * Writes the files one step adds, none of which changes once written, whole or not at all as the host can: a host that
+   * keeps files in archives (X1) keeps those it may in one, written as W1 says, and the rest at their paths.
+   */
+  writeStep?(files: Iterable<readonly [string, Uint8Array]>): Promise<void>;
+  /**
    * Writes the file only when it holds `holds`, or, when that is undefined, only when there is none; false, writing
    * nothing, when it holds anything else. Where the host has transactions, the look and the write are one.
    */

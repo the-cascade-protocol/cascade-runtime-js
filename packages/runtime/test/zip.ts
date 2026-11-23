@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import type { Files } from "../src/files.js";
+import { packZip } from "../src/zip-pack.js";
 
 /**
- * A test's ZIP writer, until the runtime has its own: the ISO/IEC 21320-1 profile the vocabulary's X1 rules (stored or
- * deflated entries, UTF-8 paths, a central directory, no extra fields, no ZIP64), with the knobs a test needs to make an
- * archive outside it.
+ * A test's ZIP writer for the archives the runtime's own writer (`packZip`) never makes: entries deflated, and the knobs a
+ * test needs to make an archive outside the profile the vocabulary's X1 rules (stored or deflated entries, UTF-8 paths, a
+ * central directory, no ZIP64).
  */
 export interface ZipEntry {
   readonly path: string;
@@ -144,21 +145,21 @@ export async function archived(
 }
 
 /**
- * Moves the files at the paths into one archive of stored entries, in path order, as a host that keeps archives
- * would hold them, and removes them from their own paths; returns the archive's path.
+ * Moves the files at the paths into one archive the runtime's own writer makes, as a host that keeps archives would hold
+ * them, and removes them from their own paths; returns the archive's path.
  */
 export async function packed(
   files: Files & Required<Pick<Files, "remove">>,
   paths: readonly string[],
   folder = "archives/",
 ): Promise<string> {
-  const entries: ZipEntry[] = [];
+  const entries: (readonly [string, Uint8Array])[] = [];
   for (const path of [...paths].sort()) {
     const bytes = await files.read(path);
     if (bytes === undefined) throw new Error(`${path} is no file to pack`);
-    entries.push({ path, bytes });
+    entries.push([path, bytes]);
   }
-  const path = await archived(files, zipOf(entries), folder);
+  const path = await archived(files, packZip(entries).bytes, folder);
   await files.remove(paths);
   return path;
 }

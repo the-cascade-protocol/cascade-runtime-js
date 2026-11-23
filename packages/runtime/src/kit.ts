@@ -2,7 +2,8 @@ import { readConnect } from "@cascade-runtime/fhir-pull";
 import { arrivalInRevision, selectorNodes } from "./arrivals.js";
 import { builtFileBytes } from "./build.js";
 import type { Assertion } from "./conformance.js";
-import { type Files, readText } from "./files.js";
+import { ARCHIVE_NAME } from "./archives.js";
+import { type Files, readText, sameBytes } from "./files.js";
 import { Graph } from "./graph.js";
 import type { Layout } from "./layout.js";
 import { MATCHER } from "./matcher.js";
@@ -26,6 +27,11 @@ import {
 } from "./names.js";
 import { blank, iri, RDF, type Term, type Triple, written } from "./rdf.js";
 import type { Replayed } from "./replay.js";
+import {
+  READING_FILES_HELD_IN_ARCHIVES,
+  requirementBytes,
+  requirementFile,
+} from "./requirements.js";
 import type { Shapes } from "./shapes.js";
 import type { Dataset, StoreFactory } from "./store.js";
 
@@ -870,6 +876,27 @@ async function everyInput(vocabulary: Files, kit: string): Promise<string> {
   return texts.join("\n");
 }
 
+/** The last sentence of check 5: a pod that holds an archive holds the file O4 names for reading archives, with O4's bytes. */
+export async function requirementFaults(
+  pod: Files,
+  layout: Layout,
+): Promise<string[]> {
+  const { archivesFolder, requirementsFolder } = layout;
+  if (archivesFolder === undefined || requirementsFolder === undefined)
+    return [];
+  const archives = (await pod.list(archivesFolder)).filter((path) =>
+    ARCHIVE_NAME.test(path.slice(archivesFolder.length)),
+  );
+  if (archives.length === 0) return [];
+  const path = await requirementFile(layout, READING_FILES_HELD_IN_ARCHIVES);
+  const held = await pod.read(path);
+  return sameBytes(held, requirementBytes(READING_FILES_HELD_IN_ARCHIVES))
+    ? []
+    : [
+        `${path} is ${held === undefined ? "missing" : "not what O4 gives"}, in a pod that holds ${archives.length} archive${archives.length === 1 ? "" : "s"}`,
+      ];
+}
+
 /** Check 5: no file the runtime wrote is out of place, by the vocabulary's question and, for stored documents, by path. */
 async function layoutFaults(
   run: KitRun,
@@ -895,6 +922,7 @@ async function layoutFaults(
     )
       faults.push(`${path} is no stored document's place`);
   }
+  faults.push(...(await requirementFaults(run.replayed.pod, run.layout)));
   return faults;
 }
 

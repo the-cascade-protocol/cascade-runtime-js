@@ -6,6 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { KeptBuild, type Rebuilding } from "@cascade-runtime/runtime";
 import {
+  archivedFiles,
   FolderFiles,
   findRoot,
   localVocabulary,
@@ -189,7 +190,7 @@ describe("Keeping an open pod's answers current · pod.ask()", () => {
       };
 
       const rebuilding: Rebuilding = {
-        pod: new FolderFiles(folder),
+        pod: archivedFiles(new FolderFiles(folder), parts.layout),
         layout: parts.layout,
         address: pod.address,
         newStore: parts.newStore,

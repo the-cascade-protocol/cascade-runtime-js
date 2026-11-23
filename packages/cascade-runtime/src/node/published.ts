@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryFiles, questions } from "@cascade-runtime/runtime";
 import { FolderFiles, PACKED, packed } from "@cascade-runtime/runtime/node";
-import { ANSWERS, DESCRIBED, type Described } from "../answers.js";
+import { ANSWERS, DESCRIBED, type Described, describedBy } from "../answers.js";
 import { LOOKUPS, recording } from "../lookups.js";
 import { openPodWith, type Parts, type Pod } from "../pod.js";
 import { acceptOptions } from "../options.js";
@@ -128,8 +128,8 @@ export async function answersToPublish(
     if (bytes === undefined) throw new Error(`${name} kept no ${path}`);
     answers.set(path, bytes);
   }
-  const described = JSON.parse(
-    new TextDecoder().decode(answers.get(DESCRIBED)),
+  const described = describedBy(
+    JSON.parse(new TextDecoder().decode(answers.get(DESCRIBED))),
   ) as Described;
   const tables = shipped(await parts.tables.references());
   answers.set(

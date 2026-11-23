@@ -8,6 +8,7 @@ import {
   questions,
 } from "@cascade-runtime/runtime";
 import {
+  archivedFiles,
   FolderFiles,
   findRoot,
   localVocabulary,
@@ -34,10 +35,14 @@ async function main(args: string[]): Promise<number> {
     const vocabulary = await localVocabulary(ROOT, (line) =>
       console.error(line),
     );
-    const pod = new FolderFiles(
-      values.pod === undefined
-        ? join(ROOT, "build", name, "pod")
-        : absolute(values.pod),
+    const pod = archivedFiles(
+      new FolderFiles(
+        values.pod === undefined
+          ? join(ROOT, "build", name, "pod")
+          : absolute(values.pod),
+      ),
+      vocabulary.layout,
+      () => new OxigraphStore(),
     );
     const built = await podDataset(
       pod,

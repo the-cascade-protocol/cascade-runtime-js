@@ -1,7 +1,16 @@
-import { type Files, relative, sameBytes, under } from "./files.js";
+import { type Files, relative, sameBytes, under, writeEach } from "./files.js";
 import type { Layout } from "./layout.js";
 import { counted, timedAside } from "./probe.js";
-import { Refusal } from "./step.js";
+import {
+  READING_FILES_HELD_IN_ARCHIVES,
+  refuseUnmetRequirements,
+  requirementBytes,
+  requirementFile,
+  sha256Hex,
+} from "./requirements.js";
+import { CASCADE, Refusal } from "./step.js";
+import type { StoreFactory } from "./store.js";
+import { archivesOf, crc32, MOST_BYTES, packZip } from "./zip-pack.js";
 
 const END = 0x06054b50;
 const END_LENGTH = 22;
@@ -30,7 +39,7 @@ const RATIO_SLACK = 64;
  * The most an archive may declare of its files' sizes together. Memory follows the sizes an archive says, so the sum is
  * bounded: 1 GiB is twenty times the 53 MB archive of a 16,833-record pod, and a writer that reaches it starts another.
  */
-export const MOST_DECLARED = 1024 * 1024 * 1024;
+export const MOST_DECLARED = MOST_BYTES;
 /** The path of a file held sealed: where a sealed pod's host keeps each file, under its keyed name (never the index's). */
 const SEALED_FILE = /^sealed\/[0-9a-f]{2}\/[0-9a-f]{62}$/;
 
@@ -62,19 +71,6 @@ const torn = (archive: string): Refusal =>
   new Refusal(
     `${archive} has no end of central directory record: it is torn, and nothing is read from it`,
   );
-
-const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-
-function crc32(bytes: Uint8Array): number {
-  let c = 0xffffffff;
-  for (let at = 0; at < bytes.length; at++)
-    c = (CRC_TABLE[(c ^ (bytes[at] as number)) & 0xff] as number) ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
 
 const view = (bytes: Uint8Array): DataView =>
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -388,7 +384,7 @@ export async function archiveEntryBytes(
 }
 
 /** Each path an opening's archives hold, with the entry it is read from. */
-type Held = ReadonlyMap<string, ArchiveEntry>;
+type Held = Map<string, ArchiveEntry>;
 
 /**
  * A pod's files over a host that may keep some of them in ZIP archives, in `folder` (X1): every file at its own path and
@@ -396,21 +392,32 @@ type Held = ReadonlyMap<string, ArchiveEntry>;
  * directory is read once, at the first call, and held for the life of this opening; an entry is one ranged read
  * through the host, which keeps no handle on an archive once its reads have ended. A path held in two places with other bytes is refused, naming it,
  * when a listing finds both. A file an archive holds is never written over nor removed.
+ *
+ * It is also the writer: `writeStep` keeps a step's files an archive may hold in one archive, written as W1 says, the
+ * requirement's file (O4) first. It does so only when the layout gives the requirements' folder, so that no archive is
+ * written that a runtime unable to read it would not refuse; given a `newStore`, every opening begins by refusing a
+ * pod that requires what this runtime cannot do.
  */
 export class ArchivedFiles implements Files {
   readonly #files: Files;
   readonly #folder: string;
   readonly #layout: Layout;
+  readonly #newStore: StoreFactory | undefined;
   #held: Promise<Held> | undefined;
   /** The paths found at their own paths and in an archive, compared once. */
   readonly #compared = new Set<string>();
+  /** The requirement's file, once this opening has seen it in the pod or written it. */
+  #requirement: Promise<void> | undefined;
+  /** Whether this opening has seen to the subject's file: held in an archive, or loose in a pod that has no archive yet. */
+  #subjectFiled = false;
 
-  constructor(files: Files, layout: Layout) {
+  constructor(files: Files, layout: Layout, newStore?: StoreFactory) {
     const folder = layout.archivesFolder;
     if (folder === undefined)
       throw new Error("the layout gives no folder for archives");
     this.#files = files;
     this.#layout = layout;
+    this.#newStore = newStore;
     this.iri = files.iri;
     this.#folder = folder.endsWith("/") ? folder : `${folder}/`;
     const { writeAll, writeMany, writeNew, replace, remove } = files;
@@ -440,7 +447,12 @@ export class ArchivedFiles implements Files {
       this.remove = async (pathsOrIris) => {
         const held = await this.#index();
         for (const pathOrIri of pathsOrIris) {
-          const entry = held.get(relative(this, pathOrIri));
+          const path = relative(this, pathOrIri);
+          if (layout.inRequirements(path))
+            throw new Error(
+              `${path} is a requirement's file, which is never removed`,
+            );
+          const entry = held.get(path);
           if (entry !== undefined)
             throw new Error(
               `${entry.path} is held in ${entry.archive}, and a file an archive holds is never removed`,
@@ -467,6 +479,129 @@ export class ArchivedFiles implements Files {
   ) => Promise<boolean>;
   readonly remove?: (pathsOrIris: readonly string[]) => Promise<void>;
 
+  /**
+   * Writes the files one step adds as W1 says (X1): its stored documents first, each at its own path; then, when the
+   * layout gives the requirements' folder, the requirement's file if the pod lacks it and every file an archive may
+   * hold as one archive, or more where one would pass what an archive may hold, the last file given, the act's, in the
+   * last, each flushed to storage and renamed to its name; then the rest at their paths. The first archive in a pod
+   * also holds the subject's file, whose loose copy goes once the archive is in place, so that a runtime that cannot read
+   * archives refuses the pod rather than see part of it. A file an archive holds with the same bytes is not written
+   * again; one with other bytes is refused.
+   */
+  async writeStep(
+    written: Iterable<readonly [string, Uint8Array]>,
+  ): Promise<void> {
+    const kept = await this.#kept(written);
+    const stored: [string, Uint8Array][] = [];
+    const archived: [string, Uint8Array][] = [];
+    const rest: [string, Uint8Array][] = [];
+    for (const file of kept) {
+      const [path, bytes] = file;
+      if (this.#layout.inStoredBytes(path)) stored.push(file);
+      else if (
+        this.#layout.requirementsFolder !== undefined &&
+        this.#layout.inSnapshotSet(path) &&
+        bytes.length <= MOST_BYTES
+      )
+        archived.push(file);
+      else rest.push(file);
+    }
+    if (stored.length > 0) await writeEach(this.#files, stored);
+    if (archived.length > 0) await this.#archive(archived);
+    if (rest.length > 0) await writeEach(this.#files, rest);
+  }
+
+  /** `write`, flushed to storage where the host can. */
+  #flushed(path: string, bytes: Uint8Array): Promise<void> {
+    return this.#files.writeFlushed === undefined
+      ? this.#files.write(path, bytes)
+      : this.#files.writeFlushed(path, bytes);
+  }
+
+  /** The requirement's file is in the pod: written flushed, before the first archive, if the pod lacks it. Never removed. */
+  #requirementWritten(): Promise<void> {
+    if (this.#requirement === undefined) {
+      const writing = (async () => {
+        const path = await requirementFile(
+          this.#layout,
+          READING_FILES_HELD_IN_ARCHIVES,
+        );
+        if ((await this.#files.read(path)) === undefined)
+          await this.#flushed(
+            path,
+            requirementBytes(READING_FILES_HELD_IN_ARCHIVES),
+          );
+      })();
+      this.#requirement = writing;
+      writing.catch(() => {
+        if (this.#requirement === writing) this.#requirement = undefined;
+      });
+    }
+    return this.#requirement;
+  }
+
+  /**
+   * The files at their own paths that the pod's first archive must also hold: the subject's, which a runtime that cannot
+   * read archives would otherwise find loose and open the pod by, to see only the files not in an archive.
+   */
+  async #looseSubject(
+    step: ReadonlySet<string>,
+    held: Held,
+  ): Promise<[string, Uint8Array][]> {
+    if (this.#subjectFiled) return [];
+    const folder = this.#layout.find(`${CASCADE}Subject`)?.folder;
+    if (folder === undefined) return [];
+    const moved: [string, Uint8Array][] = [];
+    for (const path of await this.#files.list(folder)) {
+      if (
+        step.has(path) ||
+        held.has(path) ||
+        !this.#layout.inSnapshotSet(path) ||
+        this.#layout.inStoredBytes(path)
+      )
+        continue;
+      const bytes = await this.#files.read(path);
+      if (bytes !== undefined) moved.push([path, bytes]);
+    }
+    return moved;
+  }
+
+  async #archive(
+    files: readonly (readonly [string, Uint8Array])[],
+  ): Promise<void> {
+    const held = await this.#index();
+    await this.#requirementWritten();
+    const moved = await this.#looseSubject(
+      new Set(files.map(([path]) => path)),
+      held,
+    );
+    for (const split of archivesOf([...moved, ...files])) {
+      const packed = packZip(split);
+      const path = `${this.#folder}${await sha256Hex(packed.bytes)}.zip`;
+      await timedAside("archives.write", () =>
+        this.#flushed(path, packed.bytes),
+      );
+      counted("archives.written");
+      counted("archives.entries.written", packed.entries.length);
+      for (const entry of packed.entries)
+        if (!held.has(entry.path))
+          held.set(entry.path, {
+            archive: path,
+            path: entry.path,
+            method: 0,
+            crc: entry.crc,
+            compressed: entry.size,
+            size: entry.size,
+            offset: entry.offset,
+            end: entry.end,
+            name: entry.name,
+          });
+    }
+    if (moved.length > 0 && this.#files.remove !== undefined)
+      await this.#files.remove(moved.map(([path]) => path));
+    this.#subjectFiled = true;
+  }
+
   /** The pod's IRI, a value and no getter, so that a proxy over these files reads it as it reads the host's. */
   readonly iri: string;
 
@@ -476,6 +611,10 @@ export class ArchivedFiles implements Files {
     if (under(this.#folder, path))
       throw new Error(
         `${path} is in the archives' folder, which no file of the pod is written in`,
+      );
+    if (this.#layout.inRequirements(path))
+      throw new Error(
+        `${path} is in the requirements' folder, which no file of the pod is written in`,
       );
     return path;
   }
@@ -504,6 +643,12 @@ export class ArchivedFiles implements Files {
   #index(): Promise<Held> {
     if (this.#held === undefined) {
       const reading = timedAside("archives.open", async () => {
+        if (this.#newStore !== undefined)
+          await refuseUnmetRequirements(
+            this.#files,
+            this.#layout,
+            this.#newStore,
+          );
         const archives = (await this.#files.list(this.#folder))
           .filter((path) => ARCHIVE_NAME.test(path.slice(this.#folder.length)))
           .sort();
@@ -558,7 +703,8 @@ export class ArchivedFiles implements Files {
 
   async read(pathOrIri: string): Promise<Uint8Array | undefined> {
     const path = relative(this, pathOrIri);
-    if (under(this.#folder, path)) return undefined;
+    if (under(this.#folder, path) || this.#layout.inRequirements(path))
+      return undefined;
     const entry = (await this.#index()).get(path);
     return entry === undefined
       ? this.#files.read(path)
@@ -571,7 +717,8 @@ export class ArchivedFiles implements Files {
     length: number,
   ): Promise<Uint8Array | undefined> {
     const path = relative(this, pathOrIri);
-    if (under(this.#folder, path)) return undefined;
+    if (under(this.#folder, path) || this.#layout.inRequirements(path))
+      return undefined;
     const entry = (await this.#index()).get(path);
     if (entry === undefined && this.#files.readRange !== undefined)
       return this.#files.readRange(path, start, length);
@@ -596,7 +743,12 @@ export class ArchivedFiles implements Files {
       this.#index(),
       this.#files.list(folder),
     ]);
-    const paths = new Set(loose.filter((path) => !under(this.#folder, path)));
+    const paths = new Set(
+      loose.filter(
+        (path) =>
+          !under(this.#folder, path) && !this.#layout.inRequirements(path),
+      ),
+    );
     for (const [path, entry] of held) {
       if (!under(prefix, path)) continue;
       if (paths.has(path)) await this.#same(entry);
@@ -607,8 +759,12 @@ export class ArchivedFiles implements Files {
 }
 
 /** The pod's files over the host: `ArchivedFiles` in the layout's archives' folder, or, where it gives none, the host's. */
-export function archivedFiles(files: Files, layout: Layout): Files {
+export function archivedFiles(
+  files: Files,
+  layout: Layout,
+  newStore?: StoreFactory,
+): Files {
   return layout.archivesFolder === undefined
     ? files
-    : new ArchivedFiles(files, layout);
+    : new ArchivedFiles(files, layout, newStore);
 }

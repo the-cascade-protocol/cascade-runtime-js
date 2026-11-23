@@ -2,11 +2,16 @@
   "spans": {
     "archives.open": {
       "says": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds."
+    },
+    "archives.write": {
+      "says": "Writing the files a step adds as archives: each archive's bytes written under another name and flushed to storage, then renamed to its name. One archive replaces a file for each of its files."
     }
   },
   "counts": {
     "archives.opened": "How many archives of the pod's files were opened, each by reading its directory alone.",
     "archives.entries": "How many files those archives' directories list.",
-    "archives.entries.read": "How many files were read out of an archive, each by one read of its part of the archive."
+    "archives.entries.read": "How many files were read out of an archive, each by one read of its part of the archive.",
+    "archives.written": "How many archives of the pod's files were written: one for each step that adds files an archive may hold, more where a step's files pass what one archive may hold.",
+    "archives.entries.written": "How many files those archives were written with, which the host did not write as files of their own."
   }
 }

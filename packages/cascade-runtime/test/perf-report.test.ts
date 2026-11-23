@@ -22,7 +22,7 @@ import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { openPod } from "cascade-runtime";
-import { wholeBuildJob } from "@cascade-runtime/runtime/node";
+import { unpack, wholeBuildJob } from "@cascade-runtime/runtime/node";
 import {
   probing,
   recorded,
@@ -2793,20 +2793,26 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       await pod.import(syntheticPull(20), { claimProfiles });
       await pod.close();
       const stored = await storedIn(join(folder, "pod"), false);
-      // The oracle: the folder walked, with no notion of kinds.
+      // The oracle: the pod's files unpacked loose and the folder walked, with no notion of kinds.
       const found: { path: string; bytes: Buffer }[] = [];
-      const walk = async (at: string): Promise<void> => {
+      const walk = async (
+        at: string,
+        root: string,
+        into: { path: string; bytes: Buffer }[],
+      ): Promise<void> => {
         for (const entry of await readdir(at, { withFileTypes: true }))
-          if (entry.isDirectory()) await walk(join(at, entry.name));
+          if (entry.isDirectory()) await walk(join(at, entry.name), root, into);
           else
-            found.push({
+            into.push({
               path: join(at, entry.name)
-                .slice(join(folder, "pod").length + 1)
+                .slice(root.length + 1)
                 .replaceAll("\\", "/"),
               bytes: await readFile(join(at, entry.name)),
             });
       };
-      await walk(join(folder, "pod"));
+      const loose = join(folder, "loose");
+      await unpack(join(folder, "pod"), loose, (await resolved()).layout);
+      await walk(loose, loose, found);
       const sum = (pick: (each: Stored["kinds"][StoredKind]) => number) =>
         STORED_KINDS.reduce(
           (total, kind) => total + pick(stored.kinds[kind]),
@@ -2830,7 +2836,13 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
             0,
           ),
       );
-      assert.deepEqual(stored.onDisk.files, found.length);
+      const onDisk: { path: string; bytes: Buffer }[] = [];
+      await walk(join(folder, "pod"), join(folder, "pod"), onDisk);
+      assert.deepEqual(stored.onDisk.files, onDisk.length);
+      assert.ok(
+        onDisk.length < found.length / 2,
+        `the folder holds ${onDisk.length} files for the pod's ${found.length}`,
+      );
       assert.equal(
         stored.kinds.other.files,
         0,

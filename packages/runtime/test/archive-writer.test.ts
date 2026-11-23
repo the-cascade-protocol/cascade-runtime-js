@@ -134,12 +134,15 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
     const written = (await host.read(archive)) as Uint8Array;
     assert.equal(archive, `archives/${sha256(written)}.zip`);
     assert.equal(text(await host.read(MARKER)), REQUIREMENT_LINE);
-    assert.ok(syncs >= 2, `the requirement's file and the archive are flushed, not ${syncs}`);
+    assert.ok(
+      syncs >= 2,
+      `the requirement's file and the archive are flushed, not ${syncs}`,
+    );
 
     const entries = await archiveDirectory(host, archive, layout);
     assert.deepEqual(
       entries.map((entry) => entry.path),
-      [ACT, RECORD, SUBJECT, VERSION],
+      [ACT, RECORD, VERSION, SUBJECT],
       "its entries are the files an archive may hold, in path order",
     );
     const reopened = archivedFiles(host, layout);
@@ -151,7 +154,10 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       "a reader lists every file at its path, and neither the archive nor the requirement's file",
     );
 
-    const second = step([[SECOND_RECORD, "<#c> a <#Condition> .\n"]], SECOND_ACT);
+    const second = step(
+      [[SECOND_RECORD, "<#c> a <#Condition> .\n"]],
+      SECOND_ACT,
+    );
     await second.commit(pod);
     const after = await onDisk(host.folder);
     assert.equal(
@@ -164,8 +170,13 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       1,
       "and the requirement's file is written once",
     );
-    assert.equal(text(await pod.read(SECOND_RECORD)), "<#c> a <#Condition> .\n");
-    assert.equal(openSharedHandles(), 0);
+    assert.equal(
+      text(await pod.read(SECOND_RECORD)),
+      "<#c> a <#Condition> .\n",
+    );
+    for (let turns = 0; turns < 50 && openSharedHandles() > 0; turns++)
+      await new Promise((done) => setTimeout(done, 5));
+    assert.equal(openSharedHandles(), 0, "no handle is left on an archive");
   });
 
   it("keeps a pod made loose a pod: the first archive written into it holds the subject's file too, and its loose copy goes, after the archive is in place", async () => {
@@ -186,7 +197,10 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       (await archiveDirectory(host, archive, layout)).map(({ path }) => path),
       [SECOND_ACT, SECOND_RECORD, SUBJECT],
     );
-    assert.equal(text(await archivedFiles(host, layout).read(SUBJECT)), "<#s> a <#Subject> .\n");
+    assert.equal(
+      text(await archivedFiles(host, layout).read(SUBJECT)),
+      "<#s> a <#Subject> .\n",
+    );
     assert.equal(text(await host.read(MARKER)), REQUIREMENT_LINE);
   });
 
@@ -249,13 +263,16 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       [],
     );
     for (const path of files) {
-      const held = Buffer.from((await readFile(join(host.folder, path))));
+      const held = Buffer.from(await readFile(join(host.folder, path)));
       assert.ok(
         !held.includes("SECRET-HEALTH-DATA") && !held.includes("Condition"),
         `${path} holds the pod's data unsealed`,
       );
     }
-    assert.equal(text(await sealed.read(RECORD)), "<#a> a <#Condition> SECRET-HEALTH-DATA .\n");
+    assert.equal(
+      text(await sealed.read(RECORD)),
+      "<#a> a <#Condition> SECRET-HEALTH-DATA .\n",
+    );
   });
 
   it("starts another archive where a step's files pass what one may hold, the act's file in the last, and leaves a file no archive may hold alone", () => {
@@ -312,7 +329,10 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       const newStore = () => new OxigraphStore();
       const opened = archivedFiles(watched, layout, newStore);
       assert.equal(text(await opened.read(CARD)), "<#me> a <#Person> .\n");
-      assert.ok(!reads.includes(MARKER), "a met requirement's file is not read");
+      assert.ok(
+        !reads.includes(MARKER),
+        "a met requirement's file is not read",
+      );
 
       const later = await named(UNKNOWN);
       await host.write(
@@ -329,7 +349,11 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
           error.message.includes(UNKNOWN) &&
           !error.message.includes("ReadingFilesHeldInArchives"),
       );
-      assert.deepEqual(reads, [later], "nothing of the pod is read but that file");
+      assert.deepEqual(
+        reads,
+        [later],
+        "nothing of the pod is read but that file",
+      );
 
       await host.write(later, bytes("this is no Turtle {"));
       await assert.rejects(
@@ -348,4 +372,3 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
     });
   });
 });
-

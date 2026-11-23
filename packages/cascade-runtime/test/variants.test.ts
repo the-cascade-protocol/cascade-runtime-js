@@ -17,6 +17,7 @@ import {
   type Triple,
 } from "@cascade-runtime/runtime";
 import {
+  archivedFiles,
   checkouts,
   findRoot,
   FolderFiles,
@@ -679,7 +680,7 @@ describe("Reading what ClinVar says of a variant · tables.variantClassification
   describe("given the pod's published answers", () => {
     it("returns each report's `verdict` without the query engine", async () => {
       const { folder, app, verdicts } = await martinPod();
-      const files = new FolderFiles(folder);
+      const files = archivedFiles(new FolderFiles(folder), parts.layout);
       const published = new Map<string, Uint8Array>();
       for (const path of await files.list("")) {
         const bytes = await files.read(path);

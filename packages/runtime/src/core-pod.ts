@@ -290,6 +290,11 @@ class HeldFiles implements ListedFiles {
     this.#pod = pod;
     if (pod.writeMany !== undefined)
       this.writeMany = (files) => this.#writeChanged(files, writeEach);
+    if (pod.writeStep !== undefined)
+      this.writeStep = (files) =>
+        this.#writeChanged(files, (host, changed) =>
+          (host.writeStep as NonNullable<Files["writeStep"]>)(changed),
+        );
   }
 
   get written(): number {
@@ -357,6 +362,11 @@ class HeldFiles implements ListedFiles {
    * only where the pod has one: a pod that takes a batch whole, or none, is given every file of a step in one batch.
    */
   readonly writeMany?: (
+    files: Iterable<readonly [string, Uint8Array]>,
+  ) => Promise<void>;
+
+  /** A step's files in one `writeStep` of the pod, which keeps them together as its host does (X1); only where the pod has one. */
+  readonly writeStep?: (
     files: Iterable<readonly [string, Uint8Array]>,
   ) => Promise<void>;
 
