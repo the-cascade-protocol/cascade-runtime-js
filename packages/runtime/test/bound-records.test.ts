@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { boundToPairs, boundToRecords, TOKEN } from "../src/bound-records.js";
+import {
+  answersWithARecord,
+  bindsARecord,
+  boundToPairs,
+  boundToRecords,
+  TOKEN,
+} from "../src/bound-records.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { Refusal } from "../src/step.js";
 
@@ -120,6 +126,47 @@ describe("Binding a comparison query to a run's records · boundToRecords(), bou
       assert.equal(
         boundToRecords(query, ["urn:b"]).match(/VALUES/g)?.length,
         1,
+      );
+    });
+  });
+
+  describe("bindsARecord(query), answersWithARecord(query)", () => {
+    const inner = `SELECT ?x WHERE { { SELECT ?record ?x WHERE { ?record <urn:code> ?x } } }`;
+
+    it("says a question is bound to a record by a mark before any group, or by ?record in its outermost group, and not by ?record in a sub-select alone", () => {
+      assert.equal(bindsARecord(inner), false);
+      assert.equal(
+        bindsARecord(
+          `SELECT ?x\n# bound: ?record\nWHERE { ?record <urn:code> ?x }`,
+        ),
+        true,
+      );
+      assert.equal(bindsARecord(SIDES), true);
+      assert.equal(
+        bindsARecord(`SELECT ?x WHERE { ?record <urn:code> ?x { ?x ?p ?o } }`),
+        true,
+      );
+      assert.equal(
+        bindsARecord(
+          `SELECT ?x WHERE { "{ ?record }" # { ?record\n { ?y ?p ?x } }`,
+        ),
+        false,
+      );
+    });
+
+    it("says a question gives a ?record column by its select clause alone", () => {
+      assert.equal(answersWithARecord(inner), false);
+      assert.equal(
+        answersWithARecord(
+          `SELECT DISTINCT ?record ?x WHERE { ?r <urn:code> ?x }`,
+        ),
+        true,
+      );
+      assert.equal(
+        answersWithARecord(
+          `# ?record\nSELECT ?x ("?record" AS ?y) WHERE { ?record <urn:code> ?x }`,
+        ),
+        false,
       );
     });
   });
