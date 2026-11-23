@@ -4,10 +4,15 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
+/** Runs git in the folder; `core.longpaths` is on because the vocabulary holds paths past the 260 characters Windows allows. */
 export async function git(folder: string, ...args: string[]): Promise<string> {
-  const { stdout } = await run("git", ["-C", folder, ...args], {
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const { stdout } = await run(
+    "git",
+    ["-C", folder, "-c", "core.longpaths=true", ...args],
+    {
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
   return stdout;
 }
 

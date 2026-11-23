@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { type Components, packed } from "../src/node/components.js";
 import { checkout, git } from "../src/node/git.js";
 import {
+  fetchedAt,
   optionsKey,
   type Resolved,
   type ResolverOptions,
@@ -235,6 +236,34 @@ describe("Finding the vocabulary and adapters a run uses · resolve(), siblingsO
         said,
         /^cascade-vocabulary: the folder handed in, .*, at [0-9a-f]{12} with no uncommitted changes$/,
       );
+    });
+  });
+
+  describe("given a repository holding a path past 260 characters, fetched into a long cache folder", () => {
+    it("checks out every file, as Windows needs git's `core.longpaths` for", async () => {
+      const source = join(root, "long-source");
+      const dir = join("d".repeat(120), "e".repeat(60));
+      const file = `${"f".repeat(100)}.srj`;
+      await mkdir(join(source, dir), { recursive: true });
+      await git(source, "init", "--quiet", "--initial-branch=main");
+      await writeFile(join(source, dir, file), "{}\n");
+      await git(source, "-c", "core.longpaths=true", "add", ".");
+      await git(
+        source,
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.org",
+        "commit",
+        "--quiet",
+        "-m",
+        "long",
+      );
+      const commit = (await git(source, "rev-parse", "HEAD")).trim();
+      const cache = join(root, "c".repeat(60), "cache");
+      const folder = await fetchedAt(pathToFileURL(source).href, commit, cache);
+      assert.ok(join(folder, dir, file).length > 260);
+      assert.ok(existsSync(join(folder, dir, file)));
     });
   });
 
