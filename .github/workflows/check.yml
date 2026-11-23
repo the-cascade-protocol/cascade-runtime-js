@@ -21,6 +21,46 @@ env:
   WEBSITE_URL: https://site-docs.cascadeprotocol-org.pages.dev
 
 jobs:
+  # What a mistake of a minute's mending shows red from, about a minute in, while the long jobs go on: the website's
+  # chrome copied stale, a type error, a lint or formatting error. Nothing here waits for another job and nothing waits
+  # for it. The steps run whatever the one before found, so one run shows every red there is. `compatibility` requires it.
+  fast:
+    name: lint, types and generated files
+    if: ${{ github.event_name != 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cascade-runtime-js
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: cascade-runtime-js
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cascade-runtime-js/package-lock.json
+      # Merges the pull requests a Depends-On: line names into this checkout, so that the checks run on that merge and its
+      # lockfile, as the package job's install does.
+      - if: ${{ github.event_name == 'pull_request' }}
+        uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
+        with:
+          checkout-only: "true"
+      # The website owns the chrome: red when packages/site/src/chrome.css differs from the website's; it reads only the
+      # website, so it runs before the install.
+      - name: The website's chrome is copied as it is
+        run: node scripts/sync-chrome.mjs --check
+      - run: npm ci
+        if: ${{ !cancelled() }}
+      - name: Types
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
+      - name: Lint and formatting
+        if: ${{ !cancelled() }}
+        run: npm run lint
+
   # Before a merge and nightly: a pair of pull requests is proven together before either merges. Two jobs side by side,
   # whose result `compatibility`, the required check, reports.
   tests:
@@ -72,20 +112,33 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: cascade-runtime-js/package-lock.json
-      # For the Bridge's pick below. The start step merges the pull requests a Depends-On: line names here into this
-      # checkout and runs compatibility.json's host setup, `npm ci`, before the conformance command, so the steps after
-      # it run on that merge's lockfile; they run only once it has, which a conformance report shows.
+      # On a pull request the conformance command runs once, on the native build, in `tests and conformance (native)`, so
+      # this job only checks the counterparts out, before the install, which reads the lockfile of the pull requests the
+      # start step merges into this checkout.
+      - if: ${{ github.event_name == 'pull_request' }}
+        uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
+        with:
+          checkout-only: "true"
+      # For the Bridge's pick below. Off a pull request the start step merges the pull requests a Depends-On: line names
+      # here into this checkout and runs compatibility.json's host setup, `npm ci`, before the conformance command, so the
+      # steps after it run on that merge's lockfile; they run only once it has, which a conformance report shows.
       - run: npm ci
       # The Bridge's build, picked with the job's token and kept for the conformance command the start step runs, which
       # holds none.
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # Checks the vocabulary and the adapters out beside this repository, and runs the conformance command on them once.
+      # The checkout-only start step leaves no Python with rdflib, which the search test's hub build needs; the full one
+      # installs the validators' own.
+      - if: ${{ github.event_name == 'pull_request' }}
+        run: python3 -m pip install rdflib==7.6.0
+      # Off a pull request: checks the vocabulary and the adapters out beside this repository, and runs the conformance
+      # command on them once, on the WebAssembly build.
       - id: start
+        if: ${{ github.event_name != 'pull_request' }}
         uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
       - name: The report the conformance command wrote
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         shell: bash
         env:
           REPORT: ${{ steps.start.outputs.report }}
@@ -96,47 +149,54 @@ jobs:
             exit 1
           fi
           echo "CASCADE_CONFORMANCE_REPORT=$REPORT" >> "$GITHUB_ENV"
-      - if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' }}
-        run: npm run typecheck
       # Every rule beside the note that ruled it and this run's result; its warnings fail nothing yet. Kept as an
-      # artifact; the pages on main show the `conformance` job's run, not this one.
+      # artifact; the pages on main show the `conformance` job's run, not this one. On a pull request the native job has
+      # the report, and makes these pages.
       - name: The spec's pages
         if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' }}
         continue-on-error: true
-        run: node packages/site/dist/src/node/cli.js build-spec --report "$CASCADE_CONFORMANCE_REPORT"
+        run: |
+          npx tsc -b packages/site
+          node packages/site/dist/src/node/cli.js build-spec --report "$CASCADE_CONFORMANCE_REPORT"
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' }}
         with:
           name: spec
           path: cascade-runtime-js/build/spec
           if-no-files-found: warn
-      - if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' }}
-        run: npm run lint
       # The suite is run once, in two parts. First the test files each package's test/spec.json lists as randomOrder, in a
       # random order: one that needs another to run first fails here. The seed is in the log; rerun with
-      # --test-random-seed=N to repeat it.
+      # --test-random-seed=N to repeat it. The type check and the lint are the `lint, types and generated files` job's.
+      # On a pull request the conformance report is asserted on in the native job, which wrote it, so the cases that read
+      # it are skipped here.
       - name: Tests in random order
         id: listed
-        if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' }}
+        if: ${{ !cancelled() && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
+        shell: bash
         run: |
+          skip=()
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then skip=(--test-skip-pattern="Reporting a conformance run"); fi
           node scripts/transpile.mjs
-          node scripts/test.mjs --listed --test-randomize \
+          node scripts/test.mjs --listed --test-randomize "${skip[@]}" \
             --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-listed.xml" \
             --test-reporter=spec --test-reporter-destination=stdout
       # The import bench at 1,000 resources against the time each stage of an import may take (import-budget.json: ms on
       # this Linux runner, about three times the slowest of the CI runs it names). A stage over its budget, or gone from the
       # run, is measured once more, and fails here, named, only if it is over in both runs.
       - name: Import time budget
-        if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' }}
+        if: ${{ !cancelled() && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
         run: npm run bench:import -- 1000 --budget packages/cascade-runtime/test/import-budget.json
       # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite and keeps its report:
       # once a night, not twice. The JUnit reports of the two parts are read for the test page's shape below, as the
       # `runtime-tests` job reads its own.
       - name: The tests not listed as randomOrder
         id: suite
-        if: ${{ !cancelled() && env.CASCADE_CONFORMANCE_REPORT != '' && github.event_name != 'schedule' }}
+        if: ${{ !cancelled() && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
+        shell: bash
         run: |
-          node scripts/test.mjs --unlisted \
+          skip=()
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then skip=(--test-skip-pattern="Reporting a conformance run"); fi
+          node scripts/test.mjs --unlisted "${skip[@]}" \
             --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-unlisted.xml" \
             --test-reporter=spec --test-reporter-destination=stdout
         env:
@@ -167,16 +227,22 @@ jobs:
           node scripts/spec-shape.mjs "${reports[@]}" packages/evals/test/spec.json
 
   # The runtime on Oxigraph's native build, built here from native/oxigraph as the oxigraph-native workflow builds it
-  # for Linux: the conformance command runs on each build and every test must have the same outcome on both, and the
-  # suite runs on the native build. The start action only checks the counterparts out, as for `runtime tests`, so this
-  # job posts no table and keeps no report beside the `tests and conformance` job's. It runs on a push to main as well:
-  # `runtime tests` runs the suite there on the WebAssembly build only, so without this nothing of the native build, or of
-  # the two builds' same-outcome check, runs on main until the next pull request.
+  # for Linux, and the suite on it. On a pull request the conformance command runs once, here, on the native build, the
+  # production engine, through the start action, which comments its table on the pull request. On a push to main, nightly
+  # and by hand it runs on each build and every test must have the same outcome on both; the start action then only checks
+  # the counterparts out, as for `runtime tests`, so this job posts no table and keeps no report beside the `tests and
+  # conformance` job's. It runs on a push to main as well: `runtime tests` runs the suite there on the WebAssembly build
+  # only, so without this nothing of the native build, or of the two builds' same-outcome check, runs on main until the
+  # next pull request.
   tests-native:
     name: tests and conformance (native)
     runs-on: ubuntu-latest
     env:
       CASCADE_TEST_OFFLINE: "1"
+    # The start action's comment on the pull request.
+    permissions:
+      contents: read
+      pull-requests: write
     defaults:
       run:
         working-directory: cascade-runtime-js
@@ -226,16 +292,30 @@ jobs:
           cargo build --release --locked
           cp target/release/liboxigraph_native.so "$RUNNER_TEMP/oxigraph-native.linux-x64.node"
           echo "CASCADE_OXIGRAPH_NATIVE=$RUNNER_TEMP/oxigraph-native.linux-x64.node" >> "$GITHUB_ENV"
-      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
+      # Before the install, which reads the lockfile of the pull requests the start step merges into this checkout. On a
+      # pull request the full start step below does that, after the install it needs the Bridge's build from.
+      - if: ${{ github.event_name != 'pull_request' }}
+        uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
         with:
           checkout-only: "true"
       - run: npm ci
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # The search test builds the hub, whose adapter explorers need Python and rdflib.
+      # A pull request's one conformance run, on the native build: `native` fails where the build does not load, and
+      # never falls back to the WebAssembly one.
+      - name: The conformance command runs on the native build
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: echo "CASCADE_OXIGRAPH=native" >> "$GITHUB_ENV"
+      - id: start
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
+      # The search test builds the hub, whose adapter explorers need Python and rdflib; after the full start step, which
+      # puts its own Python first.
       - run: python3 -m pip install rdflib==7.6.0
       - name: Every example and kit check has the same outcome on each build
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -243,15 +323,31 @@ jobs:
           CASCADE_OXIGRAPH=native npm run --silent conformance -- --report "$RUNNER_TEMP/native.nt" 2> >(tee "$RUNNER_TEMP/native.log" >&2)
           grep -q "on Oxigraph's native build" "$RUNNER_TEMP/native.log"
           node scripts/same-outcomes.mjs "$RUNNER_TEMP/wasm.nt" "$RUNNER_TEMP/native.nt"
-      # The suite asserts on the report of the native build's conformance run just above, as the `tests and conformance` job's
-      # asserts on the one its start step wrote, instead of running the command a third time.
+      # The suite asserts on the report of the native build's conformance run above, the start step's on a pull request,
+      # instead of running the command again.
       - name: The runtime's tests on the native build
         if: ${{ !cancelled() }}
         env:
           CASCADE_OXIGRAPH: native
-          CASCADE_CONFORMANCE_REPORT: ${{ runner.temp }}/native.nt
+          CASCADE_CONFORMANCE_REPORT: ${{ steps.start.outputs.report || format('{0}/native.nt', runner.temp) }}
           GITHUB_TOKEN: ${{ github.token }}
         run: npm test
+      # Every rule beside the note that ruled it and this run's result, kept as an artifact, as the `tests and conformance`
+      # job keeps its own off a pull request.
+      - name: The spec's pages
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.start.outputs.report != '' }}
+        continue-on-error: true
+        env:
+          REPORT: ${{ steps.start.outputs.report }}
+        run: |
+          npx tsc -b packages/site
+          node packages/site/dist/src/node/cli.js build-spec --report "$REPORT"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.start.outputs.report != '' }}
+        with:
+          name: spec
+          path: cascade-runtime-js/build/spec
+          if-no-files-found: warn
 
   # The docs site as Pages would serve it: `build-pages` runs the same command, and this job keeps the tree it wrote.
   browser:
@@ -639,6 +735,7 @@ jobs:
     name: compatibility
     needs:
       [
+        fast,
         tests,
         tests-native,
         browser,
@@ -652,6 +749,7 @@ jobs:
     permissions: {}
     steps:
       - env:
+          FAST: ${{ needs.fast.result }}
           TESTS: ${{ needs.tests.result }}
           NATIVE: ${{ needs.tests-native.result }}
           BROWSER: ${{ needs.browser.result }}
@@ -662,8 +760,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          echo "tests and conformance: ${TESTS}; on the native build: ${NATIVE}; docs site: ${BROWSER}; starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS}; database on each system: ${DATABASE}; runtime tests: ${RUNTIME_TESTS}"
-          [ "${TESTS}" = success ] && [ "${NATIVE}" = success ] && [ "${BROWSER}" = success ] || exit 1
+          echo "lint, types and generated files: ${FAST}; tests and conformance: ${TESTS}; on the native build: ${NATIVE}; docs site: ${BROWSER}; starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS}; database on each system: ${DATABASE}; runtime tests: ${RUNTIME_TESTS}"
+          [ "${FAST}" = success ] && [ "${TESTS}" = success ] && [ "${NATIVE}" = success ] && [ "${BROWSER}" = success ] || exit 1
           # The suite runs in `runtime-tests` on the nightly run, where `tests and conformance` leaves it out. On a pull
           # request or a hand-started run that job is skipped, and the suite ran in `tests and conformance`.
           if [ "${EVENT}" = schedule ]; then [ "${RUNTIME_TESTS}" = success ] || exit 1; fi

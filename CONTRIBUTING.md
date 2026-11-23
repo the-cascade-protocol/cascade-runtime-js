@@ -58,6 +58,9 @@ and a failed example's report names its rule and the step that failed.
 `npm test` runs the command once and asserts on its report. With
 `CASCADE_CONFORMANCE_REPORT=<report>` it asserts on that report instead and
 does not run the command; CI hands it the report its compatibility check wrote.
+A pull request's CI runs the command once, on Oxigraph's native build; a push to
+main and the nightly run run it on the WebAssembly build and the native build,
+and every example and check must have the same outcome on both.
 
 CI runs the suite once, in two parts: `node scripts/test.mjs --listed --test-randomize` runs the test files each package's
 `test/spec.json` lists as `randomOrder` in a random order, and `node scripts/test.mjs --unlisted` runs the others as
@@ -71,15 +74,24 @@ node scripts/test.mjs --listed --test-randomize --test-random-seed=N
 ## What a pull request must pass
 
 CI runs on every pull request, and a red check is a reason not to merge. Two checks are required, **`compatibility`**
-and **`ready-to-merge`**. `compatibility` reports the result of the first three jobs below (and `runtime tests` on the
+and **`ready-to-merge`**. `compatibility` reports the result of the first five jobs below (and `runtime tests` on the
 nightly run); `ready-to-merge` is its own check.
 
-- **`tests and conformance`**: the conformance command over the vocabulary and the adapters, the type check, the lint,
-  and the suite, run once: the test files each package's `test/spec.json` lists as `randomOrder` in a random order (a
-  test that needs another to run first fails here; the seed is in the log), then the others as written. Then the check
+- **`lint, types and generated files`**: the type check, the lint and formatting, and that the website's chrome is
+  copied as it is (`node scripts/sync-chrome.mjs --check`). It takes about a minute and nothing waits for it, so a
+  mistake of these kinds shows red while the long jobs run.
+- **`tests and conformance`**: the suite, run once: the test files each package's `test/spec.json` lists as
+  `randomOrder` in a random order (a test that needs another to run first fails here; the seed is in the log), then the
+  others as written. On a nightly run it also runs the conformance command over the vocabulary and the adapters, on the
+  WebAssembly build; on a pull request that is the next job's, which runs it once, on the native build, and the cases
+  that assert on its report. Then the check
   that its results read as a specification: every test in a file a package lists as `shaped` sits under a capability heading listed in its
   `test/spec.json`, word for word. That check runs in CI, not in `npm test`, so a new capability needs its heading added to
   `spec.json` by hand.
+- **`tests and conformance (native)`**: Oxigraph's native build, built here, and the whole suite on it. On a pull
+  request it runs the conformance command once, on that build, and posts its table on the pull request; on a push to
+  main and the nightly run it runs the command on each build and checks that every example and check has the same
+  outcome on both.
 - **`docs site`**: builds the package and the pages, and runs the browser tests in Chromium.
 - **`starter-kit (...)`**: four jobs (`suites`, `browser`, `app`, and `app, chat,mcp`) in which this pull request's
   package, packed, is run under the [starter kit](https://github.com/the-cascade-protocol/cascade-starter-kit)'s tests, so a change
