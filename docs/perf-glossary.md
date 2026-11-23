@@ -335,6 +335,7 @@ Rows named `<scenario>-<dataset>/count/<count>`.
 | `archives.entries` | How many files those archives' directories list. |
 | `archives.entries.read` | How many files were read out of an archive, each by one read of its part of the archive. |
 | `archives.written` | How many archives of the pod's files were written: one for each step that adds files an archive may hold, more where a step's files pass what one archive may hold. |
+| `archives.subject.left` | How many loose copies of the subject's file were left in place after their archive was written, because removing them failed; the next step removes them. |
 | `archives.entries.written` | How many files those archives were written with, which the host did not write as files of their own. |
 | `entries` | How many entries the source's Bundle holds, the same as the fresh import's count of records: the source's own count, which is not the number of records the pod keeps (see pod-records). |
 | `version-links` | How many of the statements in version files link a version to its record, one for each version: the pod's own statement, which counts as history, not as what the source said. |

@@ -1851,7 +1851,7 @@ export async function openPodWith(
   if (disk === undefined || folder === undefined || card === undefined) {
     if (disk !== undefined && (await disk.files.list("")).length > 0)
       throw new Error(
-        `${folder} holds files but no owner's profile, ${parts.layout.card}: it holds no pod`,
+        `${folder} holds files but no owner's profile, ${parts.layout.card}: it holds no pod; delete the folder and start again`,
       );
     const address = newBase();
     const subject = randomId();

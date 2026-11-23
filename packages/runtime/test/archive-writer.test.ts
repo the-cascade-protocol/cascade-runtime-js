@@ -289,7 +289,14 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       },
     } as Files;
     const pod = archivedFiles(flaky, layout);
-    await step([[RECORD, "<#a> a <#Condition> .\n"]], ACT).commit(pod);
+    const { seen } = await probing(() =>
+      step([[RECORD, "<#a> a <#Condition> .\n"]], ACT).commit(pod),
+    );
+    assert.equal(
+      seen.counts.get("archives.subject.left"),
+      1,
+      "the copy left in place is counted",
+    );
     const after = await onDisk(host.folder);
     assert.equal(
       after.filter((path) => path.startsWith("archives/")).length,
@@ -309,7 +316,7 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
     assert.ok(!(await onDisk(host.folder)).includes(SUBJECT));
   });
 
-  it("backs out its own archive when another opening's, landed while it wrote, holds a file with other bytes, so that no pod is left that refuses to open", async () => {
+  it("backs out its own archive when another opening's, landed while it wrote, holds a file with other bytes, so that the pod does not stay refused", async () => {
     const host = podAt();
     let reached: () => void = () => undefined;
     const atTheArchive = new Promise<void>((done) => (reached = done));
@@ -351,6 +358,195 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
     assert.equal(
       text(await archivedFiles(host, layout).read(RECORD)),
       "<#a> a <#One> .\n",
+    );
+  });
+
+  /** The host's files, each call to a name passed through `hooks` first. */
+  const around = (
+    host: FolderFiles,
+    hooks: {
+      list?: (path: string) => Promise<void>;
+      writeFlushed?: (path: string) => Promise<void>;
+      afterFlushed?: (path: string) => void;
+      remove?: (paths: readonly string[]) => Promise<void>;
+    },
+  ): Files =>
+    ({
+      iri: host.iri,
+      read: (path: string) => host.read(path),
+      readRange: (path: string, start: number, length: number) =>
+        host.readRange(path, start, length),
+      write: (path: string, written: Uint8Array) => host.write(path, written),
+      list: async (path: string) => {
+        await hooks.list?.(path);
+        return host.list(path);
+      },
+      writeFlushed: async (path: string, written: Uint8Array) => {
+        await hooks.writeFlushed?.(path);
+        await host.writeFlushed(path, written);
+        hooks.afterFlushed?.(path);
+      },
+      remove: async (paths: readonly string[]) => {
+        await hooks.remove?.(paths);
+        await host.remove(paths);
+      },
+    }) as Files;
+
+  /** A point a call waits at: `reached` says it is there, `go` lets it on. */
+  const gate = (): {
+    reached: Promise<void>;
+    at: () => Promise<void>;
+    go: () => void;
+  } => {
+    let go: () => void = () => undefined;
+    let arrived: () => void = () => undefined;
+    const open = new Promise<void>((done) => (go = done));
+    const reached = new Promise<void>((done) => (arrived = done));
+    return {
+      reached,
+      at: () => {
+        arrived();
+        return open;
+      },
+      go: () => go(),
+    };
+  };
+
+  it("keeps the archive another opening committed when this opening's step is the same step, written at the same name, and a third opening's archive clashes with them", async () => {
+    const host = podAt();
+    const aGate = gate();
+    const cGate = gate();
+    const cLook = gate();
+    let markerIn = false;
+    let cWrote = false;
+    const A = archivedFiles(
+      around(host, {
+        list: async (path) => {
+          if (markerIn && path.startsWith("archives")) await aGate.at();
+        },
+        writeFlushed: async (path) => {
+          if (path.startsWith("archives")) await aGate.at();
+        },
+        afterFlushed: (path) => {
+          if (path.startsWith("format/")) markerIn = true;
+        },
+      }),
+      layout,
+    );
+    const C = archivedFiles(
+      around(host, {
+        list: async (path) => {
+          if (cWrote && path.startsWith("archives")) await cLook.at();
+          else if (markerIn && path.startsWith("archives")) await cGate.at();
+        },
+        writeFlushed: async (path) => {
+          if (path.startsWith("archives")) await cGate.at();
+        },
+        afterFlushed: (path) => {
+          if (path.startsWith("archives")) cWrote = true;
+        },
+      }),
+      layout,
+    );
+    const same = (): StepWrites => step([[RECORD, "<#a> a <#One> .\n"]], ACT);
+    const refusedA = assert.rejects(
+      same().commit(A),
+      /held twice with other bytes/,
+    );
+    const refusedC = assert.rejects(
+      step([[RECORD, "<#a> a <#Two> .\n"]], SECOND_ACT).commit(C),
+      /held twice with other bytes/,
+    );
+    await Promise.all([aGate.reached, cGate.reached]);
+    await same().commit(archivedFiles(host, layout));
+    const [kept] = (await onDisk(host.folder)).filter((path) =>
+      path.startsWith("archives/"),
+    );
+    cGate.go();
+    await cLook.reached;
+    aGate.go();
+    await refusedA;
+    cLook.go();
+    await refusedC;
+    assert.deepEqual(
+      (await onDisk(host.folder)).filter((path) =>
+        path.startsWith("archives/"),
+      ),
+      [kept],
+      "the archive the second opening committed is still there, the clashing one is gone",
+    );
+    assert.equal(
+      text(await archivedFiles(host, layout).read(RECORD)),
+      "<#a> a <#One> .\n",
+    );
+  });
+
+  it("refuses the step, saying its own archive could not be removed, when the removal of an archive it backs out throws, after trying it again", async () => {
+    const host = podAt();
+    const behind = gate();
+    let removals = 0;
+    const slow = around(host, {
+      writeFlushed: async (path) => {
+        if (path.startsWith("archives/")) await behind.at();
+      },
+      remove: async (paths) => {
+        if (paths.some((path) => path.startsWith("archives/"))) {
+          removals += 1;
+          throw new Error("the file is held open by a scanner");
+        }
+      },
+    });
+    const outcome = step([[RECORD, "<#a> a <#Two> .\n"]], SECOND_ACT)
+      .commit(archivedFiles(slow, layout))
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    await behind.reached;
+    await step([[RECORD, "<#a> a <#One> .\n"]], ACT).commit(
+      archivedFiles(host, layout),
+    );
+    behind.go();
+    const error = await outcome;
+    assert.ok(error instanceof Refusal, "a Refusal, not the host's error");
+    assert.match(error.message, /held twice with other bytes/);
+    assert.match(error.message, /could not be removed/);
+    assert.match((error.cause as Error).message, /held open/);
+    assert.ok(removals > 1, "the removal was tried again");
+  });
+
+  it("backs out the archive at the second try when the first removal of it throws", async () => {
+    const host = podAt();
+    const behind = gate();
+    let removals = 0;
+    const slow = around(host, {
+      writeFlushed: async (path) => {
+        if (path.startsWith("archives/")) await behind.at();
+      },
+      remove: async (paths) => {
+        if (paths.some((path) => path.startsWith("archives/"))) {
+          removals += 1;
+          if (removals === 1)
+            throw new Error("the file is held open by a scanner");
+        }
+      },
+    });
+    const outcome = step([[RECORD, "<#a> a <#Two> .\n"]], SECOND_ACT)
+      .commit(archivedFiles(slow, layout))
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    await behind.reached;
+    await step([[RECORD, "<#a> a <#One> .\n"]], ACT).commit(
+      archivedFiles(host, layout),
+    );
+    behind.go();
+    assert.ok((await outcome) instanceof Refusal);
+    assert.equal(
+      (await onDisk(host.folder)).filter((path) => path.startsWith("archives/"))
+        .length,
+      1,
     );
   });
 

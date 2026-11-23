@@ -12,6 +12,8 @@ import { CASCADE, Refusal } from "./step.js";
 import type { StoreFactory } from "./store.js";
 import { archivesOf, crc32, MOST_BYTES, packZip } from "./zip-pack.js";
 
+/** How many times a step that backs out its archives tries their removal, a scanner holding one open often letting go within a moment. */
+const BACK_OUT_TRIES = 3;
 const END = 0x06054b50;
 const END_LENGTH = 22;
 const ZIP64_LOCATOR = 0x07064b50;
@@ -488,8 +490,11 @@ export class ArchivedFiles implements Files {
    * in a pod also holds the subject's file, whose loose copy goes once the archive is in place, so that a runtime that
    * cannot read archives refuses the pod rather than see part of it; a loose copy an archive holds with the same bytes,
    * left by a step that stopped before it was removed, or whose removal failed, goes with it. A step looks at the
-   * archives again once its own are in place, and removes them, refusing the step, if the pod would hold a file twice
-   * with other bytes. A file of a snapshot's set too large for an archive is written before the archives, the act's file
+   * archives again once its own are in place, and removes its own, refusing the step, if the pod would hold a file
+   * twice with other bytes; an archive at the name of its own, found in place before it wrote, is another opening's
+   * of the same step, and is neither written again nor removed. Two windows leave a pod that refuses to open, which
+   * nothing in the runtime repairs: the removal still throwing after three tries, and a stop between the rename and
+   * the second look. A file of a snapshot's set too large for an archive is written before the archives, the act's file
    * in them. A file an archive holds with the same bytes is not written
    * again; one with other bytes is refused.
    */
@@ -588,9 +593,14 @@ export class ArchivedFiles implements Files {
       held,
     );
     const written: string[] = [];
+    const found: string[] = [];
     for (const split of archivesOf([...moved, ...files])) {
       const packed = packZip(split);
       const path = `${this.#folder}${await sha256Hex(packed.bytes)}.zip`;
+      if ((await this.#files.list(this.#folder)).includes(path)) {
+        found.push(path);
+        continue;
+      }
       await timedAside("archives.write", () =>
         this.#flushed(path, packed.bytes),
       );
@@ -615,14 +625,25 @@ export class ArchivedFiles implements Files {
     try {
       await this.#absorbed(held, await this.#unopened());
     } catch (error) {
-      await this.#backedOut(written);
-      throw error;
+      throw await this.#backedOut(written, error);
+    }
+    if (found.length > 0) {
+      const listed = await this.#files.list(this.#folder);
+      const gone = found.find((path) => !listed.includes(path));
+      if (gone !== undefined) {
+        this.#held = undefined;
+        this.#opened.clear();
+        throw new Refusal(
+          `${gone}, which another opening wrote with this step's files, was removed before this step looked again: the step is not in the pod`,
+        );
+      }
     }
     const loose = [...moved.map(([path]) => path), ...stale];
     if (loose.length > 0 && this.#files.remove !== undefined) {
       try {
         await this.#files.remove(loose);
       } catch {
+        counted("archives.subject.left", loose.length);
         return;
       }
     }
@@ -631,12 +652,36 @@ export class ArchivedFiles implements Files {
 
   /**
    * This step's archives are removed, after a look found the pod holding a file twice with other bytes: an archive
-   * another opening wrote while this one wrote its own. The index is read again from what is left.
+   * another opening wrote while this one wrote its own, which an archive this step found already in place, the same
+   * step's, is not one of. The removal is tried three times; one that still throws leaves a refusal that says so and
+   * carries the host's error, the archive left in the pod. The index is read again from what is left. Returns what
+   * the step is refused with.
    */
-  async #backedOut(archives: readonly string[]): Promise<void> {
+  async #backedOut(
+    archives: readonly string[],
+    refusal: unknown,
+  ): Promise<unknown> {
     this.#held = undefined;
     this.#opened.clear();
-    await this.#files.remove?.(archives);
+    if (this.#files.remove === undefined || archives.length === 0)
+      return refusal;
+    for (let tried = 1; ; tried++) {
+      try {
+        await this.#files.remove(archives);
+        return refusal;
+      } catch (removal) {
+        if (tried < BACK_OUT_TRIES) {
+          await new Promise((done) => setTimeout(done, tried * 20));
+          continue;
+        }
+        return refusal instanceof Refusal
+          ? new Refusal(
+              `${refusal.message}; ${archives.join(", ")} could not be removed, so the pod stays refused until it is`,
+              { cause: removal },
+            )
+          : refusal;
+      }
+    }
   }
 
   /** The pod's IRI, a value and no getter, so that a proxy over these files reads it as it reads the host's. */
