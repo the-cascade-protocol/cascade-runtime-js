@@ -407,7 +407,7 @@ jobs:
   # Nothing here fails on a slowdown, and a leg that fails does not stop the others or the Linux job.
   perf-systems:
     # No `name`: a matrix job is then called `perf-systems (windows)`, and a skipped one by its id, not by an expression nothing resolved.
-    if: ${{ github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.systems == 'linux') }}
+    if: ${{ true }}
     strategy:
       fail-fast: false
       matrix:
