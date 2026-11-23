@@ -94,6 +94,14 @@ export function read(path) {
 const byName = (file) => new Map(file.results.map((row) => [row.name, row]));
 
 /**
+ * The Oxigraph build a file names (`native`, `wasm`), undefined where it names none, as every file from before they did: the
+ * same query can take far longer on the WebAssembly build than on the native one, so times on the two are not the same work.
+ */
+export function oxigraphBuildOf(file) {
+  return /Oxigraph (\w+) build/.exec(file.env?.profile ?? "")?.[1];
+}
+
+/**
  * The sentence about two files' environments, empty when they match: a comparison across machines says so. Machines are
  * told apart by operating system, processor count and processor model: the kernel's release, the job's name and the
  * node patch version differ between runs on one kind of machine and say nothing about the time.
@@ -102,10 +110,7 @@ export function environmentNote(before, after) {
   const system = (file) => (file.env?.os ?? "").split(" ")[0];
   const model = (file) => (file.env?.runner ?? "").split(";")[1]?.trim();
   const major = (file) => (file.env?.node ?? "").split(".")[0];
-  // The Oxigraph build, where a file names it (a file from before they did names none): the same query can take far longer on
-  // the WebAssembly build than on the native one, so times on the two are not the same work.
-  const build = (file) =>
-    /Oxigraph (\w+) build/.exec(file.env?.profile ?? "")?.[1];
+  const build = oxigraphBuildOf;
   const differs = [
     ...(system(before) !== system(after) ? ["os"] : []),
     ...(before.env?.cpus !== after.env?.cpus ? ["cpus"] : []),
@@ -114,7 +119,7 @@ export function environmentNote(before, after) {
     ...(build(before) !== undefined &&
     build(after) !== undefined &&
     build(before) !== build(after)
-      ? ["Oxigraph build"]
+      ? ["Oxigraph builds"]
       : []),
   ];
   return differs.length === 0

@@ -32,6 +32,7 @@ import {
   THROUGHPUT_NOTE,
   floorLine,
   freshKeys,
+  oxigraphBuildOf,
   shown,
   speedOf,
   throughputTable,
@@ -293,6 +294,22 @@ ${pages
 </div>`;
 }
 
+/**
+ * The line for a build whose Oxigraph build is not the one the build below it (the next older) ran on, empty otherwise. A file
+ * that names none was taken before files did, so it counts as another build next to one that names one; a build with no file
+ * kept (`oxigraphBuild` undefined) is compared with nothing.
+ */
+function buildStepNote(run, older) {
+  if (
+    run.oxigraphBuild === undefined ||
+    older?.oxigraphBuild === undefined ||
+    run.oxigraphBuild === older.oxigraphBuild
+  )
+    return "";
+  const named = (build) => build ?? "none named";
+  return `<p class="note">The build below it ran on a different Oxigraph build (${esc(named(run.oxigraphBuild))} here, ${esc(named(older.oxigraphBuild))} below); times do not compare across the two.</p>\n`;
+}
+
 /** The page of builds: for each, a plain table of where each scenario's time went, and the links that open its graphs. */
 export function runsPage(
   runs,
@@ -309,7 +326,7 @@ export function runsPage(
     ].filter((each) => each !== "");
     return `<details class="build" id="${esc(run.id)}"${at === 0 ? " open" : ""}>
 <summary><strong>${esc(run.date)}</strong> · ${esc(EVENTS[run.event] ?? run.event)} · build <a href="https://github.com/${repo}/commit/${run.sha}">${run.sha}</a> · <a href="https://github.com/${repo}/actions/runs/${run.run}">run ${run.run}</a> <span class="size">${run.flame.builds.length} measurements</span></summary>
-${scenarios.join("\n")}
+${buildStepNote(run, runs[at + 1])}${scenarios.join("\n")}
 </details>`;
   });
   return `<!DOCTYPE html>
@@ -439,6 +456,16 @@ export function pages({
       return [];
     }
   };
+  /** The Oxigraph build a build's performance file names, null where it names none; undefined when the file is not kept or cannot be read. */
+  const buildOf = (id) => {
+    const path = performanceFiles.get(id);
+    if (path === undefined) return undefined;
+    try {
+      return oxigraphBuildOf(JSON.parse(readFileSync(path, "utf8"))) ?? null;
+    } catch {
+      return undefined;
+    }
+  };
   const viewerUrl = `${pagesAt}/speedscope/`;
   mkdirSync(join(out, "speedscope"), { recursive: true });
   for (const entry of readdirSync(viewerFolder))
@@ -472,6 +499,7 @@ export function pages({
       speeds: speedsOf(run.id),
       stored: storedPods(run.id),
       jobs: jobsPages(run.id),
+      oxigraphBuild: buildOf(run.id),
     });
   }
   writeFileSync(
