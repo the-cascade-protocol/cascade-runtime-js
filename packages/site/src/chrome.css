@@ -182,3 +182,5 @@
 .sx-footer-legal span { margin-right: auto; }
 .sx-footer-legal a { color: var(--muted); display: inline-flex; align-items: center; min-height: 32px; }
 
+
+.stale { color: red }
