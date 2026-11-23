@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795470549690,
+  "lastUpdate": 1795475343001,
   "repoUrl": "https://github.com/the-cascade-protocol/cascade-runtime-js",
   "entries": {
     "Runtime performance": [
@@ -27927,6 +27927,1038 @@ window.BENCHMARK_DATA = {
             "range": "0.063707-0.063707",
             "unit": "s",
             "extra": "The answer to: pod my active conditions. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question:pod/My active conditions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jayostis@gmail.com",
+            "name": "jayostis",
+            "username": "jayostis"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ffba96b1c91d5b9dc9ad7f9eda2b5ee5839869e8",
+          "message": "Merge pull request #963 from the-cascade-protocol/ci/platform-jobs-after-merge\n\nci(check): platform, starter, install and docs jobs run after the merge (rt#958 step 3)",
+          "timestamp": "2026-11-23T15:03:52-08:00",
+          "tree_id": "40f2d455e4438f540c7431a366e704365bb4966b",
+          "url": "https://github.com/the-cascade-protocol/cascade-runtime-js/commit/ffba96b1c91d5b9dc9ad7f9eda2b5ee5839869e8"
+        },
+        "date": 1795475342028,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "file-ops-3000-files/absent-check/in-flight-16",
+            "value": 0.000010684,
+            "range": "0.000010571-0.000011029",
+            "unit": "s",
+            "extra": "The time to ask whether a file is there, when it is not, for one file; 16 such questions in flight at once. The runtime asks this before it writes a file. | seconds per file; median of 3 runs, each in a process of its own, over 3000 files of 280 bytes; the machine as it is"
+          },
+          {
+            "name": "file-ops-3000-files/create/in-flight-16",
+            "value": 0.00002781,
+            "range": "0.000027026-0.000028822",
+            "unit": "s",
+            "extra": "The time to create one new small file and write its bytes; 16 files in flight at once. | seconds per file; median of 3 runs, each in a process of its own, over 3000 files of 280 bytes; the machine as it is"
+          },
+          {
+            "name": "file-ops-3000-files/create-rename/in-flight-16",
+            "value": 0.000063947,
+            "range": "0.000062395-0.000064205",
+            "unit": "s",
+            "extra": "The time to create one small file under a temporary name and rename it over its real name, as a pod's folder does so that no reader sees half a file; 16 files in flight at once. | seconds per file; median of 3 runs, each in a process of its own, over 3000 files of 280 bytes; the machine as it is"
+          },
+          {
+            "name": "file-ops-3000-files/full-path/in-flight-16",
+            "value": 0.000067747,
+            "range": "0.000067154-0.000069220",
+            "unit": "s",
+            "extra": "The time for what the pod's folder does for one file: look at the path, resolve the folder, create the file under a temporary name and rename it; 16 files in flight at once. | seconds per file; median of 3 runs, each in a process of its own, over 3000 files of 280 bytes; the machine as it is"
+          },
+          {
+            "name": "file-ops-3000-files/one-file/whole",
+            "value": 0.00049,
+            "range": "0.000358-0.000493",
+            "unit": "s",
+            "extra": "The time to write the bytes of all 3,000 files as ONE file and rename it over its name: what a pod would pay if it kept its new files together in one file. In seconds for the whole, not per file. | seconds to write every file's bytes as one file and rename it; median of 3 runs, each in a process of its own, over 3000 files of 280 bytes; the machine as it is"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/total",
+            "value": 3.297718,
+            "range": "3.286158-3.306055",
+            "unit": "s",
+            "extra": "Opening a new pod, importing the whole record and asking the first screen's questions: what a person waits for the first time. | open + import + first screen; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/open",
+            "value": 0.135105,
+            "range": "0.135075-0.135712",
+            "unit": "s",
+            "extra": "Opening the pod. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/import",
+            "value": 3.025123,
+            "range": "3.015665-3.029086",
+            "unit": "s",
+            "extra": "Importing into the pod: the whole record for a new pod, and for a pod that holds the record already the same file again, with some entries changed, or with one more. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/first-screen",
+            "value": 0.137491,
+            "range": "0.135418-0.141257",
+            "unit": "s",
+            "extra": "Asking the questions the first screen shows. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/peak-rss",
+            "value": 719233024,
+            "range": "708063232-736661504",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | the most the process reached, as the operating system keeps it; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "close-synthea-10y/total",
+            "value": 0.510827,
+            "range": "0.503470-0.526347",
+            "unit": "s",
+            "extra": "Closing a pod straight after its import and first screen, which saves its database. | closing a pod right after its import and first screen; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/total",
+            "value": 0.161303,
+            "range": "0.159954-0.168406",
+            "unit": "s",
+            "extra": "Opening an existing pod and answering its first read: what a returning person waits for. | open + first read; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/open",
+            "value": 0.112227,
+            "range": "0.111315-0.114851",
+            "unit": "s",
+            "extra": "Opening the pod. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/first-read",
+            "value": 0.049075,
+            "range": "0.048639-0.053555",
+            "unit": "s",
+            "extra": "The first question asked of the reopened pod ('My active conditions'). | pod/My active conditions; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/second-read",
+            "value": 0.001079,
+            "range": "0.001070-0.001446",
+            "unit": "s",
+            "extra": "A second question asked of the reopened pod ('My active medications'). | pod/My active medications; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/close",
+            "value": 0.000926,
+            "range": "0.000900-0.001155",
+            "unit": "s",
+            "extra": "Closing the pod, saving its database. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/peak-rss",
+            "value": 141598720,
+            "range": "141271040-143978496",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-page-synthea-10y/total",
+            "value": 0.023003,
+            "range": "0.022502-0.024353",
+            "unit": "s",
+            "extra": "Fetching one page of answers for every question in turn. | 16 questions, a page of 20 each, from pod.db; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-page-synthea-10y/peak-rss",
+            "value": 150691840,
+            "range": "150069248-151248896",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "each-query-synthea-10y/total",
+            "value": 1.869651,
+            "range": "1.869651-1.869651",
+            "unit": "s",
+            "extra": "Filling the reference engine and a database from the pod's statements, making every view's screen, and asking every query of the vocabulary once on the reference engine and, where it has one, in SQL. | filling both engines and asking every query of each; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "each-query-synthea-10y/peak-rss",
+            "value": 337608704,
+            "range": "337608704-337608704",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/total",
+            "value": 0.703698,
+            "range": "0.703698-0.703698",
+            "unit": "s",
+            "extra": "Opening a pod that already holds the record, importing the same file again and asking a first page of the lab results: what a person waits for when nothing has changed. | open + import + first answer; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/open",
+            "value": 0.097443,
+            "range": "0.097443-0.097443",
+            "unit": "s",
+            "extra": "Opening the pod. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/import",
+            "value": 0.598076,
+            "range": "0.598076-0.598076",
+            "unit": "s",
+            "extra": "Importing into the pod: the whole record for a new pod, and for a pod that holds the record already the same file again, with some entries changed, or with one more. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/close",
+            "value": 0.100514,
+            "range": "0.100514-0.100514",
+            "unit": "s",
+            "extra": "Closing the pod, saving its database. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/peak-rss",
+            "value": 305844224,
+            "range": "305844224-305844224",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/total",
+            "value": 2.293623,
+            "range": "2.293623-2.293623",
+            "unit": "s",
+            "extra": "Opening a pod that already holds the record, importing the file with 10 laboratory results changed and asking a first page of the lab results: what a person waits for after a hospital updates some results. | open + import + first answer; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/open",
+            "value": 0.09846,
+            "range": "0.098460-0.098460",
+            "unit": "s",
+            "extra": "Opening the pod. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/import",
+            "value": 2.187012,
+            "range": "2.187012-2.187012",
+            "unit": "s",
+            "extra": "Importing into the pod: the whole record for a new pod, and for a pod that holds the record already the same file again, with some entries changed, or with one more. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/close",
+            "value": 0.13391,
+            "range": "0.133910-0.133910",
+            "unit": "s",
+            "extra": "Closing the pod, saving its database. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/peak-rss",
+            "value": 531562496,
+            "range": "531562496-531562496",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-after-update-synthea-10y/total",
+            "value": 0.154959,
+            "range": "0.154959-0.154959",
+            "unit": "s",
+            "extra": "Opening a pod after an update that was closed properly and answering its first read, against the same read of a pod right after its first import: whether the first question after an update is slower. | open + first read; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-after-update-synthea-10y/open",
+            "value": 0.106623,
+            "range": "0.106623-0.106623",
+            "unit": "s",
+            "extra": "Opening the pod. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-after-update-synthea-10y/first-read",
+            "value": 0.048337,
+            "range": "0.048337-0.048337",
+            "unit": "s",
+            "extra": "The first question asked of the reopened pod ('My active conditions'). | pod/My active conditions; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-after-update-synthea-10y/second-read",
+            "value": 0.001024,
+            "range": "0.001024-0.001024",
+            "unit": "s",
+            "extra": "A second question asked of the reopened pod ('My active medications'). | pod/My active medications; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-after-update-synthea-10y/close",
+            "value": 0.000769,
+            "range": "0.000769-0.000769",
+            "unit": "s",
+            "extra": "Closing the pod, saving its database. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "question-after-update-synthea-10y/peak-rss",
+            "value": 143466496,
+            "range": "143466496-143466496",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/total",
+            "value": 0.559167,
+            "range": "0.559167-0.559167",
+            "unit": "s",
+            "extra": "Opening a pod that was stopped before it closed and answering its first read: what a person waits for after the app was stopped without closing the pod. | open + first read; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/open",
+            "value": 0.107915,
+            "range": "0.107915-0.107915",
+            "unit": "s",
+            "extra": "Opening the pod. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/first-read",
+            "value": 0.451251,
+            "range": "0.451251-0.451251",
+            "unit": "s",
+            "extra": "The first question asked of the reopened pod ('My active conditions'). | pod/My active conditions; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/second-read",
+            "value": 0.004812,
+            "range": "0.004812-0.004812",
+            "unit": "s",
+            "extra": "A second question asked of the reopened pod ('My active medications'). | pod/My active medications; unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/close",
+            "value": 0.49313,
+            "range": "0.493130-0.493130",
+            "unit": "s",
+            "extra": "Closing the pod, saving its database. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/peak-rss",
+            "value": 319533056,
+            "range": "319533056-319533056",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, one run in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "floor-synthea-10y/total",
+            "value": 0.018553,
+            "range": "0.018530-0.022924",
+            "unit": "s",
+            "extra": "The same input a fresh import takes in, loaded plainly into SQLite: read and decompress the Bundle, parse it, flatten each resource to one row of a table named for its resource type (a plain value is a column, anything nested is kept as its JSON text) and insert every row into a SQLite file in one transaction, with the SQLite the runtime uses and none of its settings changed. Only the insert is SQL; reading, parsing and flattening are JavaScript. Nested values are kept as JSON text with no further tables, and SQLite's default journal and synchronous settings are kept. It does no mapping to the Cascade vocabulary, keeps no provenance, does no matching of records that are the same, builds no derived views and writes no files, and a faster load of the same input could exist, so it is not a lower bound. The encrypted import is compared with this same unencrypted load. It says what loading costs, not what the import's other work adds up to; the pages do not split the difference beyond the stages the flame graphs measure. | read + parse + flatten + insert into SQLite; unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "floor-synthea-10y/parse",
+            "value": 0.005318,
+            "range": "0.004904-0.007114",
+            "unit": "s",
+            "extra": "Floor stage: reading the compressed Bundle, decompressing it and parsing the JSON. A fresh import parses the Bundle too: the harness reads, decompresses and parses it once before the import's clock starts, but the import is handed the Bundle's bytes and, from reading its code, parses them again inside its own time (not traced). So this stage and the import's own parsing are about the same work, with this stage also counting reading and decompressing, which the import's clock does not. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "floor-synthea-10y/flatten",
+            "value": 0.007349,
+            "range": "0.006913-0.009668",
+            "unit": "s",
+            "extra": "Floor stage: turning each parsed resource into one row of the table for its resource type, plain values as columns and anything nested as its JSON text. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "floor-synthea-10y/insert",
+            "value": 0.006299,
+            "range": "0.006142-0.006299",
+            "unit": "s",
+            "extra": "Floor stage: creating a table for each resource type and inserting every row in one transaction into a SQLite file on disk, then closing the file. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "floor-synthea-10y/peak-rss",
+            "value": 107220992,
+            "range": "107200512-108126208",
+            "unit": "By",
+            "extra": "The most memory the process held at any moment, in bytes. | unprobed, median of 3 runs, each in a process of its own; dataset=synthea-10y sha256=2703dc1e7e920fa1e45d16c58f8338ef13b3cc1916ee40ffa461112d54dce5de records=647"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/stage/core-pod.step.perform",
+            "value": 1.93195,
+            "range": "1.931950-1.931950",
+            "unit": "s",
+            "extra": "Doing the work of one import step: taking in the new records. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 4 calls whose own times sum to 1.931950 s (more than the time in progress where calls overlap); core-pod.step.perform"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/stage/arrivals.fileexport",
+            "value": 1.49081,
+            "range": "1.490810-1.490810",
+            "unit": "s",
+            "extra": "Taking in every document of the record: converting each, working out its records and writing them to the pod. Sits inside core-pod.step.perform. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 1.490810 s (more than the time in progress where calls overlap); arrivals.fileExport"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/stage/kept.step",
+            "value": 0.722179,
+            "range": "0.722179-0.722179",
+            "unit": "s",
+            "extra": "Keeping the saved answers current after one step. Sits inside core-pod.step.keptafter. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 3 calls whose own times sum to 0.722179 s (more than the time in progress where calls overlap); kept.step"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/stage/arrivals.accepting",
+            "value": 0.646465,
+            "range": "0.646465-0.646465",
+            "unit": "s",
+            "extra": "Finding which adapter accepts this document. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.646465 s (more than the time in progress where calls overlap); arrivals.accepting"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/stage/arrivals.convert",
+            "value": 0.641295,
+            "range": "0.641295-0.641295",
+            "unit": "s",
+            "extra": "Converting the source record into the pod's own format with the adapter. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.641295 s (more than the time in progress where calls overlap); arrivals.convert"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/stage/kept.step.rebuilt",
+            "value": 0.632184,
+            "range": "0.632184-0.632184",
+            "unit": "s",
+            "extra": "Re-deriving the answers for the touched part. Sits inside kept.step. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 3 calls whose own times sum to 0.632184 s (more than the time in progress where calls overlap); kept.step.rebuilt"
+          },
+          {
+            "name": "close-synthea-10y/stage/core-pod.keepdatabase",
+            "value": 0.416061,
+            "range": "0.416061-0.416061",
+            "unit": "s",
+            "extra": "Saving the pod's database so the next opening is fast. Sits inside scenario.close. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.416061 s (more than the time in progress where calls overlap); core-pod.keepDatabase"
+          },
+          {
+            "name": "close-synthea-10y/stage/core-pod.keepdatabase.whole",
+            "value": 0.408095,
+            "range": "0.408095-0.408095",
+            "unit": "s",
+            "extra": "Saving the database whole, from the pod's current facts. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.408095 s (more than the time in progress where calls overlap); core-pod.keepDatabase.whole"
+          },
+          {
+            "name": "close-synthea-10y/stage/pod-database.build.worker",
+            "value": 0.370017,
+            "range": "0.370017-0.370017",
+            "unit": "s",
+            "extra": "Starting the helper that builds the saved database. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.370017 s (more than the time in progress where calls overlap); pod-database.build.worker"
+          },
+          {
+            "name": "close-synthea-10y/stage/pod-database.build.load",
+            "value": 0.153537,
+            "range": "0.153537-0.153537",
+            "unit": "s",
+            "extra": "Loading the pod's facts into the saved database. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.153537 s (more than the time in progress where calls overlap); pod-database.build.load"
+          },
+          {
+            "name": "close-synthea-10y/stage/core-pod.keepbuild",
+            "value": 0.062515,
+            "range": "0.062515-0.062515",
+            "unit": "s",
+            "extra": "Preparing the content of the saved database. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.062515 s (more than the time in progress where calls overlap); core-pod.keepBuild"
+          },
+          {
+            "name": "close-synthea-10y/stage/pod-database.build.screens-fill",
+            "value": 0.058627,
+            "range": "0.058627-0.058627",
+            "unit": "s",
+            "extra": "Filling in the database's ready-made answer tables. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.058627 s (more than the time in progress where calls overlap); pod-database.build.screens:fill"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/stage/files.read.file",
+            "value": 0.07004,
+            "range": "0.070040-0.070040",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 175 calls whose own times sum to 0.636313 s (more than the time in progress where calls overlap); files.read.file"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/stage/question-pod-my-active-conditions",
+            "value": 0.049604,
+            "range": "0.049604-0.049604",
+            "unit": "s",
+            "extra": "The answer to: pod my active conditions. Sits inside scenario.first-read or scenario.second-read. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.049604 s (more than the time in progress where calls overlap); question:pod/My active conditions"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/stage/core-pod.databaseanswers",
+            "value": 0.041026,
+            "range": "0.041026-0.041026",
+            "unit": "s",
+            "extra": "Checking whether the saved database holds the pod as it stands now, so it can answer in place of a rebuild. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.041026 s (more than the time in progress where calls overlap); core-pod.databaseAnswers"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/stage/core-pod.inputshash",
+            "value": 0.021188,
+            "range": "0.021188-0.021188",
+            "unit": "s",
+            "extra": "Working out a fingerprint of everything a result depends on, to know when it can be reused. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.021188 s (more than the time in progress where calls overlap); core-pod.inputsHash"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/stage/archives.open",
+            "value": 0.012584,
+            "range": "0.012584-0.012584",
+            "unit": "s",
+            "extra": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.012584 s (more than the time in progress where calls overlap); archives.open"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/stage/union.select",
+            "value": 0.001204,
+            "range": "0.001204-0.001204",
+            "unit": "s",
+            "extra": "Asking the in-memory facts a question that returns rows. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.001204 s (more than the time in progress where calls overlap); union.select"
+          },
+          {
+            "name": "question-page-synthea-10y/stage/question.page-pod-what-everything-is-called",
+            "value": 0.006195,
+            "range": "0.006195-0.006195",
+            "unit": "s",
+            "extra": "One page of the answer to: pod what everything is called. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.006195 s (more than the time in progress where calls overlap); question.page:pod/What everything is called"
+          },
+          {
+            "name": "question-page-synthea-10y/stage/question.page-pod-what-each-import-brought-in",
+            "value": 0.005346,
+            "range": "0.005346-0.005346",
+            "unit": "s",
+            "extra": "One page of the answer to: pod what each import brought in. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.005346 s (more than the time in progress where calls overlap); question.page:pod/What each import brought in"
+          },
+          {
+            "name": "question-page-synthea-10y/stage/question.page-profile-what-needs-review",
+            "value": 0.001586,
+            "range": "0.001586-0.001586",
+            "unit": "s",
+            "extra": "One page of the answer to: profile what needs review. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.001586 s (more than the time in progress where calls overlap); question.page:profile/What needs review"
+          },
+          {
+            "name": "question-page-synthea-10y/stage/question.page-pod-my-medication-history",
+            "value": 0.001301,
+            "range": "0.001301-0.001301",
+            "unit": "s",
+            "extra": "One page of the answer to: pod my medication history. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.001301 s (more than the time in progress where calls overlap); question.page:pod/My medication history"
+          },
+          {
+            "name": "question-page-synthea-10y/stage/question.page-pod-how-many-of-each-kind",
+            "value": 0.001113,
+            "range": "0.001113-0.001113",
+            "unit": "s",
+            "extra": "One page of the answer to: pod how many of each kind. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.001113 s (more than the time in progress where calls overlap); question.page:pod/How many of each kind"
+          },
+          {
+            "name": "question-page-synthea-10y/stage/question.page-pod-my-lab-results",
+            "value": 0.001029,
+            "range": "0.001029-0.001029",
+            "unit": "s",
+            "extra": "One page of the answer to: pod my lab results. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.001029 s (more than the time in progress where calls overlap); question.page:pod/My lab results"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/stage/core-pod.step.perform",
+            "value": 0.418038,
+            "range": "0.418038-0.418038",
+            "unit": "s",
+            "extra": "Doing the work of one import step: taking in the new records. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 2 calls whose own times sum to 0.418038 s (more than the time in progress where calls overlap); core-pod.step.perform"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/stage/core-pod.import.adapters",
+            "value": 0.263729,
+            "range": "0.263729-0.263729",
+            "unit": "s",
+            "extra": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.263729 s (more than the time in progress where calls overlap); core-pod.import.adapters"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/stage/arrivals.fileexport",
+            "value": 0.132637,
+            "range": "0.132637-0.132637",
+            "unit": "s",
+            "extra": "Taking in every document of the record: converting each, working out its records and writing them to the pod. Sits inside core-pod.step.perform. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.132637 s (more than the time in progress where calls overlap); arrivals.fileExport"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/stage/arrivals.revisionsof",
+            "value": 0.130492,
+            "range": "0.130492-0.130492",
+            "unit": "s",
+            "extra": "Finding the earlier versions of one record. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.130492 s (more than the time in progress where calls overlap); arrivals.revisionsOf"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/stage/files.read.file",
+            "value": 0.090933,
+            "range": "0.090933-0.090933",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 213 calls whose own times sum to 0.695290 s (more than the time in progress where calls overlap); files.read.file"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/stage/core-pod.step.rebuild-import",
+            "value": 0.082982,
+            "range": "0.082982-0.082982",
+            "unit": "s",
+            "extra": "Re-deriving what the imported records change. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.082982 s (more than the time in progress where calls overlap); core-pod.step.rebuild:import"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/stage/core-pod.step.perform",
+            "value": 1.946286,
+            "range": "1.946286-1.946286",
+            "unit": "s",
+            "extra": "Doing the work of one import step: taking in the new records. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 2 calls whose own times sum to 1.946286 s (more than the time in progress where calls overlap); core-pod.step.perform"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/stage/arrivals.fileexport",
+            "value": 1.663058,
+            "range": "1.663058-1.663058",
+            "unit": "s",
+            "extra": "Taking in every document of the record: converting each, working out its records and writing them to the pod. Sits inside core-pod.step.perform. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 1.663058 s (more than the time in progress where calls overlap); arrivals.fileExport"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/stage/arrivals.accepting",
+            "value": 0.645784,
+            "range": "0.645784-0.645784",
+            "unit": "s",
+            "extra": "Finding which adapter accepts this document. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.645784 s (more than the time in progress where calls overlap); arrivals.accepting"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/stage/arrivals.convert",
+            "value": 0.629591,
+            "range": "0.629591-0.629591",
+            "unit": "s",
+            "extra": "Converting the source record into the pod's own format with the adapter. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.629591 s (more than the time in progress where calls overlap); arrivals.convert"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/stage/bridge.stage-records",
+            "value": 0.312014,
+            "range": "0.312014-0.312014",
+            "unit": "s",
+            "extra": "The Bridge makes the pod's records, with their versions, from what its mappings produced. Sits inside arrivals.convert. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.312014 s (more than the time in progress where calls overlap); bridge.stage:records"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/stage/core-pod.import.adapters",
+            "value": 0.254699,
+            "range": "0.254699-0.254699",
+            "unit": "s",
+            "extra": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.254699 s (more than the time in progress where calls overlap); core-pod.import.adapters"
+          },
+          {
+            "name": "question-after-update-synthea-10y/stage/files.read.file",
+            "value": 0.073376,
+            "range": "0.073376-0.073376",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 175 calls whose own times sum to 0.639269 s (more than the time in progress where calls overlap); files.read.file"
+          },
+          {
+            "name": "question-after-update-synthea-10y/stage/question-pod-my-active-conditions",
+            "value": 0.046268,
+            "range": "0.046268-0.046268",
+            "unit": "s",
+            "extra": "The answer to: pod my active conditions. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.046268 s (more than the time in progress where calls overlap); question:pod/My active conditions"
+          },
+          {
+            "name": "question-after-update-synthea-10y/stage/core-pod.databaseanswers",
+            "value": 0.03717,
+            "range": "0.037170-0.037170",
+            "unit": "s",
+            "extra": "Checking whether the saved database holds the pod as it stands now, so it can answer in place of a rebuild. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.037170 s (more than the time in progress where calls overlap); core-pod.databaseAnswers"
+          },
+          {
+            "name": "question-after-update-synthea-10y/stage/core-pod.inputshash",
+            "value": 0.022356,
+            "range": "0.022356-0.022356",
+            "unit": "s",
+            "extra": "Working out a fingerprint of everything a result depends on, to know when it can be reused. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.022356 s (more than the time in progress where calls overlap); core-pod.inputsHash"
+          },
+          {
+            "name": "question-after-update-synthea-10y/stage/archives.open",
+            "value": 0.011374,
+            "range": "0.011374-0.011374",
+            "unit": "s",
+            "extra": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.011374 s (more than the time in progress where calls overlap); archives.open"
+          },
+          {
+            "name": "question-after-update-synthea-10y/stage/union.select",
+            "value": 0.001168,
+            "range": "0.001168-0.001168",
+            "unit": "s",
+            "extra": "Asking the in-memory facts a question that returns rows. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.001168 s (more than the time in progress where calls overlap); union.select"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/stage/question-pod-my-active-conditions",
+            "value": 0.467749,
+            "range": "0.467749-0.467749",
+            "unit": "s",
+            "extra": "The answer to: pod my active conditions. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.467749 s (more than the time in progress where calls overlap); question:pod/My active conditions"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/stage/core-pod.keepdatabase",
+            "value": 0.421099,
+            "range": "0.421099-0.421099",
+            "unit": "s",
+            "extra": "Saving the pod's database so the next opening is fast. Sits inside scenario.close. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.421099 s (more than the time in progress where calls overlap); core-pod.keepDatabase"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/stage/core-pod.keepdatabase.whole",
+            "value": 0.412694,
+            "range": "0.412694-0.412694",
+            "unit": "s",
+            "extra": "Saving the database whole, from the pod's current facts. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.412694 s (more than the time in progress where calls overlap); core-pod.keepDatabase.whole"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/stage/pod-database.build.worker",
+            "value": 0.379261,
+            "range": "0.379261-0.379261",
+            "unit": "s",
+            "extra": "Starting the helper that builds the saved database. Sits inside core-pod.keepdatabase. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.379261 s (more than the time in progress where calls overlap); pod-database.build.worker"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/stage/kept.whole",
+            "value": 0.370936,
+            "range": "0.370936-0.370936",
+            "unit": "s",
+            "extra": "Keeping the saved answers current by re-deriving all of them. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 1 calls whose own times sum to 0.370936 s (more than the time in progress where calls overlap); kept.whole"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/stage/store.query",
+            "value": 0.173759,
+            "range": "0.173759-0.173759",
+            "unit": "s",
+            "extra": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress. | probed run; the time some call of it was in progress, inclusive of the spans inside it; 43 calls whose own times sum to 0.173759 s (more than the time in progress where calls overlap); store.query"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/self/arrivals.accepting",
+            "value": 0.641706,
+            "range": "0.641706-0.641706",
+            "unit": "s",
+            "extra": "Finding which adapter accepts this document. Sits inside scenario.import. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; arrivals.accepting"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/self/store.query",
+            "value": 0.534438,
+            "range": "0.534438-0.534438",
+            "unit": "s",
+            "extra": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 337 calls; store.query"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/self/bridge.stage-records",
+            "value": 0.319827,
+            "range": "0.319827-0.319827",
+            "unit": "s",
+            "extra": "The Bridge makes the pod's records, with their versions, from what its mappings produced. Sits inside arrivals.convert. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; bridge.stage:records"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/self/core-pod.import.adapters",
+            "value": 0.281748,
+            "range": "0.281748-0.281748",
+            "unit": "s",
+            "extra": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.import.adapters"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/self/union.loadfiles",
+            "value": 0.147948,
+            "range": "0.147948-0.147948",
+            "unit": "s",
+            "extra": "Loading the pod's files into memory as facts. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 19 calls; union.loadFiles"
+          },
+          {
+            "name": "fresh-first-screen-synthea-10y/self/bridge.stage-mapping",
+            "value": 0.143608,
+            "range": "0.143608-0.143608",
+            "unit": "s",
+            "extra": "The Bridge runs the adapter's mappings over the source record's facts to produce the pod's facts. Sits inside arrivals.convert. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; bridge.stage:mapping"
+          },
+          {
+            "name": "close-synthea-10y/self/pod-database.build.load",
+            "value": 0.153537,
+            "range": "0.153537-0.153537",
+            "unit": "s",
+            "extra": "Loading the pod's facts into the saved database. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.load"
+          },
+          {
+            "name": "close-synthea-10y/self/pod-database.build.worker",
+            "value": 0.127162,
+            "range": "0.127162-0.127162",
+            "unit": "s",
+            "extra": "Starting the helper that builds the saved database. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.worker"
+          },
+          {
+            "name": "close-synthea-10y/self/pod-database.build.screens-fill",
+            "value": 0.058627,
+            "range": "0.058627-0.058627",
+            "unit": "s",
+            "extra": "Filling in the database's ready-made answer tables. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.screens:fill"
+          },
+          {
+            "name": "close-synthea-10y/self/core-pod.keepbuild.dump",
+            "value": 0.037566,
+            "range": "0.037566-0.037566",
+            "unit": "s",
+            "extra": "Gathering the pod's facts to put in the saved database. Sits inside core-pod.keepbuild. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.keepBuild.dump"
+          },
+          {
+            "name": "close-synthea-10y/self/pod-database.build.sync",
+            "value": 0.033237,
+            "range": "0.033237-0.033237",
+            "unit": "s",
+            "extra": "Making the saved database safely written to disk. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.sync"
+          },
+          {
+            "name": "close-synthea-10y/self/core-pod.keepbuild",
+            "value": 0.022117,
+            "range": "0.022117-0.022117",
+            "unit": "s",
+            "extra": "Preparing the content of the saved database. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.keepBuild"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/self/files.read.file",
+            "value": 0.07004,
+            "range": "0.070040-0.070040",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 175 calls; files.read.file"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/self/archives.open",
+            "value": 0.012584,
+            "range": "0.012584-0.012584",
+            "unit": "s",
+            "extra": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; archives.open"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/self/core-pod.databaseanswers",
+            "value": 0.005408,
+            "range": "0.005408-0.005408",
+            "unit": "s",
+            "extra": "Checking whether the saved database holds the pod as it stands now, so it can answer in place of a rebuild. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.databaseAnswers"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/self/question-pod-my-active-conditions",
+            "value": 0.005013,
+            "range": "0.005013-0.005013",
+            "unit": "s",
+            "extra": "The answer to: pod my active conditions. Sits inside scenario.first-read or scenario.second-read. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question:pod/My active conditions"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/self/core-pod.inputshash",
+            "value": 0.001803,
+            "range": "0.001803-0.001803",
+            "unit": "s",
+            "extra": "Working out a fingerprint of everything a result depends on, to know when it can be reused. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.inputsHash"
+          },
+          {
+            "name": "reopen-first-answer-synthea-10y/self/question-pod-my-active-medications",
+            "value": 0.001093,
+            "range": "0.001093-0.001093",
+            "unit": "s",
+            "extra": "The answer to: pod my active medications. Sits inside scenario.first-read or scenario.second-read. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question:pod/My active medications"
+          },
+          {
+            "name": "question-page-synthea-10y/self/question.page-pod-what-everything-is-called",
+            "value": 0.006195,
+            "range": "0.006195-0.006195",
+            "unit": "s",
+            "extra": "One page of the answer to: pod what everything is called. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question.page:pod/What everything is called"
+          },
+          {
+            "name": "question-page-synthea-10y/self/question.page-pod-what-each-import-brought-in",
+            "value": 0.005346,
+            "range": "0.005346-0.005346",
+            "unit": "s",
+            "extra": "One page of the answer to: pod what each import brought in. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question.page:pod/What each import brought in"
+          },
+          {
+            "name": "question-page-synthea-10y/self/question.page-profile-what-needs-review",
+            "value": 0.001586,
+            "range": "0.001586-0.001586",
+            "unit": "s",
+            "extra": "One page of the answer to: profile what needs review. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question.page:profile/What needs review"
+          },
+          {
+            "name": "question-page-synthea-10y/self/question.page-pod-my-medication-history",
+            "value": 0.001301,
+            "range": "0.001301-0.001301",
+            "unit": "s",
+            "extra": "One page of the answer to: pod my medication history. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question.page:pod/My medication history"
+          },
+          {
+            "name": "question-page-synthea-10y/self/question.page-pod-how-many-of-each-kind",
+            "value": 0.001113,
+            "range": "0.001113-0.001113",
+            "unit": "s",
+            "extra": "One page of the answer to: pod how many of each kind. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question.page:pod/How many of each kind"
+          },
+          {
+            "name": "question-page-synthea-10y/self/question.page-pod-my-lab-results",
+            "value": 0.001029,
+            "range": "0.001029-0.001029",
+            "unit": "s",
+            "extra": "One page of the answer to: pod my lab results. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question.page:pod/My lab results"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/self/core-pod.import.adapters",
+            "value": 0.263039,
+            "range": "0.263039-0.263039",
+            "unit": "s",
+            "extra": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.import.adapters"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/self/files.read.file",
+            "value": 0.090933,
+            "range": "0.090933-0.090933",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 213 calls; files.read.file"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/self/kept.readback.restore",
+            "value": 0.059959,
+            "range": "0.059959-0.059959",
+            "unit": "s",
+            "extra": "Restoring the saved answers into memory. Sits inside kept.readback. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; kept.readBack.restore"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/self/store.query",
+            "value": 0.051684,
+            "range": "0.051684-0.051684",
+            "unit": "s",
+            "extra": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 38 calls; store.query"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/self/pod-database.keyed.screens",
+            "value": 0.044129,
+            "range": "0.044129-0.044129",
+            "unit": "s",
+            "extra": "Updating the saved database's ready-made answer tables. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 2 calls; pod-database.keyed.screens"
+          },
+          {
+            "name": "reimport-identical-synthea-10y/self/kept.scoped.podfiles",
+            "value": 0.018753,
+            "range": "0.018753-0.018753",
+            "unit": "s",
+            "extra": "Reading the pod files of just the part being kept current. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; kept.scoped.podFiles"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/self/arrivals.accepting",
+            "value": 0.641017,
+            "range": "0.641017-0.641017",
+            "unit": "s",
+            "extra": "Finding which adapter accepts this document. Sits inside scenario.import. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; arrivals.accepting"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/self/bridge.stage-records",
+            "value": 0.312014,
+            "range": "0.312014-0.312014",
+            "unit": "s",
+            "extra": "The Bridge makes the pod's records, with their versions, from what its mappings produced. Sits inside arrivals.convert. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; bridge.stage:records"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/self/core-pod.import.adapters",
+            "value": 0.254069,
+            "range": "0.254069-0.254069",
+            "unit": "s",
+            "extra": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.import.adapters"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/self/bridge.stage-mapping",
+            "value": 0.141645,
+            "range": "0.141645-0.141645",
+            "unit": "s",
+            "extra": "The Bridge runs the adapter's mappings over the source record's facts to produce the pod's facts. Sits inside arrivals.convert. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; bridge.stage:mapping"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/self/store.query",
+            "value": 0.091173,
+            "range": "0.091173-0.091173",
+            "unit": "s",
+            "extra": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 109 calls; store.query"
+          },
+          {
+            "name": "reimport-changed-synthea-10y/self/files.read.file",
+            "value": 0.089804,
+            "range": "0.089804-0.089804",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 313 calls; files.read.file"
+          },
+          {
+            "name": "question-after-update-synthea-10y/self/files.read.file",
+            "value": 0.073376,
+            "range": "0.073376-0.073376",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 175 calls; files.read.file"
+          },
+          {
+            "name": "question-after-update-synthea-10y/self/archives.open",
+            "value": 0.011374,
+            "range": "0.011374-0.011374",
+            "unit": "s",
+            "extra": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; archives.open"
+          },
+          {
+            "name": "question-after-update-synthea-10y/self/question-pod-my-active-conditions",
+            "value": 0.005176,
+            "range": "0.005176-0.005176",
+            "unit": "s",
+            "extra": "The answer to: pod my active conditions. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question:pod/My active conditions"
+          },
+          {
+            "name": "question-after-update-synthea-10y/self/core-pod.inputshash",
+            "value": 0.001343,
+            "range": "0.001343-0.001343",
+            "unit": "s",
+            "extra": "Working out a fingerprint of everything a result depends on, to know when it can be reused. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; core-pod.inputsHash"
+          },
+          {
+            "name": "question-after-update-synthea-10y/self/question-pod-my-active-medications",
+            "value": 0.001114,
+            "range": "0.001114-0.001114",
+            "unit": "s",
+            "extra": "The answer to: pod my active medications. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question:pod/My active medications"
+          },
+          {
+            "name": "question-after-update-synthea-10y/self/files.hash.sha256",
+            "value": 0.001084,
+            "range": "0.001084-0.001084",
+            "unit": "s",
+            "extra": "Fingerprinting a file's content to tell whether it changed. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 20 calls; files.hash.sha256"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/self/store.query",
+            "value": 0.173759,
+            "range": "0.173759-0.173759",
+            "unit": "s",
+            "extra": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 43 calls; store.query"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/self/pod-database.build.load",
+            "value": 0.158535,
+            "range": "0.158535-0.158535",
+            "unit": "s",
+            "extra": "Loading the pod's facts into the saved database. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.load"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/self/pod-database.build.worker",
+            "value": 0.131215,
+            "range": "0.131215-0.131215",
+            "unit": "s",
+            "extra": "Starting the helper that builds the saved database. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.worker"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/self/files.read.file",
+            "value": 0.077728,
+            "range": "0.077728-0.077728",
+            "unit": "s",
+            "extra": "Reading one file from the pod's folder. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 186 calls; files.read.file"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/self/question-pod-my-active-conditions",
+            "value": 0.058964,
+            "range": "0.058964-0.058964",
+            "unit": "s",
+            "extra": "The answer to: pod my active conditions. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; question:pod/My active conditions"
+          },
+          {
+            "name": "reopen-after-kill-synthea-10y/self/pod-database.build.screens-fill",
+            "value": 0.056981,
+            "range": "0.056981-0.056981",
+            "unit": "s",
+            "extra": "Filling in the database's ready-made answer tables. Sits inside core-pod.keepdatabase. | Own time: the time some call of it was in progress with none of the spans inside it in progress, that is the time spent in its own code, or waiting. Unlike its stage time it leaves out what the spans inside it took, so the largest own times are the places to look first. | probed run; the time some call of it was in progress with none of the spans inside it in progress; 1 calls; pod-database.build.screens:fill"
           }
         ]
       }
