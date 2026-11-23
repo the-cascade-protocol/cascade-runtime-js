@@ -109,17 +109,38 @@ export function pullOf(
   );
 }
 
-/** The profile the record's patient has, which an import that names it as the person's own takes: found in a pod of its own, apart from every run measured. */
+/**
+ * The profile the record's patient has, which an import that names it as the person's own takes: found in a pod of its own,
+ * apart from every run measured. A profile is named by the entries about the patient, never by the patient's own, so the pod
+ * is given the patient and the first entry of each kind that names the patient (a kind the importer does not read names no
+ * profile): with the patient alone it finds no profile to claim, and a pod that claims none shows no one's results.
+ */
 export async function profileOfPatient(
   data: Dataset,
 ): Promise<readonly string[]> {
-  const { entry } = data.bundle as {
-    entry: { resource: { resourceType: string } }[];
+  type Resource = {
+    resourceType: string;
+    subject?: { reference?: string };
+    patient?: { reference?: string };
   };
+  const { entry } = data.bundle as { entry: { resource: Resource }[] };
+  const named = ({ resource }: { resource: Resource }): boolean =>
+    resource.resourceType !== "Patient" &&
+    (resource.subject?.reference ?? resource.patient?.reference) !== undefined;
   const only = {
     resourceType: "Bundle",
     type: "collection",
-    entry: entry.filter(({ resource }) => resource.resourceType === "Patient"),
+    entry: [
+      ...entry.filter(({ resource }) => resource.resourceType === "Patient"),
+      ...entry
+        .filter(named)
+        .filter(
+          ({ resource }, at, all) =>
+            all.findIndex(
+              (other) => other.resource.resourceType === resource.resourceType,
+            ) === at,
+        ),
+    ],
   };
   const scratch = await openPod();
   try {
