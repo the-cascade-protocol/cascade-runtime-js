@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 import { earl } from "../src/conformance.js";
 import { MemoryFiles, readText } from "../src/files.js";
 import { openDatabase } from "../src/node/sqlite.js";
+import { PodDatabase } from "../src/pod-database.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import {
   compared,
@@ -188,7 +189,12 @@ async function heldByOxigraph(): Promise<{ made: Term[]; held: string[] }> {
 }
 
 /** A screen of one table, each entry and its record, whose fill clears the whole table when `clearsAll`. */
-const screen = (name: string, fill: string, clearsAll = false): string =>
+const screen = (
+  name: string,
+  fill: string,
+  clearsAll = false,
+  finish = "",
+): string =>
   [
     "-- part: tables",
     `CREATE TABLE ${name} (entry INTEGER PRIMARY KEY, record INTEGER NOT NULL) STRICT;`,
@@ -198,9 +204,47 @@ const screen = (name: string, fill: string, clearsAll = false): string =>
       : `DELETE FROM ${name} WHERE entry IN (SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope));`,
     fill,
     "-- part: finish",
+    finish,
     "-- part: triples",
     `SELECT NULL AS s, NULL AS p, NULL AS o FROM ${name}`,
   ].join("\n");
+
+const IN_SCOPE = `SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope)`;
+
+/** A finish that gives each entry in scope its row of `shown_in_entry`, first deleting the rows of those entries unless `keeps`. */
+const SHOWN = (name: string, keeps = false): string =>
+  `${keeps ? "" : `DELETE FROM shown_in_entry WHERE type = '<urn:x:${name}>' AND source IN (${IN_SCOPE});`}
+INSERT INTO shown_in_entry (file, type, entry, label, record, source) SELECT 'urn:x:file', '<urn:x:${name}>', 'urn:x:entry', NULL, record, entry FROM ${name} WHERE entry IN (${IN_SCOPE});`;
+
+/** A question in two parts: its prepare makes, each time it is asked, the table its answer reads, from a tally of the times asked. */
+const ASKED_IN_PARTS = [
+  "-- part: prepare",
+  "CREATE TEMP TABLE IF NOT EXISTS times_asked (n INTEGER);",
+  "INSERT INTO times_asked VALUES (1);",
+  "DROP TABLE IF EXISTS temp.asked_now;",
+  "CREATE TEMP TABLE asked_now AS SELECT count(*) AS n FROM times_asked;",
+  "-- part: answer",
+  "SELECT '<urn:x:asked-' || n || '>' AS entry FROM asked_now",
+].join("\n");
+
+/** A question in three parts: its prepare makes a temporary table, its answer reads it (and fails where `answer` is not a select of it), its cleanup drops it. */
+const WITH_CLEANUP = (answer = "SELECT k AS entry FROM said"): string =>
+  [
+    "-- part: prepare",
+    "DROP TABLE IF EXISTS temp.said;",
+    "CREATE TEMP TABLE said (k TEXT) STRICT;",
+    "INSERT INTO said VALUES ('<urn:x:a>');",
+    "-- part: answer",
+    answer,
+    "-- part: cleanup",
+    "DROP TABLE IF EXISTS temp.said;",
+  ].join("\n");
+
+const NO_SUCH_COLUMN = "SELECT no_such_column AS entry FROM said";
+
+/** The temporary table the question in three parts makes, while a connection holds it. */
+const temporaryTables = (db: Database): unknown[] =>
+  db.prepare("SELECT name FROM sqlite_temp_schema WHERE name = 'said'").all();
 
 const FILLED = (name: string): string =>
   `INSERT INTO ${name} SELECT o, s FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope);`;
@@ -365,6 +409,93 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
         rows: [["<urn:x:a>"], [null]],
         keys: ["34D69677.", "mnmp~"],
       },
+    );
+  });
+
+  it("gives a question in the parts prepare and answer the rows of its answer, after running its prepare statements each time it is asked, and a question in no part as before", () => {
+    assert.deepEqual(sqlAnswer(db, ASKED_IN_PARTS), {
+      columns: ["entry"],
+      rows: [["<urn:x:asked-1>"]],
+    });
+    assert.deepEqual(sqlAnswer(db, ASKED_IN_PARTS).rows, [["<urn:x:asked-2>"]]);
+    assert.deepEqual(sqlAnswer(db, "SELECT '<urn:x:a>' AS entry"), {
+      columns: ["entry"],
+      rows: [["<urn:x:a>"]],
+    });
+  });
+
+  it("asks a pod's database a question in the parts prepare and answer, its statements compiled once on the connection, as it asks a question in no part", async () => {
+    const files = new MemoryFiles("https://example.test/vocabulary/");
+    await files.write(STATEMENTS_SCHEMA, new Uint8Array());
+    const database = await PodDatabase.opened(
+      {
+        open: ({ functions }) => openDatabase(":memory:", { functions }),
+        builtWhole: async () => undefined,
+        remove: async () => undefined,
+        exists: async () => true,
+      },
+      new MemoryFiles("https://example.test/pod/"),
+      files,
+    );
+    assert.deepEqual(database.answer(ASKED_IN_PARTS), {
+      rows: [{ entry: "urn:x:asked-1" }],
+    });
+    assert.deepEqual(database.answer(ASKED_IN_PARTS), {
+      rows: [{ entry: "urn:x:asked-2" }],
+    });
+    assert.deepEqual(database.answer("SELECT '<urn:x:a>' AS entry"), {
+      rows: [{ entry: "urn:x:a" }],
+    });
+  });
+
+  it("drops what a question's prepare part made by its cleanup part, once its answer has given its rows and when it fails", () => {
+    assert.deepEqual(sqlAnswer(db, WITH_CLEANUP()), {
+      columns: ["entry"],
+      rows: [["<urn:x:a>"]],
+    });
+    assert.deepEqual(temporaryTables(db), []);
+    assert.throws(() => sqlAnswer(db, WITH_CLEANUP(NO_SUCH_COLUMN)));
+    assert.deepEqual(temporaryTables(db), []);
+  });
+
+  it("drops what a question's prepare part made from a pod's database by its cleanup part, each time it is asked, also when the answer fails", async () => {
+    const files = new MemoryFiles("https://example.test/vocabulary/");
+    await files.write(STATEMENTS_SCHEMA, new Uint8Array());
+    let opened: Database | undefined;
+    const database = await PodDatabase.opened(
+      {
+        open: ({ functions }) =>
+          (opened = openDatabase(":memory:", { functions })),
+        builtWhole: async () => undefined,
+        remove: async () => undefined,
+        exists: async () => true,
+      },
+      new MemoryFiles("https://example.test/pod/"),
+      files,
+    );
+    const held = (): unknown[] => temporaryTables(opened as Database);
+    for (let asked = 0; asked < 2; asked++) {
+      assert.deepEqual(database.answer(WITH_CLEANUP()), {
+        rows: [{ entry: "urn:x:a" }],
+      });
+      assert.deepEqual(held(), []);
+    }
+    assert.throws(() => database.answer(WITH_CLEANUP(NO_SUCH_COLUMN)));
+    assert.deepEqual(held(), []);
+    assert.deepEqual(database.answer(WITH_CLEANUP()), {
+      rows: [{ entry: "urn:x:a" }],
+    });
+    assert.deepEqual(held(), []);
+  });
+
+  it("refuses a question's parts in another order than prepare, answer and cleanup", () => {
+    assert.throws(
+      () =>
+        sqlAnswer(
+          db,
+          "-- part: prepare\nSELECT 1;\n-- part: cleanup\nSELECT 2;\n-- part: answer\nSELECT 1 AS entry",
+        ),
+      /prepare, answer/,
     );
   });
 
@@ -542,6 +673,28 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           line,
           /record \d+ unchanged: s holds \[\] a whole fill does not, and lacks/,
         );
+      pod.close();
+    }
+  });
+
+  it("reports a finish whose rows of shown_in_entry, which no screen makes, a keyed run does not give as a whole fill does", async () => {
+    for (const [keeps, wanted] of [
+      [false, 0],
+      [true, 2],
+    ] as const) {
+      const pod = await twoEntries();
+      const views = [
+        {
+          rq: "queries/views/s.rq",
+          rqText: "",
+          sql: screen("s", FILLED("s"), false, SHOWN("s", keeps)),
+        },
+      ];
+      assert.deepEqual([...madeScreens(pod, views).keys()], []);
+      const found = keyedFillFailures(pod, views);
+      assert.equal(found.length, wanted, found.join("\n"));
+      for (const line of found)
+        assert.match(line, /record \d+ unchanged: shown_in_entry holds \[/);
       pod.close();
     }
   });

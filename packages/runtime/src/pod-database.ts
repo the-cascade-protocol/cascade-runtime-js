@@ -1,4 +1,9 @@
-import type { Database, DatabaseFunction, Statement } from "./database.js";
+import type {
+  Database,
+  DatabaseFunction,
+  DatabaseRow,
+  Statement,
+} from "./database.js";
 import type { Files } from "./files.js";
 import type { BuildChange } from "./incremental.js";
 import { timedSync } from "./probe.js";
@@ -13,6 +18,7 @@ import {
   loadStatements,
   PAGE_KEY,
   parsedNt,
+  questionParts,
   sqlDatabaseFunctions,
   sqlParts,
   sqlStatements,
@@ -291,25 +297,37 @@ export class PodDatabase {
   /**
    * The rows a question's `.sql` gives, asked of the whole pod: a list question's whole list, or, given a page, its
    * first `size` entries after the key, and the key of the last of them when another entry follows; a question that
-   * is no list gives all its rows whatever the page. The statement is prepared the first time the question is asked.
+   * is no list gives all its rows whatever the page. A question in the parts prepare, answer and cleanup runs the
+   * statements of its prepare part first, each time, and those of its cleanup part once the rows are read, also when
+   * the answer fails. Each statement is compiled the first time the question is asked.
    * None while the connection is closed, as during a build whole.
    */
   answer(sql: string, page?: PageAsked): DatabaseAnswer | undefined {
     if (this.#shut) return undefined;
-    let statement = this.#asked.get(sql);
-    if (statement === undefined) {
-      statement = this.#db.prepare(sql);
-      this.#asked.set(sql, statement);
+    const parts = questionParts(sql);
+    let named: string[];
+    let found: DatabaseRow[];
+    try {
+      this.#ran(parts?.prepare);
+      const text = parts?.answer ?? sql;
+      let statement = this.#asked.get(text);
+      if (statement === undefined) {
+        statement = this.#db.prepare(text);
+        this.#asked.set(text, statement);
+      }
+      named = statement.columns();
+      found =
+        named.at(-1) === PAGE_KEY
+          ? statement.all({
+              page_size: page === undefined ? null : page.size + 1,
+              after: page?.after ?? null,
+            })
+          : statement.all();
+    } finally {
+      this.#ran(parts?.cleanup);
     }
-    const named = statement.columns();
     const paged = named.at(-1) === PAGE_KEY;
     const columns = paged ? named.slice(0, -1) : named;
-    const found = paged
-      ? statement.all({
-          page_size: page === undefined ? null : page.size + 1,
-          after: page?.after ?? null,
-        })
-      : statement.all();
     const keys = found.map((row) => row[PAGE_KEY]);
     let next: string | undefined;
     let end = found.length;

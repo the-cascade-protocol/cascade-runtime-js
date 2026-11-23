@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { boundToPairs, boundToRecords, TOKEN } from "../src/bound-records.js";
+import {
+  answersWithARecord,
+  bindsARecord,
+  boundToPairs,
+  boundToRecords,
+  TOKEN,
+} from "../src/bound-records.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { Refusal } from "../src/step.js";
 
@@ -104,11 +110,63 @@ describe("Binding a comparison query to a run's records · boundToRecords(), bou
       assert.match(bound, /WHERE \{ VALUES \?record \{ <urn:b> \}\n/);
     });
 
+    it("binds the WHERE group once where the mark stands before it, as a question's does", async () => {
+      const query = `SELECT DISTINCT ?record ?other\n# bound: ?record\nWHERE {\n  ?record <urn:code> ?code .\n  ?other <urn:code> ?code .\n  FILTER (?record != ?other)\n}`;
+      const bound = boundToRecords(query, ["urn:b"]);
+      assert.equal(bound.match(/VALUES/g)?.length, 1);
+      assert.deepEqual(await pairsOf(bound), ["urn:b urn:a", "urn:b urn:c"]);
+      assert.equal(
+        boundToPairs(query, [["urn:b", "urn:a"]]).match(/VALUES/g)?.length,
+        1,
+      );
+    });
+
     it("ignores a mark inside a string", () => {
       const query = `SELECT ?record ("""\n# bound: ?record\n""" AS ?s) WHERE { ?record ?p ?o }`;
       assert.equal(
         boundToRecords(query, ["urn:b"]).match(/VALUES/g)?.length,
         1,
+      );
+    });
+  });
+
+  describe("bindsARecord(query), answersWithARecord(query)", () => {
+    const inner = `SELECT ?x WHERE { { SELECT ?record ?x WHERE { ?record <urn:code> ?x } } }`;
+
+    it("says a question is bound to a record by a mark before any group, or by ?record in its outermost group, and not by ?record in a sub-select alone", () => {
+      assert.equal(bindsARecord(inner), false);
+      assert.equal(
+        bindsARecord(
+          `SELECT ?x\n# bound: ?record\nWHERE { ?record <urn:code> ?x }`,
+        ),
+        true,
+      );
+      assert.equal(bindsARecord(SIDES), true);
+      assert.equal(
+        bindsARecord(`SELECT ?x WHERE { ?record <urn:code> ?x { ?x ?p ?o } }`),
+        true,
+      );
+      assert.equal(
+        bindsARecord(
+          `SELECT ?x WHERE { "{ ?record }" # { ?record\n { ?y ?p ?x } }`,
+        ),
+        false,
+      );
+    });
+
+    it("says a question gives a ?record column by its select clause alone", () => {
+      assert.equal(answersWithARecord(inner), false);
+      assert.equal(
+        answersWithARecord(
+          `SELECT DISTINCT ?record ?x WHERE { ?r <urn:code> ?x }`,
+        ),
+        true,
+      );
+      assert.equal(
+        answersWithARecord(
+          `# ?record\nSELECT ?x ("?record" AS ?y) WHERE { ?record <urn:code> ?x }`,
+        ),
+        false,
       );
     });
   });

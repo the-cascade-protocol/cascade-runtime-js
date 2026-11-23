@@ -427,7 +427,7 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
         return union;
       };
       try {
-        await session(retitled, (pod) => pod.ask(NO_SQL));
+        await session(retitled, (pod) => pod.ask(NO_SQL), withoutSql(parts));
       } finally {
         CorePod.prototype.dataset = dataset;
       }
@@ -680,8 +680,28 @@ process.exit(0);`,
 
 const LABS = "pod/My lab results";
 const CONDITIONS = "pod/My active conditions";
-/** A question of the vocabulary's that has no `.sql` beside its `.rq`. */
+/** A question the vocabulary has a `.sql` for, asked here as a question with none is, by `withoutSql`. */
 const NO_SQL = "pod/What each folder holds";
+
+/**
+ * The parts with the vocabulary shown without `NO_SQL`'s `.sql`: every question of the vocabulary has one, and a
+ * question with none is asked of the store.
+ */
+function withoutSql(given: Parts): Parts {
+  const hidden = `queries/questions/${NO_SQL}.sql`;
+  const vocabulary = new Proxy(given.vocabulary, {
+    get(target, name) {
+      const value: unknown = Reflect.get(target, name, target);
+      if (name === "list")
+        return async (folder: string) =>
+          (await target.list(folder)).filter((path) => path !== hidden);
+      return typeof value === "function"
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+  return { ...given, vocabulary };
+}
 
 /** The parts with no database beside the pod and no answers kept: every question is asked of the store. */
 function storeOnly(given: Parts): Parts {
@@ -901,6 +921,7 @@ describe("Answering a pod's questions from its database, a page at a time · pod
             twos: await pagesJoined(pod, NO_SQL, 2, whole.length),
           };
         },
+        withoutSql(parts),
       );
       assert.ok(result.whole.length > 2);
       assert.deepEqual(result.ones.rows, result.whole);
@@ -909,21 +930,26 @@ describe("Answering a pod's questions from its database, a page at a time · pod
     });
 
     it("refuses a page size that is no whole number above 0, and a key no page of a question with no .sql gave", async () => {
-      await session(await copied(first, "asked-pages-refused"), async (pod) => {
-        for (const size of [0, -1, 1.5, Number.NaN, "50"])
+      const given = withoutSql(parts);
+      await session(
+        await copied(first, "asked-pages-refused"),
+        async (pod) => {
+          for (const size of [0, -1, 1.5, Number.NaN, "50"])
+            await assert.rejects(
+              pod.askPage(LABS, { size: size as number }),
+              { name: "Refusal" },
+              String(size),
+            );
           await assert.rejects(
-            pod.askPage(LABS, { size: size as number }),
+            pod.askPage(NO_SQL, { size: 1, after: "34D69677." }),
             { name: "Refusal" },
-            String(size),
           );
-        await assert.rejects(
-          pod.askPage(NO_SQL, { size: 1, after: "34D69677." }),
-          { name: "Refusal" },
-        );
-        await assert.rejects(pod.askPage(NO_SQL, { size: 1, after: "@-1" }), {
-          name: "Refusal",
-        });
-      });
+          await assert.rejects(pod.askPage(NO_SQL, { size: 1, after: "@-1" }), {
+            name: "Refusal",
+          });
+        },
+        given,
+      );
     });
 
     it("keeps no answers.json for a question with a .sql", async () => {
@@ -936,9 +962,8 @@ describe("Answering a pod's questions from its database, a page at a time · pod
     });
 
     it("answers a question with no .sql by building the store, the rows the store gives a pod with no database", async () => {
-      assert.ok(!(await sqlQuestions()).includes(NO_SQL));
       const folder = await copied(first, "asked-no-sql");
-      const watched = counting(parts);
+      const watched = counting(withoutSql(parts));
       let rows: unknown;
       try {
         ({ result: rows } = await session(
@@ -953,7 +978,7 @@ describe("Answering a pod's questions from its database, a page at a time · pod
       const { result: fromStore } = await session(
         await copied(first, "asked-no-sql-store"),
         (pod) => pod.ask(NO_SQL),
-        storeOnly(parts),
+        storeOnly(withoutSql(parts)),
       );
       assert.ok(Array.isArray(rows) && rows.length > 0);
       assert.deepEqual(rows, fromStore);
