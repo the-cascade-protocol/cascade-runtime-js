@@ -342,6 +342,10 @@ Rows named `<scenario>-<dataset>/count/<count>`.
 | `matcher.takenrecords` | How many records the matcher picked to compare. |
 | `matcher.boundrecords` | How many records the matcher's questions were limited to. |
 | `arrivals.repeated` | How many records the import's document stated that the pod already held in that state, so that nothing was written for them. |
+| `arrivals.held.readfromkept` | How many times the records the pod already held were read from its kept build, when an import began. |
+| `arrivals.held.readfromfiles` | How many times the records the pod already held were read from its files, when an import began. |
+| `arrivals.held.revisionrows` | How many revisions of the pod's records the import found, in all of the pod's records, when it began. |
+| `arrivals.held.records` | How many records those revisions belong to: the records the import could tell it already held. |
 | `arrivals.revised.newrecord` | How many records the import's document stated that the pod did not hold at all, each written as a new record, version and revision. |
 | `arrivals.revised.newversion` | How many records the import's document stated that the pod held, but at other versions only; each is written as a new version and revision. |
 | `arrivals.revised.heldversion` | How many records the import's document stated that the pod held in that version, but not under that source version and change time or not as its current one; each is written as a new revision. |

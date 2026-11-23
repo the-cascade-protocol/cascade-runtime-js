@@ -650,6 +650,12 @@ describe("Turning an adapter's arrivals into revisions · CorePod.import(), reac
         [1, 1, 1, 1],
       );
     });
+
+    it("counts, in a probed run, the revisions and the records the pod held when each import began", async () => {
+      const { seen } = await probing(() => threeStatesOfOneRecord());
+      assert.equal(seen.counts.get("arrivals.held.records"), 2);
+      assert.equal(seen.counts.get("arrivals.held.revisionRows"), 4);
+    });
   });
 
   describe("given Ada's exports imported with the ids they mint pinned, and the lines the line builder builds counted", () => {

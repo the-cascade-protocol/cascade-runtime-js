@@ -537,6 +537,11 @@ export class Revisions {
           },
         ]);
     }
+    if (probed()) {
+      counted(`arrivals.held.readFrom${kept === undefined ? "Files" : "Kept"}`);
+      counted("arrivals.held.revisionRows", rows.length);
+      counted("arrivals.held.records", revisions.#versions.size);
+    }
     return revisions;
   }
 
