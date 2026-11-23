@@ -1,6 +1,11 @@
 import { createSHA256, type IHasher } from "hash-wasm";
 import * as oxigraph from "oxigraph";
-import type { Database, DatabaseFunction, Statement } from "./database.js";
+import type {
+  Database,
+  DatabaseFunction,
+  DatabaseRow,
+  Statement,
+} from "./database.js";
 import { codeIri, RDF_LANG_STRING, type Term, XSD, XSD_STRING } from "./rdf.js";
 
 /** The vocabulary's schema of a pod's statements in SQLite, beside its queries. */
@@ -1303,25 +1308,38 @@ export function sqlParts(sql: string): ReadonlyMap<string, string> {
 }
 
 /**
- * A question's `.sql` in its two parts, `prepare` and `answer`: the statements that make the temporary tables the
- * answer reads, run in order each time the question is asked, and the one statement that gives the rows. None for a
- * `.sql` in no part, which is one statement.
+ * A question's `.sql` in its parts, `prepare`, `answer` and `cleanup`: the statements that make the temporary tables
+ * the answer reads, run in order each time the question is asked, the one statement that gives the rows, and the
+ * statements that drop what the prepare statements made, run in order once the rows are read and when the answer
+ * fails. None for a `.sql` in no part, which is one statement.
  */
-export function questionParts(
-  sql: string,
-): { readonly prepare: string; readonly answer: string } | undefined {
+export function questionParts(sql: string):
+  | {
+      readonly prepare: string;
+      readonly answer: string;
+      readonly cleanup: string;
+    }
+  | undefined {
   const parts = sqlParts(sql);
   if (parts.size === 0) return undefined;
   const answer = parts.get("answer");
+  const named = [...parts.keys()];
+  const inOrder = ["prepare", "answer", "cleanup"].filter((name) =>
+    parts.has(name),
+  );
   if (
     answer === undefined ||
-    parts.size > 2 ||
-    (parts.size === 2 && !parts.has("prepare"))
+    inOrder.length !== named.length ||
+    inOrder.some((name, place) => named[place] !== name)
   )
     throw new Error(
-      `a question's .sql is in the parts prepare and answer, or in none; this one has ${[...parts.keys()].join(", ")}`,
+      `a question's .sql is in the parts prepare, answer and cleanup in that order, or in none; this one has ${named.join(", ")}`,
     );
-  return { prepare: parts.get("prepare") ?? "", answer };
+  return {
+    prepare: parts.get("prepare") ?? "",
+    answer,
+    cleanup: parts.get("cleanup") ?? "",
+  };
 }
 
 /** The column a list question gives last, its row's entry key: a sort key, not a term. */
@@ -1339,7 +1357,8 @@ export interface SqlAnswer {
 
 /**
  * Runs the `.sql`'s one statement with the named parameters given, after the statements of its `prepare` part, each
- * time, where it has one. A value that is no N-Triples term is refused.
+ * time, where it has one, and then the statements of its `cleanup` part, also when the statement fails. A value that is
+ * no N-Triples term is refused.
  */
 export function sqlAnswer(
   db: Database,
@@ -1347,14 +1366,21 @@ export function sqlAnswer(
   parameters?: Readonly<Record<string, unknown>>,
 ): SqlAnswer {
   const parts = questionParts(sql);
-  if (parts !== undefined)
-    for (const text of sqlStatements(parts.prepare)) db.prepare(text).run();
-  const statement = db.prepare(parts?.answer ?? sql);
-  const named = statement.columns();
+  let named: string[];
+  let found: DatabaseRow[];
+  try {
+    if (parts !== undefined)
+      for (const text of sqlStatements(parts.prepare)) db.prepare(text).run();
+    const statement = db.prepare(parts?.answer ?? sql);
+    named = statement.columns();
+    found =
+      parameters === undefined ? statement.all() : statement.all(parameters);
+  } finally {
+    if (parts !== undefined)
+      for (const text of sqlStatements(parts.cleanup)) db.prepare(text).run();
+  }
   const paged = named.at(-1) === PAGE_KEY;
   const columns = paged ? named.slice(0, -1) : named;
-  const found =
-    parameters === undefined ? statement.all() : statement.all(parameters);
   const keys = found.map((row) => {
     const key = row[PAGE_KEY];
     return typeof key === "string" ? key : null;
