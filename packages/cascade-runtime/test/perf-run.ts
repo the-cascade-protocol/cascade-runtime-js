@@ -360,7 +360,7 @@ async function scenariosAt(
     }
 
     // Reopening after the process was stopped before it closed: a new pod, imported into by a process that is killed after
-    // the import and the first screen, so that there is no database or kept build, and opened as often as the others.
+    // the import and the first screen, so that the database the import built is beside it and no build is kept, and opened as often as the others.
     if (wants("reopen-after-kill")) {
       log(`${where}: reopen-after-kill, the import that is killed`);
       const folder = place("killed");
@@ -369,9 +369,9 @@ async function scenariosAt(
         work,
       );
       const found = await databaseKept(folder, encrypted);
-      if (found)
+      if (!found)
         throw new Error(
-          "the process that was killed left a database beside the pod: it was not stopped before it could be built",
+          "the process that was killed left no database beside the pod: the import builds it before it returns",
         );
       const counted = await child(
         { ...ctx.unprobed("killed", "stored"), folder },

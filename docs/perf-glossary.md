@@ -17,7 +17,7 @@ Generated from the files of `packages/cascade-runtime/test/perf-glossary/`; edit
 | `reimport-identical` | A pod that already holds a person's record is given the same file again, as when a person pulls from the same hospital twice. |
 | `reimport-changed` | A pod that already holds a person's record is given the same file with 10 of its laboratory results changed (a value and the time the source changed it), as when a hospital has corrected some results since the last pull. |
 | `add-one-record` | A pod that already holds a person's record is given the same file with one new laboratory result at its end, as when a hospital adds a result after the last pull. |
-| `reopen-after-kill` | A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the pod has no saved database, so it is built again from every file it holds. |
+| `reopen-after-kill` | A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the import had built the pod's database before it was stopped, so the first question is answered from it; no build was kept, so the next step builds the pod again from every file it holds. |
 | `question-after-update` | A pod that took in an update (the file with 10 laboratory results changed) and was closed is opened again and answers its first question. |
 | `each-query` | Every query of the vocabulary (the derivations, lenses, views, labels, questions and table queries), asked of a copy of the pod a fresh import left: on the reference engine over the pod's own statements and, for the ones that have a SQL version, in SQL on a database holding the same statements, with what each gave compared. |
 
@@ -362,7 +362,7 @@ Rows named `<scenario>-<dataset>/count/<count>`.
 | `records-added` | How many records the pod named for the first time in this import: things the source described that the pod had not met. |
 | `entries-changed` | How many source entries of the document were edited from the first one: 10 laboratory results for the changed file, a row of that job alone. The row's note says exactly what was edited. |
 | `entries-added` | How many source entries the document has more than the first one: 1 for the added laboratory result, a row of that job alone. |
-| `database-found` | 1 if the pod's saved database was beside it when it was opened again, otherwise 0: a process stopped before it closed leaves none, and the pod is then built from every file. |
+| `database-found` | 1 if the pod's saved database was beside it when it was opened again, otherwise 0: the import builds it before it returns, so a process stopped after the import leaves it. |
 | `files-read` | How many of the pod's files the reopened pod had to read to be built again: every file that holds statements, as the pod's layout says. |
 | `statements-read` | How many statements those files hold. |
 | `queries` | How many queries of the vocabulary outside the matcher there are, each asked once. |

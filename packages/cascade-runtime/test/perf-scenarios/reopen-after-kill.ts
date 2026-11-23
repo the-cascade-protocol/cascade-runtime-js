@@ -21,7 +21,7 @@ export async function measureKilled(job: Job): Promise<Measured> {
   throw new Error("the process outlived its own SIGKILL");
 }
 
-/** What a reopen of the killed pod is told besides its times: what it had to read, and that there was no database to start from. */
+/** What a reopen of the killed pod is told besides its times: what it had to read, and whether the database the import built was beside it. */
 export function killedRows(
   ctx: Context,
   stored: Stored,

@@ -347,7 +347,7 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
       const folder = join(pods, "new-unclosed");
       const database = join(besideOf(folder), DATABASE);
       const pod = await openPodWith(given, folder, { title: "Annie Easley" });
-      let atClose: string[] = [];
+      let atClose: string[] | undefined;
       try {
         assert.equal(existsSync(database), false, "pod.db made at open");
         await pod.retitle("Annie J. Easley");
@@ -368,7 +368,10 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
       } finally {
         atClose = await spansOf(() => pod.close());
       }
-      assert.ok(!atClose.includes(WHOLE), "pod.db built again at close");
+      assert.ok(
+        atClose !== undefined && !atClose.includes(WHOLE),
+        "pod.db built again at close",
+      );
       assert.equal(closed(), opened(), "a connection to pod.db is left open");
     });
   });

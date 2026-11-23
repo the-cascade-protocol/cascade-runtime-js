@@ -3529,7 +3529,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
       assert.equal(
         row(`reopen-after-kill-${sealed}/count/database-found`)?.value,
-        0,
+        1,
       );
     });
 
@@ -3717,8 +3717,8 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       const killed = (measure: string) => value("reopen-after-kill", measure);
       assert.equal(
         killed("count/database-found"),
-        0,
-        "the process was killed before the database was built",
+        1,
+        "the import built the database before the process was killed",
       );
       assert.ok((killed("count/files-read") ?? 0) > 1000);
       assert.ok((killed("count/statements-read") ?? 0) > 10000);

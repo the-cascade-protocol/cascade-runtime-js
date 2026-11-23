@@ -990,11 +990,11 @@ export class CorePod {
   async #keepDatabase(
     built: KeptBuild,
     dumped: () => Promise<Uint8Array>,
-  ): Promise<void> {
+  ): Promise<PodDatabase | undefined> {
     const hash = this.#builtHash;
-    if (hash === undefined || this.#built !== built) return;
+    if (hash === undefined || this.#built !== built) return undefined;
     const database = await this.#openDatabase(true);
-    if (database === undefined) return;
+    if (database === undefined) return undefined;
     if (database.fingerprint !== hash) {
       this.#databaseHolds = undefined;
       try {
@@ -1003,10 +1003,31 @@ export class CorePod {
           database.builtWhole(dump, built.union.graphs, hash),
         );
       } catch {
-        return;
+        return undefined;
       }
     }
     this.#databaseHolds = built;
+    return database;
+  }
+
+  /**
+   * Builds the database beside the pod whole from the build as it stands, when its ledger names another hash than the
+   * build's or it was never built, and answers by it from then on: for the end of an import, so that the questions asked
+   * next are answered from it rather than from a store, and `keepBuild` at close has none to build. A failure leaves it
+   * to be built whole at `keepBuild`, and the questions to the store.
+   */
+  async keptDatabase(): Promise<void> {
+    await this.#settle();
+    if (!this.keepsDatabase) return;
+    await this.#putBackMatcherView();
+    await this.#withBuilt();
+    const built = this.#built;
+    if (built === undefined) return;
+    const database = await timedAside("core-pod.keepDatabase", () =>
+      this.#keepDatabase(built, () => built.union.store.dump()),
+    );
+    if (database !== undefined)
+      this.#databaseAnswers = Promise.resolve(database);
   }
 
   /**

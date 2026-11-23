@@ -1397,6 +1397,8 @@ class OpenPod implements Pod {
         disclaimedProfiles: [],
         heldBackProfiles: [],
       };
+    // The database is a cache of the pod's files: where it cannot be built now, it is built at close and the questions go to the store.
+    await this.#core.keptDatabase().catch(() => undefined);
     return {
       ...filed,
       ...(matched === undefined ? {} : { matched }),
