@@ -44,6 +44,7 @@ import {
 } from "../src/node/resolved.js";
 import { openPodWith, type Parts } from "../src/pod.js";
 import { profileOf, syntheticPulls } from "./import-bench.js";
+import { FIRST_SCREEN, THEN } from "./perf-scenarios/fresh-first-screen.js";
 
 const DATABASE = "pod.db";
 /** What a sealed pod keeps beside it under names that say only what kind of file each is, as its build and answers. */
@@ -101,6 +102,12 @@ async function session<T>(
     }
   });
   return { result, spans: [...seen.spans.keys()] };
+}
+
+/** The spans `run` took. */
+async function spansOf(run: () => Promise<unknown>): Promise<string[]> {
+  const { seen } = await probing(run);
+  return [...seen.spans.keys()];
 }
 
 /** The later pull, of records the first did not hold. */
@@ -335,21 +342,33 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
   });
 
   describe("given a new pod, open and not yet closed", () => {
-    it("makes no pod.db and holds no connection to one while it is open, through its first steps, and builds it whole at close", async () => {
+    it("makes no pod.db at open or by a retitle, builds it whole once as the import ends, holds one connection to it while open, and builds nothing more at close", async () => {
       const { given, opened, closed } = counted();
       const folder = join(pods, "new-unclosed");
       const database = join(besideOf(folder), DATABASE);
       const pod = await openPodWith(given, folder, { title: "Annie Easley" });
+      let atClose: string[] = [];
       try {
         assert.equal(existsSync(database), false, "pod.db made at open");
         await pod.retitle("Annie J. Easley");
-        await pod.import(syntheticPulls(1)[0]!, { claimProfiles: claiming });
-        assert.equal(existsSync(database), false, "pod.db made by a step");
-        assert.equal(opened() - closed(), 0, "a connection to pod.db is open");
+        assert.equal(existsSync(database), false, "pod.db made by a retitle");
+        const atImport = await spansOf(() =>
+          pod.import(syntheticPulls(1)[0]!, { claimProfiles: claiming }),
+        );
+        assert.ok(
+          atImport.includes(WHOLE),
+          "pod.db not built whole by the import",
+        );
+        assert.equal(existsSync(database), true, "pod.db not built by import");
+        assert.equal(
+          opened() - closed(),
+          1,
+          "one connection to pod.db is open",
+        );
       } finally {
-        await pod.close();
+        atClose = await spansOf(() => pod.close());
       }
-      assert.equal(existsSync(database), true, "pod.db not built at close");
+      assert.ok(!atClose.includes(WHOLE), "pod.db built again at close");
       assert.equal(closed(), opened(), "a connection to pod.db is left open");
     });
   });
@@ -982,6 +1001,58 @@ describe("Answering a pod's questions from its database, a page at a time · pod
       );
       assert.ok(Array.isArray(rows) && rows.length > 0);
       assert.deepEqual(rows, fromStore);
+    });
+  });
+
+  describe("given a new pod just imported into, still open", () => {
+    it("answers the first screen's questions from pod.db, reading no dataset and loading no store, with the rows the store gives the same pod opened again", async () => {
+      const folder = join(pods, "asked-fresh");
+      const asked = [THEN, ...FIRST_SCREEN];
+      const watched = counting(parts);
+      const fresh: Record<string, unknown> = {};
+      let loaded: typeof watched.loads | undefined;
+      try {
+        await session(
+          folder,
+          async (pod) => {
+            for (const pull of syntheticPulls(3))
+              await pod.import(pull, { claimProfiles: claiming });
+            const before = { ...watched.loads };
+            for (const question of asked)
+              fresh[question] = await pod.ask(question);
+            loaded = {
+              restored: watched.loads.restored - before.restored,
+              files: watched.loads.files - before.files,
+              triples: watched.loads.triples - before.triples,
+              datasets: watched.loads.datasets - before.datasets,
+            };
+          },
+          watched.parts,
+        );
+      } finally {
+        watched.restore();
+      }
+      assert.deepEqual(loaded, {
+        restored: 0,
+        files: 0,
+        triples: 0,
+        datasets: 0,
+      });
+      assert.ok(
+        Object.values(fresh).some((rows) => (rows as unknown[]).length > 0),
+        "no first-screen question gave a row",
+      );
+      const { result: stored } = await session(
+        await copied(folder, "asked-fresh-store"),
+        async (pod) => {
+          const found: Record<string, unknown> = {};
+          for (const question of asked)
+            found[question] = await pod.ask(question);
+          return found;
+        },
+        storeOnly(parts),
+      );
+      assert.deepEqual(fresh, stored);
     });
   });
 
