@@ -831,6 +831,49 @@ describe("Flame graphs of a build · perf-trace.ts, perf-flame.mjs, perf-runs.mj
     });
   });
 
+  describe("given builds whose performance files name different Oxigraph builds", () => {
+    it("marks the build where the Oxigraph build changed, a file that names none counting as another build", async () => {
+      const { runsPage } = await script<Runs>("perf-runs.mjs");
+      const run = (id: string, oxigraphBuild: string | null | undefined) => ({
+        id: `${id}-aaaaaaa`,
+        date: "2026-11-20",
+        event: "push",
+        run: id,
+        sha: "aaaaaaa",
+        flame: { builds: [] },
+        kept: new Set<string>(),
+        speeds: [],
+        stored: [],
+        jobs: [],
+        oxigraphBuild,
+      });
+      const options = {
+        repo: "owner/repo",
+        pages: "https://site.test/perf",
+        viewer: "https://site.test/perf/speedscope/",
+      };
+      const note = /<p class="note">[^<]*Oxigraph build[^<]*<\/p>/;
+      const step = runsPage(
+        [run("3", "native"), run("2", "native"), run("1", null)],
+        options,
+      );
+      const marked = step.split("</details>").map((part) => note.test(part));
+      assert.deepEqual(marked, [false, true, false, false]);
+      assert.match(
+        step,
+        /The build below it ran on a different Oxigraph build \(native here, none named below\)/,
+      );
+      assert.doesNotMatch(
+        runsPage([run("2", "native"), run("1", "native")], options),
+        note,
+      );
+      assert.doesNotMatch(
+        runsPage([run("2", "native"), run("1", undefined)], options),
+        note,
+      );
+    });
+  });
+
   describe("given a build whose performance file measured the jobs of every day", () => {
     it("shows in the build's entry one plain line for each job under What people do after the first import, apart from the flame graphs", async () => {
       const { runsPage } = await script<Runs>("perf-runs.mjs");

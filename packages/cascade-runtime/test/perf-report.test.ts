@@ -1270,7 +1270,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       });
       assert.match(
         compare.compare(on("wasm"), on("native")),
-        /different Oxigraph build/,
+        /different Oxigraph builds/,
       );
       assert.doesNotMatch(
         compare.compare(on("native"), on("native")),
@@ -1285,6 +1285,28 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
           probe: true,
         }).profile,
         /Oxigraph (native|wasm) build/,
+      );
+    });
+
+    it("says in the file's profile how many runs the headline is the median of, once the large size is run once", () => {
+      const plan = {
+        scenarios: new Set(SCENARIOS),
+        encryption: "auto" as const,
+        repeats: 3,
+        probe: false,
+        largeOnce: true,
+      };
+      assert.match(
+        envOf({ ...plan, sizes: ["synthea-10y", LARGE] }).profile,
+        /headline unprobed median of 3, the large size once/,
+      );
+      assert.match(
+        envOf({ ...plan, sizes: [LARGE] }).profile,
+        /headline unprobed one run$/,
+      );
+      assert.match(
+        envOf({ ...plan, sizes: ["synthea-10y"] }).profile,
+        /headline unprobed median of 3$/,
       );
     });
 
