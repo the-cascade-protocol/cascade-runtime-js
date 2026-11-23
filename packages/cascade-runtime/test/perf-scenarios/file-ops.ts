@@ -759,7 +759,6 @@ export async function fileOpsAt(
           encrypted: false,
           probed: false,
           folder,
-          claim: [],
         },
         work,
       );

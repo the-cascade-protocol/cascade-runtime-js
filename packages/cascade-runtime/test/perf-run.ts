@@ -3,12 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { child } from "./perf-child.js";
 import { type Context } from "./perf-context.js";
-import {
-  LARGE,
-  type DatasetId,
-  loadDataset,
-  profileOfPatient,
-} from "./perf-data.js";
+import { LARGE, type DatasetId, loadDataset } from "./perf-data.js";
 import { commits, envOf } from "./perf-env.js";
 import { explain } from "./perf-glossary.js";
 import {
@@ -101,7 +96,6 @@ async function scenariosAt(
   flame: Flame,
 ): Promise<Row[]> {
   const data = await loadDataset(dataset);
-  const claim = await profileOfPatient(data);
   const about = `dataset=${dataset} sha256=${data.sha256} records=${data.records}${encrypted ? " encrypted" : ""}`;
   const wants = (scenario: Scenario) => plan.scenarios.has(scenario);
   const place = (label: string) => join(work, label, "pod");
@@ -114,7 +108,6 @@ async function scenariosAt(
     work,
     log,
     flame,
-    claim,
     about,
     how: howOf(plan.repeats),
     wants,
@@ -125,7 +118,6 @@ async function scenariosAt(
       encrypted,
       probed: false,
       folder: place(label),
-      claim,
     }),
   };
   const rows: Row[] = wants("fresh-first-screen")

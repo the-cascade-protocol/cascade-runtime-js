@@ -53,7 +53,6 @@ export interface Job {
   /** Where a probed run writes the trace of each scenario it ran. */
   readonly profiles?: string;
   readonly folder: string;
-  readonly claim: readonly string[];
   readonly out: string;
   /** What the job is called, which seeds its ids (see `pinClock`); a later job that imports into an earlier one's pod needs one of its own. */
   readonly label?: string;

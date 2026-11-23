@@ -3,7 +3,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { pullFiles, openPod } from "cascade-runtime";
+import {
+  type ImportOptions,
+  type Imported,
+  ownerAbout,
+  type Pod,
+  pullFiles,
+} from "cascade-runtime";
 import { componentsOf } from "@cascade-runtime/runtime/node";
 
 /** A person's record the fhir-r4 adapter commits, by the id a row names it with, and the id of its bench/manifest.json entry. */
@@ -110,45 +116,28 @@ export function pullOf(
 }
 
 /**
- * The profile the record's patient has, which an import that names it as the person's own takes: found in a pod of its own,
- * apart from every run measured. A profile is named by the entries about the patient, never by the patient's own, so the pod
- * is given the patient and the first entry of each kind that names the patient (a kind the importer does not read names no
- * profile): with the patient alone it finds no profile to claim, and a pod that claims none shows no one's results.
+ * An import as an app does it for a person's own record: the pull is filed without matching, the owner files an About for
+ * each patient profile it names, and the matcher then runs on the import. The profile is named by what the import holds, so it
+ * is known only once the import is made: a profile worked out beforehand from some of the entries is another profile, and a pod
+ * that claims none shows no one's results, since every record is left out for having no known subject.
  */
-export async function profileOfPatient(
-  data: Dataset,
-): Promise<readonly string[]> {
-  type Resource = {
-    resourceType: string;
-    subject?: { reference?: string };
-    patient?: { reference?: string };
-  };
-  const { entry } = data.bundle as { entry: { resource: Resource }[] };
-  const named = ({ resource }: { resource: Resource }): boolean =>
-    resource.resourceType !== "Patient" &&
-    (resource.subject?.reference ?? resource.patient?.reference) !== undefined;
-  const only = {
-    resourceType: "Bundle",
-    type: "collection",
-    entry: [
-      ...entry.filter(({ resource }) => resource.resourceType === "Patient"),
-      ...entry
-        .filter(named)
-        .filter(
-          ({ resource }, at, all) =>
-            all.findIndex(
-              (other) => other.resource.resourceType === resource.resourceType,
-            ) === at,
-        ),
-    ],
-  };
-  const scratch = await openPod();
-  try {
-    const { unclaimedProfiles } = await scratch.import(pullOf(data, only), {
-      match: false,
-    });
-    return unclaimedProfiles;
-  } finally {
-    await scratch.close();
+export async function importedAsTheApp(
+  pod: Pod,
+  pull: ReadonlyMap<string, Uint8Array>,
+  onProgress?: ImportOptions["onProgress"],
+): Promise<Imported> {
+  const filed = await pod.import(pull, {
+    match: false,
+    ...(onProgress !== undefined && { onProgress }),
+  });
+  if (filed.activity === undefined) return filed;
+  const profiles = filed.unclaimedProfiles;
+  const of = profiles.length + 1;
+  await onProgress?.({ part: "judging", done: 0, of });
+  for (const [index, profile] of profiles.entries()) {
+    await pod.judge(ownerAbout(pod, profile));
+    await onProgress?.({ part: "judging", done: index + 1, of });
   }
+  const matched = await pod.match(filed.activity);
+  return { ...filed, matched, unclaimedProfiles: [] };
 }
