@@ -1250,6 +1250,34 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.match(text, /different cpu model/);
     });
 
+    it("says that two files on a different Oxigraph build are not read against each other, and names the build in the file it writes", () => {
+      const on = (build: string) => ({
+        ...hosted("linux 6.8.0-1017-azure", "AMD EPYC 7763"),
+        env: {
+          ...hosted("linux 6.8.0-1017-azure", "AMD EPYC 7763").env,
+          profile: `runtime-perf fresh-first-screen; Oxigraph ${build} build; headline unprobed median of 3`,
+        },
+      });
+      assert.match(
+        compare.compare(on("wasm"), on("native")),
+        /different Oxigraph build/,
+      );
+      assert.doesNotMatch(
+        compare.compare(on("native"), on("native")),
+        /Oxigraph build/,
+      );
+      assert.match(
+        envOf({
+          scenarios: new Set(SCENARIOS),
+          sizes: ["synthea-10y"],
+          encryption: "auto",
+          repeats: 3,
+          probe: true,
+        }).profile,
+        /Oxigraph (native|wasm) build/,
+      );
+    });
+
     it("names no job in the environment the harness writes", () => {
       const keys = ["GITHUB_ACTIONS", "RUNNER_OS", "RUNNER_NAME"];
       const was = keys.map((key) => process.env[key]);
