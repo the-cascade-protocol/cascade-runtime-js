@@ -380,6 +380,36 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
     });
   });
 
+  describe("with a website that cannot be read by scripts/sync-chrome.mjs --check", () => {
+    const check = (env: Record<string, string>) =>
+      spawnSync(
+        process.execPath,
+        [
+          "scripts/sync-chrome.mjs",
+          "--check",
+          "--from",
+          "http://127.0.0.1:9/css/chrome.css",
+        ],
+        {
+          cwd: ROOT,
+          encoding: "utf8",
+          env: { ...process.env, GITHUB_ACTIONS: "", ...env },
+        },
+      );
+
+    it("exits 0 and says so as a workflow warning on a GitHub Actions run", () => {
+      const run = check({ GITHUB_ACTIONS: "true" });
+      assert.equal(run.status, 0, run.stderr);
+      assert.match(run.stdout + run.stderr, /^::warning::sync-chrome: /m);
+    });
+
+    it("exits 0 with no workflow warning anywhere else", () => {
+      const run = check({});
+      assert.equal(run.status, 0, run.stderr);
+      assert.ok(!(run.stdout + run.stderr).includes("::warning::"));
+    });
+  });
+
   describe("with the source of the site", () => {
     it("lets only the chrome write a page's frame, bar the page that redirects", () => {
       const src = join(

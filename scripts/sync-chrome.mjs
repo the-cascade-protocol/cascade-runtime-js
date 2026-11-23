@@ -3,7 +3,7 @@
 //   node scripts/sync-chrome.mjs --check        exits 1 when the website's file differs from the copy
 //   node scripts/sync-chrome.mjs --from <url>   reads that address of the file instead
 // The address is ${WEBSITE_URL}/css/chrome.css, WEBSITE_URL defaulting to the website's site-docs deployment. An
-// address it cannot read (offline) is reported and exits 0 under --check, so such a run never fails a build.
+// address it cannot read (offline) is reported and exits 0 under --check, so such a run never fails a build; on GitHub Actions it is also a ::warning::.
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -51,9 +51,13 @@ async function main() {
     fetched = (await response.text()).replaceAll("\r\n", "\n");
     if (fetched.trim() === "") throw new Error("it is empty");
   } catch (error) {
-    process.stderr.write(
-      `sync-chrome: could not read ${SOURCE} (${error.message})\n`,
-    );
+    const said = `sync-chrome: could not read ${SOURCE} (${error.message})`;
+    process.stderr.write(`${said}\n`);
+    // Exiting 0 would pass the check unseen on a run; the warning shows on its summary.
+    if (check && process.env.GITHUB_ACTIONS === "true")
+      process.stdout.write(
+        `::warning::${said}: the chrome copy was not compared\n`,
+      );
     return check ? 0 : 1;
   }
   const same = body(readFileSync(COPY, "utf8")) === fetched;
