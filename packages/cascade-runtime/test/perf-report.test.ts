@@ -3854,6 +3854,10 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         "the 26 derivations have no .sql yet",
       );
       const lab = "questions-pod-my-lab-results.rq";
+      assert.ok(
+        (named(`rows/${lab}`)?.value ?? 0) > 0,
+        "the pod shows the person's lab results: a pod that claims no one shows none",
+      );
       for (const group of ["sparql", "sql", "page"])
         assert.ok((named(`${group}/${lab}`)?.value ?? 0) > 0, group);
       assert.ok((named("sql/views-lab-results.rq")?.value ?? 0) > 0);
