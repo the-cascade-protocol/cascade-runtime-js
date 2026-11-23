@@ -1302,6 +1302,28 @@ export function sqlParts(sql: string): ReadonlyMap<string, string> {
   return parts;
 }
 
+/**
+ * A question's `.sql` in its two parts, `prepare` and `answer`: the statements that make the temporary tables the
+ * answer reads, run in order each time the question is asked, and the one statement that gives the rows. None for a
+ * `.sql` in no part, which is one statement.
+ */
+export function questionParts(
+  sql: string,
+): { readonly prepare: string; readonly answer: string } | undefined {
+  const parts = sqlParts(sql);
+  if (parts.size === 0) return undefined;
+  const answer = parts.get("answer");
+  if (
+    answer === undefined ||
+    parts.size > 2 ||
+    (parts.size === 2 && !parts.has("prepare"))
+  )
+    throw new Error(
+      `a question's .sql is in the parts prepare and answer, or in none; this one has ${[...parts.keys()].join(", ")}`,
+    );
+  return { prepare: parts.get("prepare") ?? "", answer };
+}
+
 /** The column a list question gives last, its row's entry key: a sort key, not a term. */
 export const PAGE_KEY = "page_key";
 
@@ -1315,13 +1337,19 @@ export interface SqlAnswer {
   readonly keys?: readonly (string | null)[];
 }
 
-/** Runs the `.sql`'s one statement with the named parameters given. A value that is no N-Triples term is refused. */
+/**
+ * Runs the `.sql`'s one statement with the named parameters given, after the statements of its `prepare` part, each
+ * time, where it has one. A value that is no N-Triples term is refused.
+ */
 export function sqlAnswer(
   db: Database,
   sql: string,
   parameters?: Readonly<Record<string, unknown>>,
 ): SqlAnswer {
-  const statement = db.prepare(sql);
+  const parts = questionParts(sql);
+  if (parts !== undefined)
+    for (const text of sqlStatements(parts.prepare)) db.prepare(text).run();
+  const statement = db.prepare(parts?.answer ?? sql);
   const named = statement.columns();
   const paged = named.at(-1) === PAGE_KEY;
   const columns = paged ? named.slice(0, -1) : named;

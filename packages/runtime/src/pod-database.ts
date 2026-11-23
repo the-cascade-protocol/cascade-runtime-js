@@ -13,6 +13,7 @@ import {
   loadStatements,
   PAGE_KEY,
   parsedNt,
+  questionParts,
   sqlDatabaseFunctions,
   sqlParts,
   sqlStatements,
@@ -291,15 +292,19 @@ export class PodDatabase {
   /**
    * The rows a question's `.sql` gives, asked of the whole pod: a list question's whole list, or, given a page, its
    * first `size` entries after the key, and the key of the last of them when another entry follows; a question that
-   * is no list gives all its rows whatever the page. The statement is prepared the first time the question is asked.
+   * is no list gives all its rows whatever the page. A question in the parts prepare and answer runs the statements of
+   * its prepare part first, each time. Each statement is compiled the first time the question is asked.
    * None while the connection is closed, as during a build whole.
    */
   answer(sql: string, page?: PageAsked): DatabaseAnswer | undefined {
     if (this.#shut) return undefined;
-    let statement = this.#asked.get(sql);
+    const parts = questionParts(sql);
+    this.#ran(parts?.prepare);
+    const text = parts?.answer ?? sql;
+    let statement = this.#asked.get(text);
     if (statement === undefined) {
-      statement = this.#db.prepare(sql);
-      this.#asked.set(sql, statement);
+      statement = this.#db.prepare(text);
+      this.#asked.set(text, statement);
     }
     const named = statement.columns();
     const paged = named.at(-1) === PAGE_KEY;

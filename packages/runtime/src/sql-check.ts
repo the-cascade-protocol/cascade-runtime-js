@@ -493,6 +493,15 @@ export function madeScreens(
 
 const SCHEMA_TABLES = new Set(["term", "quad", "scope", "asked", "ledger"]);
 
+/**
+ * The table the schema makes that every screen's finish fills, none making it, which a keyed fill gives as a whole fill
+ * does: a row for each record shown in an entry, its second column the entry's type.
+ */
+const SCHEMA_SCREEN_TABLES = new Set(["shown_in_entry"]);
+/** The entry type a view's finish gives the rows of `shown_in_entry` for, in the statement that deletes them. */
+const SHOWN_TYPE =
+  /DELETE\s+FROM\s+shown_in_entry\s+WHERE\s+type\s*=\s*'([^']+)'/i;
+
 /** The rows of each table a screen made, by table, each table's rows written and sorted. */
 function screenTables(db: Database): Map<string, string[]> {
   const names = db
@@ -855,6 +864,16 @@ function keyedFillFound(
   const owner = new Map<string, string>();
   for (const { query, parts } of viewsOf(views))
     for (const table of tablesOf(parts)) owner.set(table, query.rq);
+  const shownTypes = new Map<string, string>();
+  for (const { query, parts } of viewsOf(views)) {
+    const type = SHOWN_TYPE.exec(parts.get("finish") ?? "")?.[1];
+    if (type !== undefined) shownTypes.set(type, query.rq);
+  }
+  // A row of a table no screen makes is blamed on the view whose finish gives the rows of its entry's type.
+  const shownBy = (rows: readonly string[]): string => {
+    const type = (JSON.parse(rows[0] ?? "[]") as unknown[])[1];
+    return shownTypes.get(String(type)) ?? viewsOf(views)[0]?.query.rq ?? "";
+  };
   const filled = screenTables(db);
   const found: { view: string; line: string }[] = [];
   for (const { name, make } of keyedChanges(db, views)) {
@@ -879,13 +898,13 @@ function keyedFillFound(
       refilled(db, views);
       const kept = screenTables(db);
       for (const [table, rows] of wanted) {
-        if (!owner.has(table)) continue;
+        if (!owner.has(table) && !SCHEMA_SCREEN_TABLES.has(table)) continue;
         const held = kept.get(table) ?? [];
         if (JSON.stringify(held) === JSON.stringify(rows)) continue;
         const extra = [...new Set(held)].filter((row) => !rows.includes(row));
         const lacked = [...new Set(rows)].filter((row) => !held.includes(row));
         found.push({
-          view: owner.get(table) ?? "",
+          view: owner.get(table) ?? shownBy([...extra, ...lacked]),
           line: `${name}: ${table} holds [${extra.join(", ")}] a whole fill does not, and lacks [${lacked.join(", ")}]`,
         });
       }

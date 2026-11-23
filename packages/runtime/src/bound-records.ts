@@ -55,7 +55,7 @@ function valuesOf(records: readonly string[]): string {
   return `VALUES ?record { ${records.map((record) => `<${record}>`).join(" ")} }`;
 }
 
-/** Just after the outermost group's brace, and just after each marked group's. */
+/** Just after the outermost group's brace, and just after each marked group's, the outermost bound once. */
 function groups(query: string): { outermost: number; marked: number[] } {
   let outermost: number | undefined;
   const marked: number[] = [];
@@ -67,8 +67,13 @@ function groups(query: string): { outermost: number; marked: number[] } {
       mark = token.startsWith("#") && MARK.test(token) ? end : undefined;
       continue;
     }
+    const first = outermost === undefined;
     outermost ??= end;
-    if (mark !== undefined && BEFORE_BRACE.test(query.slice(mark, match.index)))
+    if (
+      !first &&
+      mark !== undefined &&
+      BEFORE_BRACE.test(query.slice(mark, match.index))
+    )
       marked.push(end);
     mark = undefined;
   }
