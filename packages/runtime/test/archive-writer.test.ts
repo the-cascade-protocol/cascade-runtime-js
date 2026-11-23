@@ -231,6 +231,49 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
     );
   });
 
+  it("finds an archive another opening wrote since it opened: a listing lists its files, and a step writes none of them, refusing one it holds with other bytes", async () => {
+    const host = podAt();
+    const mine = archivedFiles(host, layout);
+    await step([[RECORD, "<#a> a <#Condition> .\n"]], ACT).commit(mine);
+    const other = archivedFiles(host, layout);
+    await step([[SECOND_RECORD, "<#c> a <#Condition> .\n"]], SECOND_ACT).commit(
+      other,
+    );
+    assert.ok(
+      (await mine.list("")).includes(SECOND_RECORD),
+      "the other's file is listed",
+    );
+
+    const third = podAt();
+    const first = archivedFiles(third, layout);
+    await step([[VERSION, "<#b> a <#Condition> .\n"]], ACT).commit(first);
+    const later = archivedFiles(third, layout);
+    await later.read(VERSION);
+    await step([[RECORD, "<#a> a <#Condition> .\n"]], SECOND_ACT).commit(first);
+    const archives = async () =>
+      (await onDisk(third.folder)).filter((path) =>
+        path.startsWith("archives/"),
+      ).length;
+    const before = await archives();
+    await assert.rejects(
+      step(
+        [[RECORD, "<#other> a <#Condition> .\n"]],
+        "provenance/imports/ac/ac000000-0000-4000-8000-000000000008.ttl",
+      ).commit(later),
+      /records\/conditions\/aa\/.* is in the pod already, holding other bytes/,
+    );
+    assert.equal(await archives(), before, "a refused step writes no archive");
+    await step(
+      [[RECORD, "<#a> a <#Condition> .\n"]],
+      "provenance/imports/ab/ab000000-0000-4000-8000-000000000007.ttl",
+    ).commit(later);
+    assert.equal(
+      await archives(),
+      before + 1,
+      "the file held with the same bytes is not written again, its act's file is",
+    );
+  });
+
   it("writes no file of an encrypted pod into an archive: its files are sealed one by one at their keyed names, and no archive nor requirement's file is made", async () => {
     const host = podAt();
     const derive: DeriveKey = async (secret, salt) =>

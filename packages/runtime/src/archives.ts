@@ -406,6 +406,8 @@ export class ArchivedFiles implements Files {
   #held: Promise<Held> | undefined;
   /** The paths found at their own paths and in an archive, compared once. */
   readonly #compared = new Set<string>();
+  /** The archives whose directory is in the index. */
+  readonly #opened = new Set<string>();
   /** The requirement's file, once this opening has seen it in the pod or written it. */
   #requirement: Promise<void> | undefined;
   /** Whether this opening has seen to the subject's file: held in an archive, or loose in a pod that has no archive yet. */
@@ -491,6 +493,7 @@ export class ArchivedFiles implements Files {
   async writeStep(
     written: Iterable<readonly [string, Uint8Array]>,
   ): Promise<void> {
+    await this.#refreshed();
     const kept = await this.#kept(written);
     const stored: [string, Uint8Array][] = [];
     const archived: [string, Uint8Array][] = [];
@@ -581,6 +584,7 @@ export class ArchivedFiles implements Files {
       await timedAside("archives.write", () =>
         this.#flushed(path, packed.bytes),
       );
+      this.#opened.add(path);
       counted("archives.written");
       counted("archives.entries.written", packed.entries.length);
       for (const entry of packed.entries)
@@ -649,34 +653,8 @@ export class ArchivedFiles implements Files {
             this.#layout,
             this.#newStore,
           );
-        const archives = (await this.#files.list(this.#folder))
-          .filter((path) => ARCHIVE_NAME.test(path.slice(this.#folder.length)))
-          .sort();
-        const directories = await Promise.all(
-          archives.map((archive) =>
-            archiveDirectory(this.#files, archive, this.#layout),
-          ),
-        );
-        const held = new Map<string, ArchiveEntry>();
-        for (const entries of directories) {
-          counted("archives.opened");
-          counted("archives.entries", entries.length);
-          for (const entry of entries) {
-            const first = held.get(entry.path);
-            if (first === undefined) held.set(entry.path, entry);
-            else if (
-              first.size !== entry.size ||
-              first.crc !== entry.crc ||
-              !sameBytes(
-                await archiveEntryBytes(this.#files, first),
-                await archiveEntryBytes(this.#files, entry),
-              )
-            )
-              throw new Refusal(
-                `${entry.path} is held twice with other bytes, in ${first.archive} and in ${entry.archive}`,
-              );
-          }
-        }
+        const held: Held = new Map();
+        await this.#absorbed(held, await this.#unopened());
         return held;
       });
       this.#held = reading;
@@ -685,6 +663,58 @@ export class ArchivedFiles implements Files {
       });
     }
     return this.#held;
+  }
+
+  /** The archives in the folder whose directory this opening has not read, sorted. */
+  async #unopened(): Promise<string[]> {
+    return (await this.#files.list(this.#folder))
+      .filter(
+        (path) =>
+          ARCHIVE_NAME.test(path.slice(this.#folder.length)) &&
+          !this.#opened.has(path),
+      )
+      .sort();
+  }
+
+  /** Reads each archive's directory and adds its entries to the index; a path two archives hold must hold the same bytes. */
+  async #absorbed(held: Held, archives: readonly string[]): Promise<void> {
+    const directories = await Promise.all(
+      archives.map((archive) =>
+        archiveDirectory(this.#files, archive, this.#layout),
+      ),
+    );
+    for (const [at, entries] of directories.entries()) {
+      this.#opened.add(archives[at] as string);
+      counted("archives.opened");
+      counted("archives.entries", entries.length);
+      for (const entry of entries) {
+        const first = held.get(entry.path);
+        if (first === undefined) held.set(entry.path, entry);
+        else if (
+          first.size !== entry.size ||
+          first.crc !== entry.crc ||
+          !sameBytes(
+            await archiveEntryBytes(this.#files, first),
+            await archiveEntryBytes(this.#files, entry),
+          )
+        )
+          throw new Refusal(
+            `${entry.path} is held twice with other bytes, in ${first.archive} and in ${entry.archive}`,
+          );
+      }
+    }
+  }
+
+  /**
+   * The index with any archive another opening wrote since, whose directory is read now: a listing and a step's write
+   * look again, one listing of the archives' folder, so that a file another session archived is found, and one it
+   * archived with other bytes is refused, as a file it wrote at its own path would be.
+   */
+  async #refreshed(): Promise<Held> {
+    const held = await this.#index();
+    const fresh = await this.#unopened();
+    if (fresh.length > 0) await this.#absorbed(held, fresh);
+    return held;
   }
 
   /** Refuses the pod when the file at its own path holds other bytes than the archive's entry at that path. */
@@ -740,7 +770,7 @@ export class ArchivedFiles implements Files {
   async list(folder: string): Promise<string[]> {
     const prefix = relative(this, folder);
     const [held, loose] = await Promise.all([
-      this.#index(),
+      this.#refreshed(),
       this.#files.list(folder),
     ]);
     const paths = new Set(

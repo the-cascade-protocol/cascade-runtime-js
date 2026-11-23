@@ -4355,9 +4355,10 @@ describe("Writing a pod's files into archives · openPod()", () => {
           read: async (path) => {
             const bytes = await beside.read(path);
             if (path !== "pod.json" || bytes === undefined) return bytes;
-            const older = JSON.parse(
-              new TextDecoder().decode(bytes),
-            ) as Record<string, unknown>;
+            const older = JSON.parse(new TextDecoder().decode(bytes)) as Record<
+              string,
+              unknown
+            >;
             delete older.filedSubject;
             return new TextEncoder().encode(JSON.stringify(older));
           },
