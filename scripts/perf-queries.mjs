@@ -61,6 +61,10 @@ const against = (reference, sql) =>
 const pct = (share) =>
   share > 0 && share < 0.005 ? "<1%" : `${Math.round(share * 100)}%`;
 
+/** A query the reference engine was asked and failed on, whose reason each-query.ts begins with these words; the others in `not-run` were never asked. */
+const failedOnReference = ({ why }) =>
+  why?.startsWith("the reference engine failed: ") === true;
+
 /** A query's name as a person reads it: the file's name, with its folder where two queries share it. */
 function labelled(queries) {
   const leaf = (rq) => rq.replace(/^.*\//, "").replace(/\.rq$/, "");
@@ -209,6 +213,12 @@ export function queriesOf(file, key) {
       "failed",
       `${failed.length} ${failed.length === 1 ? "query has" : "queries have"} a SQL version that gave no answer: ${failed.map(({ label }) => label).join(", ")}.`,
     );
+  const brokenHere = queries.filter(failedOnReference);
+  if (brokenHere.length > 0)
+    line(
+      "reference-failed",
+      `${brokenHere.length} ${brokenHere.length === 1 ? "query" : "queries"} failed on the reference engine: ${brokenHere.map(({ label }) => label).join(", ")}.`,
+    );
   const without = at("count/without-sql") ?? 0;
   const alone = ran.filter(
     ({ sql, equal }) => sql === undefined && equal === undefined,
@@ -259,7 +269,7 @@ function queryRow(one) {
       ? ` title="asked of ${one.records} records, the times added up"`
       : "";
   if (one.sparql === undefined)
-    return `<tr><td${note}>${escaped(one.label)}</td><td class="n" colspan="6">not asked: ${escaped(one.why ?? "")}</td></tr>`;
+    return `<tr><td${note}>${escaped(one.label)}</td><td class="n" colspan="6">${failedOnReference(one) ? "" : "not asked: "}${escaped(one.why ?? "")}</td></tr>`;
   const speed = one.sql === undefined ? "" : against(one.sparql, one.sql);
   const same =
     one.sql === undefined

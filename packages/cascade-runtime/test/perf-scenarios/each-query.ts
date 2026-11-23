@@ -350,7 +350,13 @@ async function oneQuery(asked: Asked): Promise<QueryRun> {
       want = want.concat(answer.rows);
     }
   } catch (error) {
-    return { rq, kind, records: bound.length, hasSql, why: messageOf(error) };
+    return {
+      rq,
+      kind,
+      records: bound.length,
+      hasSql,
+      why: `the reference engine failed: ${messageOf(error)}`,
+    };
   }
   const base = {
     rq,
