@@ -16,7 +16,7 @@ import {
   secs,
   type TraceNote,
 } from "./perf-job.js";
-import { type Plan, type Scenario } from "./perf-plan.js";
+import { planAt, type Plan, type Scenario } from "./perf-plan.js";
 import {
   clockRow,
   probedRows,
@@ -471,7 +471,14 @@ export async function perfFile(
               : [false];
       for (const encrypted of only ? [] : modes) {
         results.push(
-          ...(await scenariosAt(plan, size, encrypted, work, log, flame)),
+          ...(await scenariosAt(
+            planAt(plan, size),
+            size,
+            encrypted,
+            work,
+            log,
+            flame,
+          )),
         );
         await flamed();
         await partial({
