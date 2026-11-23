@@ -3812,7 +3812,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
     });
 
-    it("says of a query whose .sql could not be answered why, and counts it neither as one without a SQL version nor in what the SQL versions saved", async () => {
+    it("names why a query's .sql could not be answered, and counts it neither as one without a SQL version nor in what the SQL versions saved", async () => {
       const { queriesOf } = await queries$("perf-queries.mjs");
       const broken = file(
         rowsOfQueries("synthea-10y", {
