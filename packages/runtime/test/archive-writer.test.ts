@@ -17,6 +17,7 @@ import type { Layout } from "../src/layout.js";
 import { FolderFiles, openSharedHandles } from "../src/node/folder-files.js";
 import { StepWrites } from "../src/pod.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
+import { probing } from "../src/probe.js";
 import { archivesOf } from "../src/zip-pack.js";
 import { Refusal } from "../src/step.js";
 import { layout as vocabularyLayout } from "./vocabulary.js";
@@ -144,6 +145,14 @@ describe("Writing a pod's files into archives · ArchivedFiles, StepWrites.commi
       entries.map((entry) => entry.path),
       [ACT, RECORD, VERSION, SUBJECT],
       "its entries are the files an archive may hold, in path order",
+    );
+    const { seen } = await probing(async () =>
+      archivedFiles(host, layout).read(CARD),
+    );
+    assert.equal(
+      seen.counts.get("archives.opened"),
+      undefined,
+      "the card is no file an archive holds, so reading it reads no archive",
     );
     const reopened = archivedFiles(host, layout);
     for (const [path, body] of FIRST)
