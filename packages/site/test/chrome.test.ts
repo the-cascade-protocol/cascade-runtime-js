@@ -128,16 +128,16 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           [...nav.matchAll(/<a [^>]*>([^<]*)<\/a>/g)].map(([, label]) => label),
           [
             "How it works",
+            "For developers",
             "For patients",
             "For clinicians",
-            "Developers",
             "Community",
           ],
           path,
         );
         assert.match(
           header,
-          /<a href="[^"]*" aria-current="page">Developers<\/a>/,
+          /<a href="[^"]*" aria-current="page">For developers<\/a>/,
           path,
         );
         assert.equal(header.split("aria-current").length, 2, path);
@@ -155,9 +155,9 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
       const expected = {
         nav: [
           ["How it works", "/how-it-works/"],
+          ["For developers", "/developers/"],
           ["For patients", "/patients/"],
           ["For clinicians", "/clinicians/"],
-          ["Developers", "/developers/"],
           ["Community", "/community/"],
         ],
         row: [

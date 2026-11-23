@@ -67,9 +67,9 @@ export const PLAIN: Chrome = {};
 /** A website page's path per nav item; the hub is part of Developers. */
 const NAV: readonly (readonly [string, string])[] = [
   ["How it works", "/how-it-works/"],
+  ["For developers", "/developers/"],
   ["For patients", "/patients/"],
   ["For clinicians", "/clinicians/"],
-  ["Developers", "/developers/"],
   ["Community", "/community/"],
 ];
 
