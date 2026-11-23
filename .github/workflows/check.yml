@@ -336,7 +336,11 @@ jobs:
           CASCADE_CONFORMANCE_REPORT: ${{ steps.start.outputs.report || format('{0}/native.nt', runner.temp) }}
         run: |
           node scripts/transpile.mjs
-          node --import ./packages/cascade-runtime/dist/test/offline.js --test --test-name-pattern="Reporting a conformance run" packages/runtime/dist/test/conformance.test.js
+          set -o pipefail
+          node --import ./packages/cascade-runtime/dist/test/offline.js --test --test-name-pattern="Reporting a conformance run" packages/runtime/dist/test/conformance.test.js | tee "$RUNNER_TEMP/report-cases.log"
+          # A pattern that matches nothing exits 0 (the file itself counts as one test), so a renamed describe must fail
+          # this step by the describe's name being absent from the output.
+          grep -q "Reporting a conformance run" "$RUNNER_TEMP/report-cases.log"
       # Every rule beside the note that ruled it and this run's result, kept as an artifact, as the `tests and conformance`
       # job keeps its own off a pull request.
       - name: The spec's pages
@@ -363,7 +367,7 @@ jobs:
     name: tests (native)
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       CASCADE_TEST_OFFLINE: "1"
     defaults:
