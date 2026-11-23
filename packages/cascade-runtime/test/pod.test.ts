@@ -51,6 +51,7 @@ import {
   FolderFiles,
   headerIn,
   localVocabulary,
+  unpack,
 } from "@cascade-runtime/runtime/node";
 import { probing } from "@cascade-runtime/runtime/probe";
 import { pullFiles } from "../src/connect/index.js";
@@ -4287,6 +4288,120 @@ describe("Opening a pod whose files are held in archives · openPod()", () => {
     } finally {
       await pod.close();
     }
+  });
+});
+
+/**
+ * A pod opened on a folder keeps what its steps write that never changes in archives, one for each step, in the folder
+ * the layout gives them (X1, W1): the first archive in a pod holds its subject's file, so that a runtime that cannot
+ * read archives, which would see only the files at their own paths, opens no part of it. A pod of any other kind of
+ * host, or a sealed one, keeps its files as it did.
+ */
+describe("Writing a pod's files into archives · openPod()", () => {
+  const GRAPHS = {
+    query:
+      "SELECT (COUNT(DISTINCT ?g) AS ?graphs) WHERE { GRAPH ?g { ?s ?p ?o } }",
+  };
+  /** The parts of a runtime from before archives: its folder is the host's own files, which read and write each at its path. */
+  const beforeArchives = (): Parts => ({
+    ...kept,
+    folder: (path, iri) => ({
+      files: new FolderFiles(path, iri, { refuseLinks: true }),
+      name: basename(path),
+    }),
+  });
+  const archivesIn = async (at: string): Promise<string[]> =>
+    (await readdir(join(at, "archives")).catch(() => [])).sort();
+  const asked = async (parts: Parts, at: string) => {
+    const pod = await openPodWith(parts, at);
+    try {
+      return {
+        who: [pod.address, pod.subject],
+        rows: await pod.ask(QUESTION),
+        graphs: await pod.ask(GRAPHS),
+      };
+    } finally {
+      await pod.close();
+    }
+  };
+
+  it("keeps a fresh pod's files that never change in archives named by their bytes, the requirement's file beside them, and asks as the pod unpacked loose; a runtime from before archives refuses it", async () => {
+    const at = (await alexPod()).folder;
+    const archives = await archivesIn(at);
+    assert.ok(
+      archives.length >= 4,
+      `the pod's creation and its three imports, each one archive, not ${archives.length}`,
+    );
+    for (const archive of archives)
+      assert.equal(
+        archive,
+        `${createHash("sha256")
+          .update(await readFile(join(at, "archives", archive)))
+          .digest("hex")}.zip`,
+      );
+    const loose = (await filesIn(at))
+      .map((path) => relative(at, path).split(sep).join("/"))
+      .filter((path) => !path.startsWith("archives/"));
+    assert.deepEqual(
+      loose.filter(
+        (path) =>
+          kept.layout.inSnapshotSet(path) && !kept.layout.inStoredBytes(path),
+      ),
+      [],
+      "no file an archive may hold is at its own path",
+    );
+    assert.ok(
+      loose.includes(
+        "format/4c0299bfcb615af1d3456fb1755dea6e0229b4852c7890bae85f0328c453a95d.ttl",
+      ),
+    );
+    const described = JSON.parse(
+      await readFile(join(answersBeside(at).folder, "pod.json"), "utf8"),
+    ) as Record<string, unknown>;
+    assert.equal(
+      "subject" in described,
+      false,
+      "pod.json no longer lets a runtime from before archives skip the search for the subject's file",
+    );
+
+    const unpacked = join(pods, "unpacked-alex");
+    await unpack(at, unpacked, kept.layout);
+    await cp(answersBeside(at).folder, answersBeside(unpacked).folder, {
+      recursive: true,
+    });
+    assert.deepEqual(await asked(kept, unpacked), await asked(kept, at));
+
+    await assert.rejects(openPodWith(beforeArchives(), at));
+  });
+
+  it("packs a pod made loose when it is next written, its subject's file with the first archive, so a runtime from before archives refuses it then and not before", async () => {
+    const at = join(pods, "loose-then-packed");
+    const old = beforeArchives();
+    const first = await openPodWith(old, at);
+    await first.import(exported("x-e2"), { match: false });
+    await first.close();
+    assert.deepEqual(await archivesIn(at), [], "written loose");
+    const before = await asked(old, at);
+
+    const pod = await openPodWith(kept, at);
+    await pod.import(exported("x-e4"), { match: false });
+    await pod.close();
+    const archives = await archivesIn(at);
+    assert.ok(archives.length >= 1);
+    assert.deepEqual(
+      (await filesIn(join(at, "subject"))).length,
+      0,
+      "the subject's file is in the archive, not at its path",
+    );
+    assert.equal((await asked(kept, at)).who[0], before.who[0]);
+    await assert.rejects(openPodWith(old, at));
+  });
+
+  it("writes none of an encrypted pod's files into an archive, and no requirement's file", async () => {
+    const { folder } = await sealedAlexPod();
+    const names = await readdir(folder);
+    assert.ok(!names.includes("archives"), names.join());
+    assert.ok(!names.includes("format"), names.join());
   });
 });
 

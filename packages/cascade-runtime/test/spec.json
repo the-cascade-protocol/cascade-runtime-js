@@ -16,6 +16,7 @@
     "Encrypting a pod with six words · openPod(), sixWords(), typedWords()",
     "Encrypting a pod with an app's key · openPod()",
     "Opening a pod whose files are held in archives · openPod()",
+    "Writing a pod's files into archives · openPod()",
     "Sample pods and exports to build against · replayKit(), kitDownload()",
     "Publishing a pod for a browser · answersToPublish(), samplesToPublish()",
     "Importing the package in a web page · browserBuildVersion(), cascadeRuntime()",
