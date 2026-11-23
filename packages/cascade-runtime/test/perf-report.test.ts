@@ -1404,6 +1404,36 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.match(text, /as a push to main does/);
     });
 
+    it("says the pods differ, and that the times are not the same work, when main's pod and this build's hold a different number of statements, and says nothing when they hold the same", () => {
+      const holding = (file: typeof main, statements: number) => ({
+        ...file,
+        results: [
+          ...file.results,
+          {
+            name: "stored-synthea-10y/statements/all",
+            unit: "statements",
+            value: statements,
+            kind: "count" as const,
+          },
+        ],
+      });
+      const differs = compare.comparison(holding(pull, 29_829), {
+        sameJob: holding(main, 19_636),
+      });
+      assert.match(
+        differs,
+        /The pods differ \(synthea-10y: main 19,636 statements, this pull request 29,829\); times are not the same work\./,
+      );
+      const same = compare.comparison(holding(pull, 19_636), {
+        sameJob: holding(main, 19_636),
+      });
+      assert.doesNotMatch(same, /The pods differ/);
+      assert.doesNotMatch(
+        compare.comparison(pull, { sameJob: main }),
+        /The pods differ/,
+      );
+    });
+
     it("says in plain words that totals are not comparable when the two runs landed on different CPUs, and still gives the table", () => {
       const slower = taken("AMD EPYC 7763 64-Core Processor", 16, {
         runtime: sha("c"),
