@@ -1,4 +1,4 @@
-import { DATASETS, PER_BUILD, type DatasetId } from "./perf-data.js";
+import { DATASETS, LARGE, PER_BUILD, type DatasetId } from "./perf-data.js";
 
 /**
  * Each scenario's fixed id: the first part of every row's name. `floor` is the same input loaded as plainly as SQL can
@@ -57,6 +57,18 @@ export interface Plan {
    * size). The nightly and hand-started runs leave it off and run every job as often as any scenario; naming a scenario runs it.
    */
   readonly lightJobs?: boolean;
+  /**
+   * Whether the large size is run once, each job once and with no CPU profile (`planAt`): with the patient claimed, one fresh
+   * import of it took 39 minutes on a hosted runner, so three of them, a probed one and a profiled one do not fit the nightly's limit.
+   */
+  readonly largeOnce?: boolean;
+}
+
+/** The plan as one size is run: the large size once and light when `largeOnce`, every other size as the plan has it. */
+export function planAt(plan: Plan, size: DatasetId): Plan {
+  return plan.largeOnce === true && size === LARGE
+    ? { ...plan, repeats: 1, lightJobs: true, cpuProfile: false }
+    : plan;
 }
 
 export function parsed(
@@ -150,6 +162,7 @@ export function parsed(
       }),
       cpuProfile: !args.includes("--no-cpu-profile"),
       lightJobs: args.includes("--light-jobs"),
+      largeOnce: args.includes("--large-once"),
     },
     out: value("--out"),
   };

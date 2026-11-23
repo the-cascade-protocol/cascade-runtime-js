@@ -15,7 +15,7 @@ import { perfFile } from "./perf-run.js";
  * bench/result.schema.json), so one reader and one comparison serve every repository.
  *
  * Run it as `npm run perf -- [--scenario fresh-first-screen,floor,...] [--size synthea-10y,...] [--encryption plain|encrypted|both]
- * [--repeats 3] [--no-probe] [--out file] [--profiles folder [--no-cpu-profile]]`.
+ * [--repeats 3] [--no-probe] [--large-once] [--out file] [--profiles folder [--no-cpu-profile]]`.
  *
  * Two kinds of run, never mixed: the headline rows (`<scenario>/total` and the rest that are not under `stage/` or
  * `count/`) come from UNPROBED runs, each in a process of its own, a plain `performance.now()` around each step, repeated

@@ -107,6 +107,11 @@ on:
         type: choice
         options: [linux, all, windows, macos]
         default: linux
+      encryption:
+        description: "Plain pods only (`plain`), or the large size's encrypted pod too, as the nightly run has it (`auto`)"
+        type: choice
+        options: [auto, plain]
+        default: auto
 
 concurrency:
   group: perf-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
@@ -258,12 +263,17 @@ jobs:
           SCENARIO: ${{ inputs.scenario }}
           SIZE: ${{ inputs.size }}
           LARGE: ${{ inputs.large }}
+          ENCRYPTION: ${{ inputs.encryption }}
         run: |
           set -euo pipefail
           sizes="synthea-10y"
           if [ "$EVENT" = schedule ] || [ "$LARGE" = true ]; then sizes="synthea-10y,synthea-lifetime"; fi
           if [ -n "$SIZE" ] && [ "$SIZE" != per-build ]; then sizes="$SIZE"; fi
           args="--size $sizes"
+          # The large size once, each job once and with no CPU profile: with the patient claimed, one fresh import of it took 39
+          # minutes on this runner (run 45097850026), so three, a probed one and a profiled one would not fit the job's limit.
+          args="$args --large-once"
+          if [ "$ENCRYPTION" = plain ]; then args="$args --encryption plain"; fi
           # A pull request and a push to main run each job of every day once, without adding one result (which cost a fifth of the
           # step), so each build's job stays short; the nightly and hand-started runs run them in full.
           if [ "$EVENT" = pull_request ] || [ "$EVENT" = push ]; then args="$args --light-jobs"; fi
