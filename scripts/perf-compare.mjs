@@ -20,7 +20,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { jobsKeys, jobsOf, jobsTitle } from "./perf-jobs.mjs";
+import { jobsKeys, jobsOf, jobsTitle, plural } from "./perf-jobs.mjs";
+import { queriesKeys, queriesOf, queriesTitle } from "./perf-queries.mjs";
 import {
   CLASS_HEAD,
   KIND_HEAD,
@@ -35,12 +36,17 @@ import {
   STORED_ROW,
 } from "./perf-stored.mjs";
 
+/** The rows of each query on each engine: a section of their own reads them, so the headline table does not list them. */
+const QUERY_ROW =
+  /^each-query-[^/]+\/(?:sparql|sql|page|rows|equal|timeout|not-run)\//;
+
 /**
  * What a row is, from its name: a count of what a pod holds (the `stored` scenario's rows), a stage of the probed run (its
  * total included), a step's own time in it, a count, or a headline time or size.
  */
 export function kindOf(name) {
   if (STORED_ROW.test(name)) return "stored";
+  if (QUERY_ROW.test(name)) return "queries";
   if (/\/self\//.test(name)) return "self";
   if (/\/stage\//.test(name) || /\/probed-total$/.test(name)) return "stage";
   if (/\/count\//.test(name)) return "count";
@@ -423,6 +429,135 @@ export function jobsSection(file, { markdown = false } = {}) {
 }
 
 /**
+ * What a file says of what each query of the vocabulary cost: the lines that read the first import and the SQL versions, one list for
+ * each size it asked them at. None for a file that asked none.
+ */
+export function queriesSection(file, { markdown = false } = {}) {
+  const pages = queriesKeys(file).flatMap((key) => queriesOf(file, key) ?? []);
+  if (pages.length === 0) return [];
+  const out = [
+    markdown ? "**What each query costs**" : "WHAT EACH QUERY COSTS",
+    "",
+  ];
+  for (const page of pages) {
+    if (pages.length > 1)
+      out.push(
+        markdown ? `*${queriesTitle(page)}*` : `${queriesTitle(page)}:`,
+        "",
+      );
+    for (const { text } of page.lines) out.push(markdown ? `- ${text}` : text);
+    out.push("");
+  }
+  return out;
+}
+
+/**
+ * What changed in what the queries cost between two files taken in one job or one after another: the time of the queries both
+ * engines answered in both files, each engine alone, and the queries whose rows are not the same, which a fingerprint of the rows
+ * tells exactly. Each query's two times are folded away in a markdown report. Nothing for files that did not both ask them.
+ */
+export function queriesChanges(before, after, { markdown, was$, now$ }) {
+  const out = [];
+  for (const key of queriesKeys(after)) {
+    const was = queriesOf(before, key);
+    const now = queriesOf(after, key);
+    if (was === undefined || now === undefined) continue;
+    const earlier = new Map(was.queries.map((one) => [one.name, one]));
+    const both = now.queries.filter((one) => {
+      const old = earlier.get(one.name);
+      return (
+        one.sparql !== undefined &&
+        one.sql !== undefined &&
+        old?.sparql !== undefined &&
+        old?.sql !== undefined
+      );
+    });
+    if (both.length === 0) continue;
+    const sum = (list, pick) => list.reduce((all, one) => all + pick(one), 0);
+    const row = (label, from, to) => [
+      label,
+      shown(from, "s"),
+      shown(to, "s"),
+      change(from, to),
+    ];
+    const same = `the ${both.length} ${both.length === 1 ? "query" : "queries"} both ran`;
+    const lines = [
+      row(
+        `Reference engine, ${same}`,
+        sum(both, (one) => earlier.get(one.name).sparql),
+        sum(both, (one) => one.sparql),
+      ),
+      row(
+        `SQL, ${same}`,
+        sum(both, (one) => earlier.get(one.name).sql),
+        sum(both, (one) => one.sql),
+      ),
+    ];
+    const each = both.map((one) => [
+      one.label,
+      shown(earlier.get(one.name).sparql, "s"),
+      shown(one.sparql, "s"),
+      change(earlier.get(one.name).sparql, one.sparql),
+      shown(earlier.get(one.name).sql, "s"),
+      shown(one.sql, "s"),
+      change(earlier.get(one.name).sql, one.sql),
+    ]);
+    const digest = (file, page) =>
+      new Map(
+        page.queries.map((one) => [
+          one.name,
+          (file.results ?? []).find(
+            ({ name }) => name === `each-query-${key}/rows/${one.name}`,
+          )?.sha256,
+        ]),
+      );
+    const wasDigest = digest(before, was);
+    const nowDigest = digest(after, now);
+    const moved = now.queries.filter(
+      (one) =>
+        wasDigest.get(one.name) !== undefined &&
+        nowDigest.get(one.name) !== undefined &&
+        wasDigest.get(one.name) !== nowDigest.get(one.name),
+    );
+    out.push(
+      markdown
+        ? `**What each query costs, ${was$} -> ${now$}**`
+        : `WHAT EACH QUERY COSTS, ${was$.toUpperCase()} -> ${now$.toUpperCase()}`,
+      "",
+      table(["", was$, now$, "change"], lines, markdown),
+      "",
+      moved.length === 0
+        ? `${markdown ? "> " : ""}No query gave other rows than in ${was$}.`
+        : `${markdown ? "> " : ""}${plural(moved.length, "query", "queries")} gave other rows than in ${was$}: ${moved.map(({ label }) => label).join(", ")}.`,
+      "",
+    );
+    const head = [
+      "Query",
+      `Reference engine, ${was$}`,
+      `${now$}`,
+      "change",
+      `SQL, ${was$}`,
+      `${now$}`,
+      "change",
+    ];
+    const each$ = table(head, each, markdown, [0]);
+    out.push(
+      ...(markdown
+        ? [
+            "<details><summary>Each query</summary>",
+            "",
+            each$,
+            "",
+            "</details>",
+          ]
+        : [each$]),
+      "",
+    );
+  }
+  return out;
+}
+
+/**
  * What a file says of what each pod it counted holds: for each, the line of what a fresh import left, the classes of what is
  * held and, folded away in a markdown report, each kind. None for a file with no such rows.
  */
@@ -579,6 +714,8 @@ export function compare(
   }
   out.push(...speedSection(after, { markdown }));
   out.push(...jobsSection(after, { markdown }));
+  out.push(...queriesSection(after, { markdown }));
+  out.push(...queriesChanges(before, after, { markdown, was$, now$ }));
   out.push(...storedSection(after, { markdown }));
   out.push(...storedChanges(before, after, { markdown, was$, now$ }));
   const head = (title) =>
@@ -781,6 +918,7 @@ export function summary(
   );
   out.push(...speedSection(file, { markdown }));
   out.push(...jobsSection(file, { markdown }));
+  out.push(...queriesSection(file, { markdown }));
   out.push(...storedSection(file, { markdown }));
   for (const [group, rows] of grouped(
     file.results.filter((row) => kindOf(row.name) === "stage"),

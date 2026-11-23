@@ -32,6 +32,13 @@ import {
   jobsTitle,
 } from "./perf-jobs.mjs";
 import {
+  QUERIES_ROW,
+  queriesHtml,
+  queriesKeys,
+  queriesOf,
+  queriesTitle,
+} from "./perf-queries.mjs";
+import {
   STORED_ROW,
   storedHtml,
   storedKeys,
@@ -285,6 +292,17 @@ export function reduced(file, glossary = readGlossary()) {
             name: row.name,
             value: row.value,
             ...(EDIT_ROW.test(row.name) && { extra: row.extra }),
+          },
+        ];
+      if (QUERIES_ROW.test(row.name))
+        return [
+          {
+            name: row.name,
+            value: row.value,
+            ...(typeof row.extra === "string" && {
+              extra: row.extra.split(" | ").at(-1),
+            }),
+            ...(typeof row.sha256 === "string" && { sha256: row.sha256 }),
           },
         ];
       if (!rest.startsWith("self/")) return [];
@@ -685,6 +703,10 @@ section.jobs h3 { font-size: 1rem; margin: 1.4rem 0 .2rem; }
 section.jobs ul.jobs { margin: .4rem 0; padding-left: 1.2rem; }
 section.jobs ul.jobs li { margin: .3rem 0; }
 section.stored h3 { font-size: 1rem; margin: 1.4rem 0 .2rem; }
+section.queries h3 { font-size: 1rem; margin: 1.4rem 0 .2rem; }
+section.queries ul.queries { margin: .4rem 0; padding-left: 1.2rem; }
+section.queries ul.queries li { margin: .3rem 0; }
+section.queries tr.group th { background: #f4f6f9; text-align: left; padding: .3rem .5rem; }
 .speedbox { margin: .6rem 0; }
 .speedbox p { margin: .3rem 0; }
 .speedline { font-size: 1rem; }
@@ -1051,6 +1073,41 @@ export function jobsLatest(files, glossary = readGlossary()) {
     );
 }
 
+/**
+ * What each size's queries cost in the newest Linux build whose file asked them, for the section "What each query costs": the
+ * build and what its rows say, by size, plain before encrypted. Nothing for builds none of whose files asked them.
+ */
+export function queriesLatest(files, glossary = readGlossary()) {
+  const order = Object.keys(glossary.datasets);
+  const found = new Map();
+  for (const { build, file } of files) {
+    if ((build.os ?? "linux") !== "linux") continue;
+    for (const key of queriesKeys(file)) {
+      const page = queriesOf(file, key);
+      if (page !== undefined) found.set(key, { build, page });
+    }
+  }
+  return [...found.values()].sort(
+    (a, b) =>
+      order.indexOf(a.page.dataset) - order.indexOf(b.page.dataset) ||
+      Number(a.page.encrypted) - Number(b.page.encrypted),
+  );
+}
+
+/** The section of what each query of the vocabulary costs on each engine, one block for each size. */
+function queriesBlock(queries, repo) {
+  if (queries.length === 0) return "";
+  const blocks = queries.map(({ build, page }) =>
+    queriesHtml(page, {
+      heading: `<h3>${esc(queriesTitle(page))} <span class="note">Build <a href="https://github.com/${esc(repo)}/commit/${esc(build.sha)}">${esc(build.sha)}</a>, ${esc(build.date)}</span></h3>`,
+    }),
+  );
+  return `<section class="queries" id="queries">
+<h2>What each query costs</h2>
+${blocks.join("\n")}
+</section>`;
+}
+
 /** The section of what the jobs after the first import took, one block for each size. */
 function jobsBlock(jobs, repo) {
   if (jobs.length === 0) return "";
@@ -1074,6 +1131,7 @@ export function stackedPage(
     fileOps = [],
     stored = [],
     jobs = [],
+    queries = [],
   } = {},
 ) {
   const repeats = [
@@ -1170,6 +1228,7 @@ ${chart.columns.some((column) => !column.measured) ? `<p class="note">Faded colu
 ${sections.length === 0 ? "<p>No build has been measured yet.</p>" : sections.join("\n")}
 ${fileOpsSection(fileOps)}
 ${jobsBlock(jobs, repo)}
+${queriesBlock(queries, repo)}
 ${storedBlock(stored, repo, glossary)}
 <p class="links"><a href="../">Documentation home</a> · <a href="runs/">Each build's flame graphs</a> · <a href="detail/">Every measurement, one small chart each</a> · <a href="stacked.json">The data of these charts</a></p>
 <div id="tip" hidden></div>
@@ -1251,6 +1310,7 @@ export function pages({ data, out, repo, runs, glossary = readGlossary() }) {
     fileOps,
     stored: storedLatest(files, glossary),
     jobs: jobsLatest(files, glossary),
+    queries: queriesLatest(files, glossary),
   });
   writeFileSync(join(out, "index.html"), page);
   writeFileSync(

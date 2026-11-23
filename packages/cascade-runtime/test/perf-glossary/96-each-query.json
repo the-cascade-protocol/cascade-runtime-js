@@ -1,0 +1,63 @@
+{
+  "scenarios": {
+    "each-query": {
+      "chart": false,
+      "says": "Every query of the vocabulary (the derivations, lenses, views, labels, questions and table queries), asked of a copy of the pod a fresh import left: on the reference engine over the pod's own statements and, for the ones that have a SQL version, in SQL on a database holding the same statements, with what each gave compared.",
+      "total": "Filling the reference engine and a database from the pod's statements, making every view's screen, and asking every query of the vocabulary once on the reference engine and, where it has one, in SQL."
+    }
+  },
+  "measures": {
+    "reference-load": "Filling the reference engine's store with the pod's statements, read from the pod's own database, so that both engines read the same statements.",
+    "database-load": "Filling a database with the same statements and making every view's screen in it: the work that a SQL version of a view or a question stands on."
+  },
+  "measureFamilies": [
+    {
+      "startsWith": "sparql/",
+      "says": "The time the reference engine takes to answer {name} over the whole pod."
+    },
+    {
+      "startsWith": "sql/",
+      "says": "The time the pod's database takes to answer {name} in SQL."
+    },
+    {
+      "startsWith": "page/",
+      "says": "The time the pod's database takes to give the first page of 20 entries of {name}."
+    },
+    {
+      "startsWith": "rows/",
+      "says": "How many rows the reference engine gave for {name}, with a fingerprint of them."
+    },
+    {
+      "startsWith": "equal/",
+      "says": "1 when the SQL version of {name} gave the same rows as the reference engine, 0 when it did not."
+    },
+    {
+      "startsWith": "timeout/",
+      "says": "The reference engine took longer than its limit of 60 seconds for {name}; the value is the limit in seconds. It is not stopped at the limit, so its time and rows are in the rows of the same name."
+    },
+    {
+      "startsWith": "not-run/",
+      "says": "{name} was not asked of the pod: the note says why."
+    }
+  ],
+  "spans": {
+    "scenario.reference-load": {
+      "says": "Filling the reference engine's store with the pod's statements."
+    },
+    "scenario.database-load": {
+      "says": "Filling a database with the pod's statements and making every view's screen."
+    },
+    "each-query.sparql": {
+      "says": "One query asked of the pod on the reference engine; the calls are the queries that were asked."
+    },
+    "each-query.sql": {
+      "says": "One query asked of the pod in SQL; the calls are the queries that have a SQL version, and the pages asked."
+    }
+  },
+  "counts": {
+    "queries": "How many queries of the vocabulary outside the matcher there are, each asked once.",
+    "with-sql": "How many of them have a SQL version beside the query.",
+    "without-sql": "How many have none yet: every derivation, the lenses and some questions. They are answered by the reference engine alone.",
+    "not-run": "How many could not be asked of the pod: the table queries read reference tables the pod's database does not hold."
+  }
+}

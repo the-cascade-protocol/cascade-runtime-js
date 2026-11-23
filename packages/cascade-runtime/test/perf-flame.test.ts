@@ -910,10 +910,7 @@ describe("Flame graphs of a build · perf-trace.ts, perf-flame.mjs, perf-runs.mj
           runsPage([run([queries])], options),
         )?.[0] ?? "";
       assert.match(block, /<h2>What each query costs<\/h2>/);
-      assert.match(
-        block,
-        /3 of the 6 queries have a SQL version\./,
-      );
+      assert.match(block, /3 of the 6 queries have a SQL version\./);
       assert.match(block, /My lab results/);
       assert.doesNotMatch(
         runsPage([run([])], options),

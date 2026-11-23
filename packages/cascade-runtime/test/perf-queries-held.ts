@@ -131,6 +131,12 @@ export const rowsOfImport = (dataset = "synthea-10y"): Row[] => {
       samples: 1,
       range: "10-10",
     },
+    {
+      name: `${key}/count/records`,
+      unit: "{count}",
+      value: 647,
+      kind: "cost",
+    },
     stage("arrivals.convert", 2.5),
     stage("bridge.stage-mapping", 0.5),
     stage("bridge.query-record.rq", 0.2),

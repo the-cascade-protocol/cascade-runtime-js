@@ -44,6 +44,12 @@ import {
 } from "./perf-stacked.mjs";
 import { jobsHtml, jobsKeys, jobsOf, jobsTitle } from "./perf-jobs.mjs";
 import {
+  queriesHtml,
+  queriesKeys,
+  queriesOf,
+  queriesTitle,
+} from "./perf-queries.mjs";
+import {
   storedHtml,
   storedKeys,
   storedOf,
@@ -293,6 +299,23 @@ ${pages
 </div>`;
 }
 
+/**
+ * What each query of the vocabulary cost in a build, the lines and a table of every query's two times, for each size its
+ * performance file asked them at. Nothing for a build with no such file or none of whose rows ask them.
+ */
+function queriesBlock(run) {
+  const pages = run.queries ?? [];
+  if (pages.length === 0) return "";
+  return `<div class="box queries">
+<h2>What each query costs</h2>
+${pages
+  .map((page) =>
+    queriesHtml(page, { heading: `<h3>${esc(queriesTitle(page))}</h3>` }),
+  )
+  .join("\n")}
+</div>`;
+}
+
 /** The page of builds: for each, a plain table of where each scenario's time went, and the links that open its graphs. */
 export function runsPage(
   runs,
@@ -302,6 +325,7 @@ export function runsPage(
     const scenarios = [
       speedBlock(run, glossary),
       jobsBlock(run),
+      queriesBlock(run),
       storedBlock(run, glossary),
       ...run.flame.builds.map((build) =>
         buildSection(run, build, { viewer, pages, glossary }),
@@ -338,6 +362,8 @@ code { font-size: .8em; color: #6b7280; }
 .box.speed h3 { font-size: .9rem; margin: .8rem 0 .3rem; }
 .box.stored h3 { font-size: .9rem; margin: .8rem 0 .3rem; }
 .box.jobs h3 { font-size: .9rem; margin: .8rem 0 .3rem; }
+.box.queries h3 { font-size: .9rem; margin: .8rem 0 .3rem; }
+.box.queries tr.group th { text-align: left; padding: .3rem .5rem; }
 .box.jobs ul.jobs { margin: .3rem 0; padding-left: 1.2rem; }
 .box.stored .speedline { margin: .3rem 0; }
 .note { color: #555b66; font-size: .85rem; margin: .3rem 0; }
@@ -439,6 +465,17 @@ export function pages({
       return [];
     }
   };
+  /** The queries a build's performance file asked; none when the file is not kept or cannot be read. */
+  const queriesPages = (id) => {
+    const path = performanceFiles.get(id);
+    if (path === undefined) return [];
+    try {
+      const file = JSON.parse(readFileSync(path, "utf8"));
+      return queriesKeys(file).flatMap((key) => queriesOf(file, key) ?? []);
+    } catch {
+      return [];
+    }
+  };
   const viewerUrl = `${pagesAt}/speedscope/`;
   mkdirSync(join(out, "speedscope"), { recursive: true });
   for (const entry of readdirSync(viewerFolder))
@@ -472,6 +509,7 @@ export function pages({
       speeds: speedsOf(run.id),
       stored: storedPods(run.id),
       jobs: jobsPages(run.id),
+      queries: queriesPages(run.id),
     });
   }
   writeFileSync(

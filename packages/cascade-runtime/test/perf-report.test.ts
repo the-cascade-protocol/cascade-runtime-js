@@ -199,6 +199,11 @@ const stored$ = (await import(
   storedLine(page: StoredPage): string;
 };
 
+/** What a fresh import alone leaves in a pod, counted once for the tests that read the pod their scenario ran beside as it was. */
+let aloneStored: Promise<readonly Row[]> | undefined;
+const storedAlone = (plan: Plan): Promise<readonly Row[]> =>
+  (aloneStored ??= perfFile(plan).then((made) => made.results));
+
 const file = (rows: Row[]) => ({
   env: { os: "linux", runner: "ci; cpu", cpus: 4, node: "24.0.0" },
   commit: { runtime: "a".repeat(40) },
@@ -3515,8 +3520,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         repeats: 1,
         probe: false,
       });
-      const alone = (await perfFile(plan("fresh-first-screen", "stored")))
-        .results;
+      const alone = await storedAlone(plan("stored"));
       const { results } = await perfFile(
         plan(
           "fresh-first-screen",
@@ -3630,7 +3634,10 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.equal(at(`rows/${lab}`)?.kind, "output");
       assert.match(at(`rows/${lab}`)?.sha256 ?? "", /^[0-9a-f]{64}$/);
       assert.equal(at(`equal/${lab}`)?.value, 1);
-      assert.equal(at("equal/questions-pod-what-each-folder-holds.rq")?.value, 0);
+      assert.equal(
+        at("equal/questions-pod-what-each-folder-holds.rq")?.value,
+        0,
+      );
       assert.equal(at("sql/views-lab-results.rq")?.value, 0.2);
       // A query with no .sql has its reference time and rows and no SQL row and no verdict.
       assert.equal(at("sparql/derivations-records.rq")?.value, 0.8);
@@ -3645,8 +3652,14 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       // A query the pod's database cannot run is counted, says why, and is left without a time.
       assert.equal(at("sparql/tables-agreement.rq"), undefined);
       assert.equal(at("not-run/tables-agreement.rq")?.value, 1);
-      assert.match(at("not-run/tables-agreement.rq")?.extra ?? "", /reference tables/);
-      assert.match(at(`sparql/${lab}`)?.extra ?? "", /questions\/pod\/My lab results\.rq$/);
+      assert.match(
+        at("not-run/tables-agreement.rq")?.extra ?? "",
+        /reference tables/,
+      );
+      assert.match(
+        at(`sparql/${lab}`)?.extra ?? "",
+        /questions\/pod\/My lab results\.rq$/,
+      );
       assert.equal(at("reference-load")?.value, 0.9);
       assert.equal(at("database-load")?.value, 1.4);
       assert.equal(at("count/queries")?.value, 6);
@@ -3657,11 +3670,15 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
 
     it("has a plain sentence of the glossary for every row it writes", () => {
       assert.deepEqual(
-        rows.filter(({ name }) => explain(name) === undefined).map((row) => row.name),
+        rows
+          .filter(({ name }) => explain(name) === undefined)
+          .map((row) => row.name),
         [],
       );
       assert.match(
-        explain("each-query-synthea-10y/sparql/questions-pod-my-lab-results.rq") ?? "",
+        explain(
+          "each-query-synthea-10y/sparql/questions-pod-my-lab-results.rq",
+        ) ?? "",
         /reference engine/i,
       );
       assert.match(
@@ -3683,7 +3700,9 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
     const queries$ = (name: string) =>
       import(
         pathToFileURL(
-          fileURLToPath(new URL(`../../../../scripts/${name}`, import.meta.url)),
+          fileURLToPath(
+            new URL(`../../../../scripts/${name}`, import.meta.url),
+          ),
         ).href
       ) as Promise<{
         queriesKeys(file: object): string[];
@@ -3703,7 +3722,8 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       const { queriesKeys, queriesOf } = await queries$("perf-queries.mjs");
       assert.deepEqual(queriesKeys(withImport), ["synthea-10y"]);
       const page = queriesOf(withImport, "synthea-10y");
-      const text = (id: string) => page?.lines.find((line) => line.id === id)?.text;
+      const text = (id: string) =>
+        page?.lines.find((line) => line.id === id)?.text;
       assert.equal(
         text("import"),
         "Of the first import's 10.0 s (measured with the probe on), the Bridge's conversion took 2.50 s (25%), and the adapters' own queries inside it 300 ms (3%).",
@@ -3726,17 +3746,24 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
       assert.equal(
         text("slowest"),
-        "What each folder holds: 300 rows; SPARQL 70.0 s; SQL 4.00 s (17.5 times); same rows: no. My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (50.0 times); same rows: yes.",
+        "What each folder holds: 300 rows; SPARQL 70.0 s; SQL 4.00 s (17.5 times); same rows: no. lab-results: 40,000 rows; SPARQL 2.00 s; SQL 200 ms (10.0 times); same rows: yes. My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (50.0 times); same rows: yes.",
       );
       assert.ok(
         page?.queries.some(
-          ({ name, sql }) => name === "questions-pod-my-lab-results.rq" && sql === 0.036,
+          ({ name, sql }) =>
+            name === "questions-pod-my-lab-results.rq" && sql === 0.036,
         ),
       );
       // Said alone, a file with no first import still gives the queries' lines and not the import's.
       const bare = queriesOf(file(rowsOfQueries()), "synthea-10y");
-      assert.equal(bare?.lines.some(({ id }) => id === "import"), false);
-      assert.equal(bare?.lines.some(({ id }) => id === "sql"), true);
+      assert.equal(
+        bare?.lines.some(({ id }) => id === "import"),
+        false,
+      );
+      assert.equal(
+        bare?.lines.some(({ id }) => id === "sql"),
+        true,
+      );
       assert.equal(queriesOf(file(rowsOfImport()), "synthea-10y"), undefined);
     });
 
@@ -3765,7 +3792,10 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         /\| Reference engine, the 3 queries both ran \| 73\.8 s \| 73\.8 s \| same \|/,
       );
       assert.match(
-        compare.compare(file([]), withImport, { markdown: true, sameJob: true }),
+        compare.compare(file([]), withImport, {
+          markdown: true,
+          sameJob: true,
+        }),
         /What each query costs/,
       );
     });
@@ -3778,7 +3808,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         repeats: 1,
         probe: false,
       });
-      const alone = (await perfFile(plan("stored"))).results;
+      const alone = await storedAlone(plan("stored"));
       const { results } = await perfFile(plan("each-query", "stored"));
       const named = (name: string) =>
         results.find((row) => row.name === `each-query-synthea-10y/${name}`);
@@ -3787,7 +3817,9 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         [],
       );
       assert.deepEqual(
-        results.filter(({ name }) => explain(name) === undefined).map(({ name }) => name),
+        results
+          .filter(({ name }) => explain(name) === undefined)
+          .map(({ name }) => name),
         [],
       );
       const vocabulary = (await resolved()).vocabulary;
@@ -3798,7 +3830,10 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.ok(files.length > 80);
       const ran = (kind: string) =>
         results.filter(({ name }) => name.includes(`/${kind}/`));
-      assert.ok(ran("sparql").length >= files.length - 10, "nearly every query ran on the reference engine");
+      assert.ok(
+        ran("sparql").length >= files.length - 10,
+        "nearly every query ran on the reference engine",
+      );
       assert.ok(
         (named("count/without-sql")?.value ?? 0) > 20,
         "the 26 derivations have no .sql yet",
@@ -3811,13 +3846,25 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.ok((named("sparql/derivations-records.rq")?.value ?? 0) > 0);
       assert.ok((named("reference-load")?.value ?? 0) > 0);
       assert.ok((named("database-load")?.value ?? 0) > 0);
-      assert.ok(ran("rows").every(({ sha256 }) => /^[0-9a-f]{64}$/.test(sha256 ?? "")));
+      assert.ok(
+        ran("rows").every(({ sha256 }) => /^[0-9a-f]{64}$/.test(sha256 ?? "")),
+      );
       assert.ok(ran("equal").every(({ value }) => value === 0 || value === 1));
-      assert.equal(named(`equal/${lab}`)?.value, 1, "both engines give the rows of My lab results");
-      for (const measure of ["files/all", "statements/all", "count/pod-records"])
+      assert.equal(
+        named(`equal/${lab}`)?.value,
+        1,
+        "both engines give the rows of My lab results",
+      );
+      for (const measure of [
+        "files/all",
+        "statements/all",
+        "count/pod-records",
+      ])
         assert.equal(
-          results.find((row) => row.name === `stored-synthea-10y/${measure}`)?.value,
-          alone.find((row) => row.name === `stored-synthea-10y/${measure}`)?.value,
+          results.find((row) => row.name === `stored-synthea-10y/${measure}`)
+            ?.value,
+          alone.find((row) => row.name === `stored-synthea-10y/${measure}`)
+            ?.value,
           measure,
         );
     });
