@@ -56,6 +56,9 @@ import {
   oneMoreBundle,
   perfFile,
   importedAsTheApp,
+  LARGE,
+  PER_BUILD,
+  planAt,
   pullOf,
   loadDataset,
   unitOfCounter,
@@ -3461,6 +3464,24 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         "named, it runs",
       );
       assert.ok(parsed([]).plan.scenarios.has("add-one-record"));
+    });
+
+    it("runs the large size once, with each job once and no CPU profile, when the plan says so, and leaves the per-build size as it was", () => {
+      const asked = parsed(["--size", "synthea-10y,synthea-lifetime"]).plan;
+      assert.equal(asked.largeOnce, false, "every size in full unless asked");
+      assert.deepEqual(planAt(asked, LARGE), asked);
+      const once = parsed([
+        "--size",
+        "synthea-10y,synthea-lifetime",
+        "--large-once",
+      ]).plan;
+      assert.equal(once.largeOnce, true);
+      assert.deepEqual(planAt(once, PER_BUILD), once);
+      const large = planAt(once, LARGE);
+      assert.equal(large.repeats, 1);
+      assert.equal(large.lightJobs, true);
+      assert.equal(large.cpuProfile, false);
+      assert.equal(large.probe, once.probe, "the probed run stays");
     });
 
     it("explains every row the jobs write, in the glossary, with a sentence of the job's own for its total", () => {
