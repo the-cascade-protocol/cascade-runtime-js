@@ -74,7 +74,7 @@ node scripts/test.mjs --listed --test-randomize --test-random-seed=N
 ## What a pull request must pass
 
 CI runs on every pull request, and a red check is a reason not to merge. Two checks are required, **`compatibility`**
-and **`ready-to-merge`**. `compatibility` reports the result of the first five jobs below (and `runtime tests` on the
+and **`ready-to-merge`**. `compatibility` reports the result of the first six jobs below (and `runtime tests` on the
 nightly run); `ready-to-merge` is its own check.
 
 - **`lint and types`**: the type check, the lint and formatting, and that the website's chrome is copied as it is
@@ -90,10 +90,13 @@ nightly run); `ready-to-merge` is its own check.
   that its results read as a specification: every test in a file a package lists as `shaped` sits under a capability heading listed in its
   `test/spec.json`, word for word. That check runs in CI, not in `npm test`, so a new capability needs its heading added to
   `spec.json` by hand.
-- **`tests and conformance (native)`**: Oxigraph's native build, built here, and the whole suite on it. On a pull
-  request it runs the conformance command once, on that build, and posts its table on the pull request; on a push to
+- **`conformance (native)`**: Oxigraph's native build, built here, the production engine. On a pull request it runs the
+  conformance command once, on that build, posts its table on the pull request and checks the report it wrote; on a push to
   main and the nightly run it runs the command on each build and checks that every example and check has the same
-  outcome on both.
+  outcome on both. It runs beside `tests and conformance`, so a pull request waits for the longer of the two.
+- **`tests (native)`**: the suite on the native build. It runs on a push to main and nightly, not on a pull request,
+  where the suite runs once, in `tests and conformance`, on the WebAssembly build. A test that fails only on the native
+  build is found after the merge, and a red main is the next fix.
 - **`docs site`**: builds the package and the pages, and runs the browser tests in Chromium.
 - **`starter-kit (...)`**: four jobs (`suites`, `browser`, `app`, and `app, chat,mcp`) in which this pull request's
   package, packed, is run under the [starter kit](https://github.com/the-cascade-protocol/cascade-starter-kit)'s tests, so a change
