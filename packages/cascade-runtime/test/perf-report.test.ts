@@ -3961,6 +3961,45 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
     });
 
+    it("says that the reference engine itself failed on a query, as that and not as a SQL version that gave no answer or a query not asked", async () => {
+      const { queriesOf, queriesHtml } = await queries$("perf-queries.mjs");
+      const failedOn = file(
+        rowsOfQueries("synthea-10y", {
+          ...heldQueries(),
+          queries: [
+            {
+              rq: "views/lab-results.rq",
+              kind: "view",
+              records: 0,
+              hasSql: true,
+              why: "the reference engine failed: out of memory",
+            },
+          ],
+        }),
+      );
+      const rows = failedOn.results as { name: string; extra?: string }[];
+      assert.equal(
+        rows.some(({ name }) => name.includes("/equal/views-lab-results.rq")),
+        false,
+        "no verdict on a SQL version that was never compared",
+      );
+      const page = queriesOf(failedOn, "synthea-10y") as unknown as {
+        lines: { id: string; text: string }[];
+      };
+      assert.equal(
+        page.lines.some((line) => line.id === "failed"),
+        false,
+        "not a SQL version that gave no answer",
+      );
+      assert.match(
+        page.lines.find((line) => line.id === "reference-failed")?.text ?? "",
+        /1 query failed on the reference engine: lab-results/,
+      );
+      const html = queriesHtml(page, { heading: "" }) as string;
+      assert.match(html, /the reference engine failed: out of memory/);
+      assert.doesNotMatch(html, /not asked: the reference engine failed/);
+    });
+
     it("is said by the summary and by the comparison with main, before and after with the change and the multiple for what both files measured, and a file of main's with none does not stop it", () => {
       const summary = compare.summary(withImport, { markdown: true });
       assert.match(summary, /What each query costs/);
