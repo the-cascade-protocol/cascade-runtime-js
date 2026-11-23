@@ -3687,7 +3687,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
     });
 
-    it("is a scenario of its own that every build runs, a run may name alone, and a light build runs once", () => {
+    it("is a scenario of its own that every build runs, which a run may name alone", () => {
       assert.ok((SCENARIOS as readonly string[]).includes("each-query"));
       assert.ok(parsed([]).plan.scenarios.has("each-query"));
       assert.ok(parsed(["--light-jobs"]).plan.scenarios.has("each-query"));

@@ -38,7 +38,7 @@ name: perf
 # - Every run also asks every query of the vocabulary of a copy of the pod the first import left, on the reference engine and, where
 #   the query has a SQL version, in SQL (the `each-query` scenario): /perf/, /perf/runs/, the summary and the comment say what the
 #   adapters' conversion is of the first import and what the SQL versions save, under "What each query costs". A pull request and a
-#   push ask them once; the nightly run asks them three times.
+#   push, and the nightly run, ask them once and without a probe.
 # - A hand-started run can name one scenario (`fresh-first-screen,floor` is the import and its floor) and one size.
 # - Linux is not the only system a person runs this on. A push to main, the nightly run and a hand-started run that asks for
 #   `windows`, `macos` or `all` systems also run the same per-build scenario on a GitHub-hosted Windows runner and a macOS one
