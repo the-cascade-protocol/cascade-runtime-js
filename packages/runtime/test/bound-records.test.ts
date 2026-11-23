@@ -104,6 +104,17 @@ describe("Binding a comparison query to a run's records · boundToRecords(), bou
       assert.match(bound, /WHERE \{ VALUES \?record \{ <urn:b> \}\n/);
     });
 
+    it("binds the WHERE group once where the mark stands before it, as a question's does", async () => {
+      const query = `SELECT DISTINCT ?record ?other\n# bound: ?record\nWHERE {\n  ?record <urn:code> ?code .\n  ?other <urn:code> ?code .\n  FILTER (?record != ?other)\n}`;
+      const bound = boundToRecords(query, ["urn:b"]);
+      assert.equal(bound.match(/VALUES/g)?.length, 1);
+      assert.deepEqual(await pairsOf(bound), ["urn:b urn:a", "urn:b urn:c"]);
+      assert.equal(
+        boundToPairs(query, [["urn:b", "urn:a"]]).match(/VALUES/g)?.length,
+        1,
+      );
+    });
+
     it("ignores a mark inside a string", () => {
       const query = `SELECT ?record ("""\n# bound: ?record\n""" AS ?s) WHERE { ?record ?p ?o }`;
       assert.equal(
