@@ -3765,6 +3765,21 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         true,
       );
       assert.equal(queriesOf(file(rowsOfImport()), "synthea-10y"), undefined);
+      // Where SQL took longer than the reference engine, the line says so in words, never as a negative saving.
+      const slower = queriesOf(
+        file(
+          rowsOfQueries().map((row) =>
+            row.name.includes("/sql/") && row.kind === "clock"
+              ? { ...row, value: row.value * 100 }
+              : row,
+          ),
+        ),
+        "synthea-10y",
+      );
+      assert.match(
+        slower?.lines.find((line) => line.id === "sql")?.text ?? "",
+        /times as slow, \d+% more/,
+      );
     });
 
     it("is said by the summary and by the comparison with main, before and after with the change and the multiple for what both files measured, and a file of main's with none does not stop it", () => {

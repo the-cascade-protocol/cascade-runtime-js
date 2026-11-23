@@ -166,9 +166,13 @@ export function queriesOf(file, key) {
     const reference = sum(both, ({ sparql }) => sparql);
     const sql = sum(both, (one) => one.sql);
     const differing = both.filter(({ equal }) => equal === 0).length;
+    const speed =
+      sql <= reference
+        ? `${ratio(reference / sql)} times as fast, ${pct(1 - sql / reference)} less`
+        : `${ratio(sql / reference)} times as slow, ${pct(sql / reference - 1)} more`;
     line(
       "sql",
-      `${withSql} of the ${total} ${total === 1 ? "query has" : "queries have"} a SQL version. On this pod they took ${took(reference)} on the reference engine and ${took(sql)} in SQL (${ratio(reference / sql)} times as fast, ${pct(1 - sql / reference)} less)${
+      `${withSql} of the ${total} ${total === 1 ? "query" : "queries"} ${withSql === 1 ? "has" : "have"} a SQL version. On this pod they took ${took(reference)} on the reference engine and ${took(sql)} in SQL (${speed})${
         differing === 0 ? "" : `; ${differing} of them gave other rows`
       }.`,
     );
