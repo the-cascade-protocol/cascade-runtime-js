@@ -356,8 +356,8 @@ async function oneQuery(asked: Asked): Promise<QueryRun> {
   if (asked.screenFailed !== undefined)
     return { ...base, why: asked.screenFailed };
   let columns: readonly string[] = [];
-  let got: AnswerRow[] = [];
-  let sqlSeconds = 0;
+  let got: AnswerRow[];
+  let sqlSeconds: number;
   try {
     const started = performance.now();
     if (keyed)
