@@ -10,7 +10,12 @@ import {
   INDEX_FILE,
   LLMS_FILE,
 } from "../src/agents.js";
-import { FRONT_PAGE, hubFiles, REPOSITORIES } from "../src/front-page.js";
+import {
+  FRONT_PAGE,
+  hubFiles,
+  REPOSITORIES,
+  V1_REPOSITORIES,
+} from "../src/front-page.js";
 import { PLAIN } from "../src/html.js";
 import type { PagesContext } from "../src/hub/context.js";
 import { apiSection } from "../src/node/hub/api.js";
@@ -275,7 +280,8 @@ describe("Files for an agent · agentFiles(), llms.txt, index.json, AGENTS.md", 
         llms.split("\n- [").length - 1,
         6 +
           REPOSITORIES.length +
-          REPOSITORIES.filter(({ site }) => site).length,
+          REPOSITORIES.filter(({ site }) => site).length +
+          V1_REPOSITORIES.length,
       );
     });
   });
@@ -314,8 +320,15 @@ describe("Files for an agent · agentFiles(), llms.txt, index.json, AGENTS.md", 
       );
     });
 
-    it("lists every repository under Contribute, with its own site where it has one", () => {
+    it("lists every repository under Contribute, with its own site where it has one, Cascade Protocol v1's said to be v1", () => {
       assert.ok(group, "llms.txt has a Contribute group");
+      for (const { name } of V1_REPOSITORIES)
+        assert.ok(
+          group.includes(
+            `- [${name}](https://github.com/the-cascade-protocol/${name}): Cascade Protocol v1. `,
+          ),
+          `the Contribute group lists ${name} as v1`,
+        );
       for (const { name, site } of REPOSITORIES) {
         assert.ok(
           group.includes(`(https://github.com/the-cascade-protocol/${name})`),

@@ -182,6 +182,36 @@ describe("The front page · hubFiles()", () => {
       ]);
     });
 
+    it("lists Cascade Protocol v1's repositories after them, in a table of their own, each linked beside what it is and its status", () => {
+      assert.ok(html.indexOf('<h2 id="v1">') > html.indexOf("repository-list"));
+      const list = /<table id="v1-repository-list">([\s\S]*?)<\/table>/.exec(
+        html,
+      );
+      assert.ok(list, "the front page lists v1's repositories");
+      const rows = [
+        ...(list[1] ?? "").matchAll(
+          /<tr id="v1-repository-([^"]+)">([\s\S]*?)<\/tr>/g,
+        ),
+      ];
+      assert.deepEqual(
+        rows.map(([, name]) => name),
+        [
+          "spec",
+          "conformance",
+          "cascade-cli",
+          "sdk-typescript",
+          "sdk-python",
+          "cascade-agent",
+          "cascade-knowledge",
+        ],
+      );
+      for (const [, name = "", row = ""] of rows) {
+        assert.deepEqual(readPage(row).hrefs, [`${OWNER}/${name}`]);
+        assert.equal(row.split("<td ").length, 3, `${name} has two cells`);
+      }
+      assert.match(list[1] ?? "", /<code>@the-cascade-protocol\/cli<\/code>/);
+    });
+
     it("leaves out the archived and the private repositories", () => {
       assert.doesNotMatch(html, /cascade-bridge-js|clinvar|health-assistant/);
     });

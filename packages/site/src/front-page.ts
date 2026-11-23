@@ -87,6 +87,60 @@ export const REPOSITORIES: readonly Repository[] = [
   },
 ];
 
+/** The paragraph above the list of Cascade Protocol v1's repositories, as the organization's profile says it. */
+export const V1_INTRO =
+  "These repositories are Cascade Protocol v1, the protocol's first version. Apps and tools in use today run on them, and they are being upgraded to Cascade Protocol v2, the stack above. Until then they are not kept in step with v2. They stay public.";
+
+export interface V1Repository {
+  readonly name: string;
+  /** What it is, a package's name between backticks. */
+  readonly about: string;
+  readonly status: string;
+}
+
+/** Cascade Protocol v1's repositories, as the organization's profile lists them. */
+export const V1_REPOSITORIES: readonly V1Repository[] = [
+  {
+    name: "spec",
+    about: "Ontologies, shapes, serialization and pod specifications",
+    status:
+      "In use; the v2 model is in cascade-vocabulary and cascade-bridge-spec",
+  },
+  {
+    name: "conformance",
+    about: "Conformance fixtures and a reference patient pod",
+    status: "In use; v2 conformance is cascade-vocabulary's conformance kits",
+  },
+  {
+    name: "cascade-cli",
+    about: "A command-line tool for pods, `@the-cascade-protocol/cli`",
+    status: "In use; Cascade Protocol v2 support is planned",
+  },
+  {
+    name: "sdk-typescript",
+    about: "A TypeScript SDK, `@the-cascade-protocol/sdk`",
+    status: "In use; for v2, see cascade-runtime-js",
+  },
+  {
+    name: "sdk-python",
+    about: "A Python SDK, `cascade-protocol` on PyPI",
+    status: "In use; no v2 equivalent yet",
+  },
+  {
+    name: "cascade-agent",
+    about:
+      "A natural-language interface to the CLI, `@the-cascade-protocol/agent`",
+    status:
+      "In use; for v2, see the chat and MCP add-ons of cascade-starter-kit",
+  },
+  {
+    name: "cascade-knowledge",
+    about:
+      "An open clinical knowledge crosswalk: code mappings with provenance for each row",
+    status: "Not part of the v2 stack",
+  },
+];
+
 export { FRONT_PAGE };
 export const START_PAGE = "start.html";
 export const EXAMPLES_PAGE = "examples.html";
@@ -214,6 +268,7 @@ function checkOnce(rows: Rows): void {
     once(`${OWNER}/${name}`);
     if (site !== undefined) once(site);
   }
+  for (const { name } of V1_REPOSITORIES) once(`${OWNER}/${name}`);
 }
 
 const findYourWay = (rows: Rows): Content => markup`<table id="find-your-way">
@@ -243,6 +298,25 @@ ${REPOSITORIES.map(
 </table>
 `;
 
+/** Text with each part between backticks as code. */
+const withCode = (text: string): Content =>
+  text
+    .split("`")
+    .map((part, at) => (at % 2 === 1 ? markup`<code>${part}</code>` : part));
+
+const v1Repositories = markup`<h2 id="v1">Cascade Protocol v1</h2>
+<p class="prose">${V1_INTRO}</p>
+<table id="v1-repository-list">
+<thead><tr><th scope="col">Repository</th><th scope="col">What it is</th><th scope="col">Status</th></tr></thead>
+<tbody>
+${V1_REPOSITORIES.map(
+  ({ name, about, status }) =>
+    markup`<tr id="v1-repository-${name}"><th scope="row"><a href="${OWNER}/${name}">${name}</a></th><td data-label="What it is">${withCode(about)}</td><td data-label="Status">${status}</td></tr>
+`,
+)}</tbody>
+</table>
+`;
+
 function frontPage(
   kinds: readonly string[],
   listed: Rows,
@@ -266,7 +340,7 @@ ${kinds.map((kind) => markup`<li>${kind}</li>\n`)}</ul>
 summary of care as a patient portal hands it out. The matcher joins one record across both. Vital signs, notes and daily
 measurements are not yet held. The reference tables the matcher uses to join records of the same thing are alpha test data,
 so a real export shows fewer automatic joins than the example pods.</p>
-${repositories}`,
+${repositories}${v1Repositories}`,
   }).text;
 }
 
