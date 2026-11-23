@@ -1,5 +1,5 @@
 import { type Files, relative, sameBytes, under, writeEach } from "./files.js";
-import type { Layout } from "./layout.js";
+import { ARCHIVE_NAME, type Layout } from "./layout.js";
 import { counted, timedAside } from "./probe.js";
 import {
   READING_FILES_HELD_IN_ARCHIVES,
@@ -42,9 +42,6 @@ const RATIO_SLACK = 64;
 export const MOST_DECLARED = MOST_BYTES;
 /** The path of a file held sealed: where a sealed pod's host keeps each file, under its keyed name (never the index's). */
 const SEALED_FILE = /^sealed\/[0-9a-f]{2}\/[0-9a-f]{62}$/;
-
-/** An archive's name in its folder (N9): the SHA-256 of its bytes in lowercase hex, adding `.zip`. */
-export const ARCHIVE_NAME = /^[0-9a-f]{64}\.zip$/;
 
 /** One file an archive holds, as its central directory gives it. */
 export interface ArchiveEntry {

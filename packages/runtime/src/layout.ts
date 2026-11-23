@@ -15,6 +15,8 @@ const PIM = "http://www.w3.org/ns/pim/space#";
 const PRECEDENCE = [`${PROV}invalidated`, `${PROV}used`];
 export const SYNC = `${CASCADE}SyncFromAnotherWriter`;
 const ZIP = "https://www.iana.org/assignments/media-types/application/zip";
+/** An archive's name in its folder (N9): the SHA-256 of its bytes in lowercase hex, adding `.zip`. */
+export const ARCHIVE_NAME = /^[0-9a-f]{64}\.zip$/;
 /** A file stem N9 gives: a UUID, or a SHA-256 in lower-case hex. */
 export const FILE_STEM =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64})$/;

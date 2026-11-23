@@ -2,10 +2,9 @@ import { readConnect } from "@cascade-runtime/fhir-pull";
 import { arrivalInRevision, selectorNodes } from "./arrivals.js";
 import { builtFileBytes } from "./build.js";
 import type { Assertion } from "./conformance.js";
-import { ARCHIVE_NAME } from "./archives.js";
 import { type Files, readText, sameBytes } from "./files.js";
 import { Graph } from "./graph.js";
-import type { Layout } from "./layout.js";
+import { ARCHIVE_NAME, type Layout } from "./layout.js";
 import { MATCHER } from "./matcher.js";
 import {
   matcherJudgmentAssertionName,
