@@ -55,6 +55,9 @@ import {
   countRow,
   oneMoreBundle,
   perfFile,
+  profileOfPatient,
+  pullOf,
+  loadDataset,
   unitOfCounter,
   envOf,
   floorRows,
@@ -663,6 +666,44 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         ],
       );
       assert.ok(kept.every(({ extra }) => extra === "meaning"));
+    });
+  });
+
+  describe("given the record of a Synthea patient, imported as the person's own", () => {
+    it("finds the profile the record's other entries name, and a pod that claims it shows the person's results, where one that claims none shows nothing", async () => {
+      const data = await loadDataset("synthea-10y");
+      const bundle = data.bundle as {
+        entry: { resource: { resourceType: string } }[];
+      };
+      const few = {
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          ...bundle.entry.filter(
+            ({ resource }) => resource.resourceType === "Patient",
+          ),
+          ...bundle.entry
+            .filter(({ resource }) => resource.resourceType === "Observation")
+            .slice(0, 3),
+        ],
+      };
+      const claim = await profileOfPatient({ ...data, bundle: few });
+      assert.equal(claim.length, 1, "the one profile the record's patient has");
+      const results = async (claimProfiles: readonly string[]) => {
+        const pod = await openPod();
+        try {
+          await pod.import(pullOf(data, few), { claimProfiles });
+          return (await pod.ask("pod/My lab results")).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      assert.equal(
+        await results([]),
+        0,
+        "a record about no one known to be the subject is left out",
+      );
+      assert.ok((await results(claim)) > 0, "claimed, its results are shown");
     });
   });
 
