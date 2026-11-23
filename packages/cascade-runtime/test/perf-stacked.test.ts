@@ -1016,10 +1016,10 @@ describe("The stacked performance page · perf-stacked.mjs", () => {
       const text = block.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
       for (const line of [
         "Of the first import's 10.0 s (measured with the probe on), the Bridge's conversion took 2.50 s (25%), and the adapters' own queries inside it 300 ms (3%).",
-        "3 of the 6 queries have a SQL version. On this pod they took 73.8 s on the reference engine and 4.24 s in SQL (17.4 times as fast, 94% less); 1 of them gave other rows.",
-        "My lab results 8,100 1.80 s 36.0 ms 50.0 times yes",
-        "What each folder holds 300 70.0 s 4.00 s 17.5 times no",
-        "My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (50.0 times); same rows: yes.",
+        "3 of the 6 queries have a SQL version. On the 2 queries whose rows matched they took 3.80 s on the reference engine and 236 ms in SQL (16.1 times as fast, 94% less); 1 gave other rows and is left out.",
+        "My lab results 8,100 1.80 s 36.0 ms 50.0 times as fast yes",
+        "What each folder holds 300 70.0 s 4.00 s 17.5 times as fast no",
+        "My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (SQL 50.0 times as fast); same rows: yes.",
       ])
         assert.ok(text.includes(line), line);
       assert.match(text, /agreement/i);

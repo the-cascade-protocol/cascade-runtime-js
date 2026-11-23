@@ -37,7 +37,11 @@ import { databaseBeside, resolved } from "../src/node/resolved.js";
 import { flatten, loadPlainly } from "./perf-floor.js";
 import { held, rowsOfHeld } from "./perf-held.js";
 import { rowsOfJobs } from "./perf-jobs-held.js";
-import { rowsOfImport, rowsOfQueries } from "./perf-queries-held.js";
+import {
+  heldQueries,
+  rowsOfImport,
+  rowsOfQueries,
+} from "./perf-queries-held.js";
 import { profileOf, syntheticPull } from "./import-bench.js";
 import {
   changedBundle,
@@ -3755,7 +3759,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
       assert.equal(
         text("sql"),
-        "3 of the 6 queries have a SQL version. On this pod they took 73.8 s on the reference engine and 4.24 s in SQL (17.4 times as fast, 94% less); 1 of them gave other rows.",
+        "3 of the 6 queries have a SQL version. On the 2 queries whose rows matched they took 3.80 s on the reference engine and 236 ms in SQL (16.1 times as fast, 94% less); 1 gave other rows and is left out.",
       );
       assert.equal(
         text("without"),
@@ -3767,7 +3771,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
       assert.equal(
         text("slowest"),
-        "What each folder holds: 300 rows; SPARQL 70.0 s; SQL 4.00 s (17.5 times); same rows: no. lab-results: 40,000 rows; SPARQL 2.00 s; SQL 200 ms (10.0 times); same rows: yes. My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (50.0 times); same rows: yes.",
+        "What each folder holds: 300 rows; SPARQL 70.0 s; SQL 4.00 s (SQL 17.5 times as fast); same rows: no. lab-results: 40,000 rows; SPARQL 2.00 s; SQL 200 ms (SQL 10.0 times as fast); same rows: yes. My lab results: 8,100 rows; SPARQL 1.80 s; SQL 36.0 ms (SQL 50.0 times as fast); same rows: yes.",
       );
       assert.ok(
         page?.queries.some(
@@ -3800,6 +3804,80 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       assert.match(
         slower?.lines.find((line) => line.id === "sql")?.text ?? "",
         /times as slow, \d+% more/,
+      );
+      assert.match(
+        slower?.lines.find((line) => line.id === "slowest")?.text ?? "",
+        /\(SQL 5\.7 times as slow\)/,
+        "a query's own line says which engine is faster, never a bare ratio",
+      );
+    });
+
+    it("says of a query whose .sql could not be answered why, and counts it neither as one without a SQL version nor in what the SQL versions saved", async () => {
+      const { queriesOf } = await queries$("perf-queries.mjs");
+      const broken = file(
+        rowsOfQueries("synthea-10y", {
+          ...heldQueries(),
+          queries: [
+            {
+              rq: "views/lab-results.rq",
+              kind: "view",
+              records: 0,
+              hasSql: true,
+              sparql: 2,
+              rows: 40000,
+              why: "the .sql fails: no such table: lab_results",
+            },
+            {
+              rq: "derivations/records.rq",
+              kind: "derivation",
+              records: 0,
+              hasSql: false,
+              sparql: 0.8,
+              rows: 1200,
+            },
+          ],
+        }),
+      );
+      const rows = broken.results as {
+        name: string;
+        value: number;
+        extra?: string;
+      }[];
+      const equal = rows.find(
+        ({ name }) =>
+          name === "each-query-synthea-10y/equal/views-lab-results.rq",
+      );
+      assert.equal(equal?.value, 0);
+      assert.match(
+        equal?.extra ?? "",
+        /the \.sql fails: no such table: lab_results$/,
+      );
+      assert.equal(
+        rows.some(({ name }) => name.includes("/sql/views-lab-results.rq")),
+        false,
+      );
+      const page = queriesOf(broken, "synthea-10y") as unknown as {
+        lines: { id: string; text: string }[];
+        queries: { name: string; why?: string }[];
+      };
+      const text = (id: string) =>
+        page.lines.find((line) => line.id === id)?.text;
+      assert.match(
+        text("failed") ?? "",
+        /1 query has a SQL version that gave no answer: lab-results/,
+      );
+      assert.match(
+        text("without") ?? "",
+        /1 query has no SQL version yet; the reference engine took 800 ms for the 1 of them it could run/,
+      );
+      assert.equal(
+        text("sql"),
+        "1 of the 2 queries has a SQL version. None gave rows that matched the reference engine's.",
+      );
+      assert.match(
+        page.queries.find(({ name }) => name === "views-lab-results.rq")?.why ??
+          "",
+        /no such table/,
       );
     });
 
@@ -3894,6 +3972,10 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         named(`equal/${lab}`)?.value,
         1,
         "both engines give the rows of My lab results",
+      );
+      assert.ok(
+        (named("rows/labels.rq")?.value ?? 0) > 0,
+        "labels.rq is asked of the pod as it was before the labels it writes, so that it does the job the SQL version does, not the job of finding what has no label",
       );
       for (const measure of [
         "files/all",
