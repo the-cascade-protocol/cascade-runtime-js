@@ -45,13 +45,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           PULL: ${{ github.event.pull_request.number }}
-          # docs: the pages' sources and builders, every Markdown file, the browser build and its tests.
-          DOCS: '^(docs/|scripts/|packages/(site|evals)/|packages/cascade-runtime/(src/browser|test-browser|pack)/)|\.md$|^package(-lock)?\.json$'
+          # docs: the pages' sources and builders, the pack, every Markdown file. The browser build's own test runs in `package`.
+          DOCS: '^(docs/|scripts/|packages/(site|evals)/|packages/cascade-runtime/pack/)|\.md$|^package(-lock)?\.json$'
           # starter: the action that checks the starter kit out; a Depends-On line naming a starter kit pull request is read below.
           STARTER: '^\.github/actions/starter/'
-          # install: what is packed and installed: a manifest or lock, the pack, the SQLite binding's code, the developer
-          # stories, cascade-mcp and the workflow that installs.
-          INSTALL: '(^|/)package(-lock)?\.json$|^packages/cascade-runtime/pack/|^packages/runtime/src/(node/sqlite|database|pod-database)\.ts$|^developer-story/|^packages/mcp/|^\.github/workflows/installed\.yml$'
+          # install: what is packed and installed: a manifest or lock, the pack, every Node-only source (the workers and
+          # native files find their neighbours by `import.meta.url`, which differs in the packed layout), the browser files
+          # and the database's code, the developer stories and their tests, cascade-mcp and the workflow that installs.
+          INSTALL: '(^|/)package(-lock)?\.json$|^packages/cascade-runtime/pack/|^packages/(runtime|cascade-runtime)/src/node/|^packages/runtime/src/(web/|database\.ts|pod-database\.ts)|^packages/runtime/test/developer-story\.test\.ts$|^packages/cascade-runtime/test/offline\.ts$|^developer-story/|^packages/mcp/|^\.github/workflows/installed\.yml$'
         run: |
           set -euo pipefail
           if [ "$EVENT" != pull_request ]; then
@@ -605,11 +606,6 @@ jobs:
       - name: Run the specification pages
         if: ${{ !cancelled() }}
         run: npm run test:spec-pages
-      # The packed browser build opens a pod over IndexedDB in Chromium, retitles it and opens it again, and checks the
-      # secrets of known-answer 1.2 pods through its Argon2id worker.
-      - name: Retitle a pod and check a secret in a browser
-        if: ${{ !cancelled() }}
-        run: npm run test:pod-browser
       # A newcomer on the front page of this tree reaches each row of "Find your way" in one click, on a page of the expected title.
       - name: Walk the front page's rows
         if: ${{ !cancelled() }}
@@ -1459,6 +1455,21 @@ jobs:
         run: npm run build:package
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # The packed browser build opens a pod over IndexedDB in Chromium, retitles it and opens it again, and checks the
+      # secrets of known-answer 1.2 pods through its Argon2id worker, which no other test starts. It runs here, on every
+      # pull request, since a break of the browser build is a logic break; the browser is the one the `live` job caches on main.
+      - id: playwright
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('playwright/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+      - run: npx playwright install --only-shell chromium
+      - name: Retitle a pod and check a secret in a browser
+        run: npm run test:pod-browser
       - name: Drop half-written row files before they are saved
         if: ${{ !cancelled() }}
         shell: bash

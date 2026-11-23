@@ -80,17 +80,10 @@ and a run started by hand, every job below that runs after the merge); `ready-to
 A pull request waits for the jobs that can show a logic break: `lint and types`, `tests and conformance`,
 `conformance (native)` and `package`. The jobs that guard a platform, the starter, the installed package or the docs site run
 after the merge, on a push to `main`, nightly and on a run started by hand, where a red one is the next fix; `git bisect`
-finds the commit. A pull request also runs one of them when it touches what that job guards (the `changes` job reads the
-files and the body):
-
-- `docs site` and `external links`, when it changes `docs/`, `scripts/`, `packages/site/`, `packages/evals/`, the browser build and
-  its tests (`packages/cascade-runtime/src/browser`, `test-browser`, `pack`), any Markdown file, or the root `package.json`
-  or lock.
-- `starter-kit (...)` and `starter (windows-latest)`, when it names a starter kit pull request on a `Depends-On:` line, or changes
-  `.github/actions/starter/`.
-- `database (...)` and `package-install (...)`, when it changes a `package.json` or lock, `packages/cascade-runtime/pack/`, the
-  SQLite binding's code (`packages/runtime/src/node/sqlite.ts`, `database.ts`, `pod-database.ts`), `developer-story/`,
-  `packages/mcp/` or `.github/workflows/installed.yml`.
+finds the commit. A pull request also runs one of them when it touches what that job guards: the `changes` job at the top of
+`.github/workflows/check.yml` holds the three path rules (`docs` for `docs site` and `external links`, `starter` for the
+starter-kit jobs and `starter (windows-latest)`, `install` for `database (...)` and `package-install (...)`), and reads the
+pull request's body for a `Depends-On:` line naming a starter kit pull request. Read the rules there; a copy here would drift.
 
 A change to `.github/workflows/check.yml` sets none of them: run `gh workflow run check.yml --ref <branch>`, which runs every
 job, to see what the change does to the jobs it moves. `live links` asks the deployed site, and runs nightly and by hand only.
