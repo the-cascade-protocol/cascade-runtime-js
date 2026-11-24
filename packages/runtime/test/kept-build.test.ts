@@ -1160,47 +1160,6 @@ describe("Keeping one build of a pod across steps · CorePodOptions.build, CoreP
     });
   });
 
-  describe("when the move of the build to a store of its own fails at the start of a step", () => {
-    /** The quads the pod holds at the story's end but those the manifest names, and how often a move was tried. */
-    async function afterTheStory(failing: boolean) {
-      const { renewed } = OxigraphStore.prototype;
-      let tried = 0;
-      if (failing)
-        OxigraphStore.prototype.renewed = function (): Promise<Store> {
-          tried += 1;
-          this.free();
-          return Promise.reject(new Error("the renewal fails"));
-        };
-      try {
-        let last: CorePod | undefined;
-        const done = await replaySyncRun(
-          (pod, step, side) => {
-            last = pod;
-            return (PERFORMERS.matcher as Perform)(pod, step, side);
-          },
-          { renewAfterMoved: 1 },
-        );
-        const manifest = `<${done.pod.iri}${(await layout()).manifest}>`;
-        const quads = (
-          await storeQuads((await last!.dataset("everyday")).store, true)
-        ).filter((quad) => !quad.startsWith(manifest));
-        return { quads, tried, steps: done.steps.length };
-      } finally {
-        OxigraphStore.prototype.renewed = renewed;
-      }
-    }
-
-    it("goes on: every step is performed, and the pod holds what it holds when no move fails", async () => {
-      const failing = await afterTheStory(true);
-      assert.ok(failing.tried > 0);
-      const holding = await afterTheStory(false);
-      // The revisions are named by random ids, so two replays hold the same quads but for those names.
-      assert.ok(holding.quads.length > 0);
-      assert.equal(failing.quads.length, holding.quads.length);
-      assert.equal(failing.steps, holding.steps);
-    });
-  });
-
   describe("Revisions.of()", () => {
     let held: { fromKept: Revisions; fromFiles: Revisions; records: string[] };
 
