@@ -1903,8 +1903,12 @@ export class CorePod {
     this.#movedInBuilt += await built.withBuilt();
   }
 
-  /** Takes the matcher's view out of what the pod keeps: puts back the dataset it was made in, or frees its store. */
-  async #releaseMatcherView(): Promise<void> {
+  /**
+   * Takes the matcher's view out of what the pod keeps: puts back the dataset it was made in, or frees its store. Then
+   * moves the build to a store of its own where enough quads were moved, unless `inStep`: a step's work is not held for
+   * it, and `#compactedBeforeStep` does it before the next step.
+   */
+  async #releaseMatcherView(inStep = false): Promise<void> {
     const held = this.#kept.get(MATCHER_VIEW) as Promise<Union> | undefined;
     if (held === undefined) return;
     this.#kept.delete(MATCHER_VIEW);
@@ -1921,16 +1925,37 @@ export class CorePod {
     }
     if (view.store !== this.#built?.store) return;
     this.#movedInBuilt += view.moved;
-    await this.#compactedIfMoved();
+    if (!inStep) await this.#compactedIfMoved();
+  }
+
+  /** Whether enough quads were removed from the kept build's store and added again to move it to a store of its own. */
+  #movedEnough(): boolean {
+    return (
+      this.#movedInBuilt >=
+      (this.#options.build?.renewAfterMoved ?? COMPACT_AFTER_MOVED)
+    );
   }
 
   /** Moves the kept build to a store of its own once the quads removed from its store and added again are enough. */
   async #compactedIfMoved(): Promise<void> {
-    if (
-      this.#movedInBuilt >=
-      (this.#options.build?.renewAfterMoved ?? COMPACT_AFTER_MOVED)
-    )
-      await this.#compactBuilt();
+    if (this.#movedEnough()) await this.#compactBuilt();
+  }
+
+  /**
+   * Moves the kept build to a store of its own, if enough quads were moved by the steps and the lends since, before a
+   * step rather than inside the one that moved them: the store keeps something of each quad it removes, which costs
+   * memory and slows its scans, and only the next step reads it so. The answer of the step that moved the quads does not
+   * wait for it, and a pod closed first never makes it. Where it fails, the build is dropped and the next read or step
+   * builds the pod whole, so the step goes on.
+   */
+  async #compactedBeforeStep(): Promise<void> {
+    if (!this.#movedEnough()) return;
+    try {
+      await this.#putBackMatcherView();
+      await this.#compactedIfMoved();
+    } catch {
+      // The build is dropped by the failure itself.
+    }
   }
 
   /**
@@ -2111,6 +2136,7 @@ export class CorePod {
     const deferred = this.#deferring > 0 && DEFERRABLE.has(kind);
     await this.#databaseBuilding;
     if (!deferred) await this.#settle();
+    await this.#compactedBeforeStep();
     if (this.keepsDatabase) await this.#answering();
     const at = options.build === undefined ? undefined : options.time.now();
     const writes = new StepWrites();
@@ -2141,13 +2167,13 @@ export class CorePod {
             ? {}
             : { lastSnapshot: this.#head.snapshot }),
           matcherView: () => this.#matcherView(),
-          releaseMatcherView: () => this.#releaseMatcherView(),
+          releaseMatcherView: () => this.#releaseMatcherView(true),
           keptDataset: () => this.#keptOrBuiltWhole(at),
           selectStated: (query) => this.selectStated(query),
         }),
       ).finally(async () => {
         this.#performing = false;
-        await this.#releaseMatcherView();
+        await this.#releaseMatcherView(true);
       });
       let head: Head | undefined;
       let hashed: { readonly set: HashedSet; readonly act: string } | undefined;
@@ -3002,10 +3028,7 @@ export class CorePod {
         }
       if (verifying !== undefined)
         await this.#verified(rebuilding, state, verifying);
-      if (built === this.#built) {
-        this.#movedInBuilt += built.moved();
-        await this.#compactedIfMoved();
-      }
+      if (built === this.#built) this.#movedInBuilt += built.moved();
       this.#kept.set(
         DATASET + build.lens,
         Promise.resolve(built.unionAsItStands),
