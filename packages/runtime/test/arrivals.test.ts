@@ -255,10 +255,17 @@ async function threeStatesOfOneRecord(
   await source.write(
     "s/second/apple_health_export/export.xml",
     exported("2026-01-08 10:00:00 +0000", [
+      record("AllergyIntolerance-peanut.json", "2026-01-02 10:00:00 +0000"),
       record("AllergyIntolerance-peanut-1.json", "2026-01-08 10:00:00 +0000"),
       record("AllergyIntolerance-peanut-2.json", "2026-01-08 10:00:00 +0000"),
       record("AllergyIntolerance-peanut-3.json", "2026-01-08 10:00:00 +0000"),
     ]),
+  );
+  await source.write(
+    "s/second/apple_health_export/clinical-records/AllergyIntolerance-peanut.json",
+    await bytes(
+      "downloads/first-export/apple_health_export/clinical-records/AllergyIntolerance-peanut.json",
+    ),
   );
   for (const [file, from] of [
     ["AllergyIntolerance-peanut-1", "current-version-again"],
@@ -595,10 +602,12 @@ describe("Turning an adapter's arrivals into revisions · CorePod.import(), reac
     let storedBy: number[];
     let usedBy: number[];
     let again: readonly string[];
+    let activities: (string | undefined)[];
 
     before(async () => {
       const done = await threeStatesOfOneRecord();
       const pod = await layout();
+      activities = done.steps.map((step) => step.activity);
       stopped = done.stopped;
       refused = done.steps.map((step) => step.refused);
       first = await versionsRevised(done, 1);
@@ -627,13 +636,17 @@ describe("Turning an adapter's arrivals into revisions · CorePod.import(), reac
       assert.equal(second.filter((one) => one !== version).length, 1);
     });
 
-    it("keeps all three documents, the one that repeats the state the record is at as the two that wrote a revision do, and its import uses all three (A10)", () => {
+    it("keeps all three documents, the one that repeats the state the record is at as the two that wrote a revision do, and its import uses all three, though its export also lists the first export's document, kept already (A10)", () => {
       assert.deepEqual(storedBy, [0, 1, 3, 0]);
       assert.deepEqual(usedBy, [0, 1, 3, 0]);
     });
 
-    it("keeps nothing of the same export imported again, its documents being kept already (A1)", () => {
+    it("keeps nothing of the same export imported again, its documents being kept already, and makes no import for it (A1)", () => {
       assert.deepEqual(again, []);
+      assert.deepEqual(
+        activities.map((activity) => activity !== undefined),
+        [false, true, true, false],
+      );
     });
   });
 
