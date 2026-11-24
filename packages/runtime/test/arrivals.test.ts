@@ -514,6 +514,82 @@ describe("Turning an adapter's arrivals into revisions · CorePod.import(), reac
     });
   });
 
+  describe("given a document the pod does not keep, and an adapter whose convert is under way", () => {
+    /** What the import did with the pod's revisions, read while the adapter converted or not. */
+    async function reading(listFails = false) {
+      let convertBegan = () => {};
+      const began = new Promise<void>((resolve) => {
+        convertBegan = resolve;
+      });
+      let armed = false;
+      let released: "convert" | "timeout" | undefined;
+      /** Holds each listing of the pod's folders, once the adapters are asked for, until the convert has begun. */
+      class Held extends MemoryFiles {
+        override async list(folder: string): Promise<string[]> {
+          if (armed) {
+            const timer = new Promise<"timeout">((resolve) =>
+              setTimeout(() => resolve("timeout"), 3000).unref(),
+            );
+            const how = await Promise.race([
+              began.then(() => "convert" as const),
+              timer,
+            ]);
+            released ??= how;
+            if (listFails) throw new Error("the pod cannot be listed");
+          }
+          return super.list(folder);
+        }
+      }
+      const { result, seen } = await probing(
+        () =>
+          importWith(
+            {
+              accepts: () => Promise.resolve(true),
+              convert: () => {
+                convertBegan();
+                return Promise.reject(
+                  new BridgeError("document", "it refuses"),
+                );
+              },
+              free: () => Promise.resolve(),
+            },
+            new Held("https://pod.example/"),
+            () => {
+              armed = true;
+            },
+          ).catch((error: unknown) => error),
+        { trace: true },
+      );
+      return { result, seen, released };
+    }
+
+    it("reads the pod's revisions while the adapter converts: the read is open when the convert begins, and none was read before it", async () => {
+      const { result, seen, released } = await reading();
+      assert.equal(released, "convert");
+      assert.equal(
+        (result as { refused?: string }).refused,
+        "summary.xml: it refuses",
+      );
+      const events = seen.events ?? [];
+      const read = events.find(
+        (event) => event.name === "arrivals.revisionsOf",
+      );
+      const convert = events.find((event) => event.name === "arrivals.convert");
+      assert.ok(read !== undefined && convert !== undefined);
+      assert.ok(read.start <= convert.start, "the read began first");
+      assert.ok(
+        convert.start <= read.end,
+        "and was still open when the convert began",
+      );
+    });
+
+    it("throws the failure of that read, as it did when the read came first, though the adapter refused the document", async () => {
+      const { result } = await reading(true);
+      assert.ok(result instanceof Error);
+      assert.match(result.message, /the pod cannot be listed/);
+    });
+  });
+
   describe("given an arrival whose selector has statements of its own, as a blank node or as a node named by an IRI", () => {
     let saved: Replayed;
     let named: Replayed;
@@ -1020,8 +1096,15 @@ async function badInputReplay(): Promise<Replayed> {
   });
 }
 
-/** A pod whose import of one C-CDA document is given `adapter`. */
-async function importWith(adapter: LoadedAdapter) {
+/**
+ * A pod whose import of one C-CDA document is given `adapter`; `files` is the pod's files, and `adaptersAsked` is called
+ * when the import asks for its adapters, which it does only for a document the pod does not keep.
+ */
+async function importWith(
+  adapter: LoadedAdapter,
+  files: Files = new MemoryFiles("https://pod.example/"),
+  adaptersAsked: () => void = () => undefined,
+) {
   const download = new MemoryFiles("https://download.example/");
   await download.write(
     "summary.xml",
@@ -1031,7 +1114,7 @@ async function importWith(adapter: LoadedAdapter) {
   time.begin("2026-06-01T09:00:00Z");
   const pod = new CorePod({
     runtime: RUNTIME,
-    pod: new MemoryFiles("https://pod.example/"),
+    pod: files,
     address: "https://pod.example/",
     subject: "urn:uuid:3c9f1a2e-7b64-4d08-9e5a-6f2b8c1d4e70",
     title: "",
@@ -1042,7 +1125,10 @@ async function importWith(adapter: LoadedAdapter) {
     importers: [ccdaDownload],
     references: () => Promise.reject(new Error("an import reads no table")),
   });
-  return pod.import(download, "summary.xml", async () => () => [adapter]);
+  return pod.import(download, "summary.xml", async () => {
+    adaptersAsked();
+    return () => [adapter];
+  });
 }
 
 /** An adapter that fails with `kind` when asked to `on`, and is otherwise as a real one does. */

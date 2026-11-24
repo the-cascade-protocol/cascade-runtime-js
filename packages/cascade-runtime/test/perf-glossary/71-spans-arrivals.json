@@ -37,7 +37,7 @@
       "within": "arrivals.revisions"
     },
     "arrivals.revisionsof": {
-      "says": "Finding the earlier versions of one record."
+      "says": "Reading the revisions the pod holds, for the documents being imported."
     }
   }
 }

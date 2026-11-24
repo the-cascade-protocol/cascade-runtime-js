@@ -1203,6 +1203,23 @@ async function accepting(
   );
 }
 
+/**
+ * What `work` gives, while `reading` goes on. When `work` fails, `reading` is awaited to its end before the failure is
+ * thrown, so that nothing of the step is read by it once the step is over, and its own failure is thrown instead, as it
+ * was when the read came first.
+ */
+async function overlapping<T>(
+  reading: Promise<unknown>,
+  work: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    await reading;
+    throw error;
+  }
+}
+
 /** A server's record, named by its base URL and stating it normalised (A16, A17), or none for a base that cannot be. */
 async function serverRecord(
   layout: Layout,
@@ -1237,7 +1254,8 @@ async function serverRecord(
  * is kept, whether or not it wrote a revision (A10). `onProgress` is told of each conversion as its
  * adapter is found. Each conversion is held to `budget`; one that passes it stops the step with the Bridge's error.
  * The adapters are asked for, and the pod's revisions read, only once a document is found that the pod does not keep: an
- * export whose documents it keeps all makes no import, and gives no name.
+ * export whose documents it keeps all makes no import, and gives no name. The revisions are read while the first such
+ * document is accepted and converted, and are waited for when its conversion is back.
  * Gives the import's name, the patient profiles the versions of its new revisions name, the files it wrote for each
  * record it revised, and each source change time an arrival stated that its revision does not carry, being no
  * `xsd:dateTime` that states its time zone.
@@ -1264,6 +1282,7 @@ export async function fileExport(
   const kept = new Map<string, Triple[]>();
   const wentBack: WentBack[] = [];
   const served = new Set<string>();
+  let reading: Promise<Revisions> | undefined;
   for (const [done, found] of documents.entries()) {
     const documentIri = await documentName(found.bytes);
     if (
@@ -1278,25 +1297,33 @@ export async function fileExport(
       facts: { iri: `${documentIri}#facts`, bytes: read(found, started) },
     };
     const loaded = (adaptersOf ??= await adapters());
-    const held = (revisions ??= await timedAside("arrivals.revisionsOf", () =>
-      Revisions.of(context),
-    ));
-    const adapter = await timedAside("arrivals.accepting", () =>
-      accepting(loaded, found, document),
-    );
-    await onProgress?.({ part: "converting", done, of: documents.length });
-    const conversion = await timedAside("arrivals.convert", async () => {
-      const began = probed() ? performance.now() : 0;
-      const converted = await refusing(found.path, () =>
-        adapter.convert(document, {
-          ...conversionBudget(budget, found.bytes.length),
-          // Only a probed run asks the Bridge to time its stages; any other converts as it always did.
-          ...(probed() && { profile: true }),
-        }),
+    // The pod's revisions are read while the Bridge accepts and converts: the two depend on each other only where the
+    // arrivals are compared with the revisions, and the Bridge runs in workers.
+    if (reading === undefined) {
+      reading = timedAside("arrivals.revisionsOf", () => Revisions.of(context));
+      // Its failure is thrown where it is awaited; until then it is handled, not lost.
+      reading.catch(() => undefined);
+    }
+    const pending = reading;
+    const conversion = await overlapping(pending, async () => {
+      const adapter = await timedAside("arrivals.accepting", () =>
+        accepting(loaded, found, document),
       );
-      bridgeSpans(converted, began);
-      return converted;
+      await onProgress?.({ part: "converting", done, of: documents.length });
+      return timedAside("arrivals.convert", async () => {
+        const began = probed() ? performance.now() : 0;
+        const converted = await refusing(found.path, () =>
+          adapter.convert(document, {
+            ...conversionBudget(budget, found.bytes.length),
+            // Only a probed run asks the Bridge to time its stages; any other converts as it always did.
+            ...(probed() && { profile: true }),
+          }),
+        );
+        bridgeSpans(converted, began);
+        return converted;
+      });
     });
+    const held = (revisions ??= await pending);
     const graph = await timedAside("arrivals.parseGraph", () =>
       parseGraph(conversion.graph, documentIri, newStore),
     );
