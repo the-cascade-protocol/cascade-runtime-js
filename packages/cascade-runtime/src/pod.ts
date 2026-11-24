@@ -97,7 +97,7 @@ export interface ImportOptions extends ConvertBudget {
    * version, so a re-import claims nothing, whatever the list: claim a profile found through
    * `profile/What needs review` with `ownerAbout`. An import claims no profile by itself, and `true` is refused.
    *
-   * A function takes the profiles the import's versions name, each once, and returns the list: an app that learns
+   * A function takes the profiles the import's versions name, each once, in a frozen list, and returns the list: an app that learns
    * them only from the import imports and claims in this one call, where the import and each claim would rebuild
    * the pod, and these share one rebuild. It is called once, after the documents are converted and filed and before
    * the claims, and not at all for an import that is refused. What it returns that the import does not name is
