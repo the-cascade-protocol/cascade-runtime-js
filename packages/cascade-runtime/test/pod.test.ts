@@ -873,6 +873,19 @@ describe("Importing a health export · pod.import()", () => {
           [j1],
         ],
         ["a function returning none", () => [], [], [j1, j2]],
+        [
+          "a function that adds a profile to the list it is given, which is frozen, and returns it",
+          (named) => {
+            try {
+              (named as string[]).push("urn:uuid:not-named");
+            } catch {
+              // a frozen list refuses it
+            }
+            return named;
+          },
+          [j1, j2],
+          [],
+        ],
       ];
       for (const [name, list, claimed, unclaimed] of cases) {
         const claiming = await openPodWith(kept, join(pods, `list-${name}`));
@@ -990,6 +1003,15 @@ describe("Importing a health export · pod.import()", () => {
             }),
             /^TypeError: pod\.import options\.claimProfiles, a function, returned /,
             name,
+          );
+          const again = await claiming.import(exported("x-e6"), {
+            match: false,
+          });
+          assert.deepEqual(again.wrote, [], `${name}: the import is filed`);
+          assert.deepEqual(
+            await claiming.ask("judgment/Who judged what"),
+            [],
+            `${name}: no claim is filed`,
           );
         } finally {
           await claiming.close();

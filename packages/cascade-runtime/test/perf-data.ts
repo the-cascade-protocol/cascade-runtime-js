@@ -178,6 +178,9 @@ export async function importedAsTheApp(
     ...(onProgress !== undefined && { onProgress }),
   });
   if (filed.activity === undefined) return filed;
+  // The runtime marks `judging` only when it claims a profile; the match is a step of it all the same.
+  if (filed.claimedProfiles.length === 0)
+    await onProgress?.({ part: "judging", done: 0, of: 1 });
   const matched = await pod.match(filed.activity);
   return { ...filed, matched };
 }

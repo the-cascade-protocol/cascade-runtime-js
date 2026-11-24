@@ -183,6 +183,31 @@ describe("Timing an import by mechanism · importBench(), syntheticPull(), probi
         assert.ok((run.counts[name] ?? 0) > 0, `${name} was not counted`);
     });
 
+    it("marks `judging` for an import made as the app makes it into a pod whose profile is already claimed, so the match's time is not counted as saving", async () => {
+      const pod = await openPod();
+      try {
+        const marks = async (pull: ReadonlyMap<string, Uint8Array>) => {
+          const told: { part: string; done?: number; of?: number }[] = [];
+          const made = await importedAsTheApp(pod, pull, (progress) => {
+            told.push(progress);
+          });
+          assert.equal(made.refused, undefined);
+          return {
+            made,
+            judging: told.filter(({ part }) => part === "judging"),
+          };
+        };
+        const first = await marks(syntheticPull(40, { hospital: "first" }));
+        assert.ok(first.made.claimedProfiles.length > 0);
+        const again = await marks(syntheticPull(41, { hospital: "first" }));
+        assert.deepEqual(again.made.claimedProfiles, []);
+        assert.ok(again.made.matched !== undefined);
+        assert.deepEqual(again.judging, [{ part: "judging", done: 0, of: 1 }]);
+      } finally {
+        await pod.close();
+      }
+    });
+
     it("reports each matcher rule that ran by its justification, with its store queries, none for a rule that applies to no record the import began and has no row", () => {
       const rules = run.spans.filter(({ name }) =>
         name.startsWith("matcher.rule:"),

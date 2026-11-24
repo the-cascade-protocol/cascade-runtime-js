@@ -1409,7 +1409,7 @@ class OpenPod implements Pod {
       const matching = options.match !== false;
       const named = [...new Set(profilesNamed ?? [])];
       if (confirmedBy !== undefined) {
-        const returned: unknown = confirmedBy(named);
+        const returned: unknown = confirmedBy(Object.freeze([...named]));
         if (!isProfileList(returned))
           throw new TypeError(
             `pod.import options.claimProfiles, a function, returned ${shown(returned)}, not a list of the profile IRIs the person confirmed.`,
