@@ -61,7 +61,15 @@ function main(mode, rest) {
   if (mode === "setup") {
     for (const step of setupSteps()) {
       const status = run(step, process.env);
-      if (status !== 0) return status;
+      if (status !== 0) {
+        if (step === FETCH)
+          process.stderr.write(
+            "compatibility-host: Oxigraph's native build could not be fetched or does not load here, and this run relies on it " +
+              "(Linux x64). To run on the WebAssembly build instead, set CASCADE_OXIGRAPH=wasm for the run; to use a build " +
+              "already made, set CASCADE_OXIGRAPH_NATIVE to its file.\n",
+          );
+        return status;
+      }
     }
     return 0;
   }

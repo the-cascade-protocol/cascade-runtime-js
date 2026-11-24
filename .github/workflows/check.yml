@@ -947,8 +947,12 @@ jobs:
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # On the WebAssembly build, which the report the pages show has always been: compatibility.json's host is on the
+      # native build unless told otherwise.
       - id: start
         uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
+        env:
+          CASCADE_OXIGRAPH: wasm
       # The start action names the report it wrote and keeps its table.md two folders up. A run that wrote none keeps
       # nothing, and the pages show every result as not run.
       - name: Keep the report and its table
