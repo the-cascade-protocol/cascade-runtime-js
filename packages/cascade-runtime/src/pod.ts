@@ -186,9 +186,11 @@ export interface Pod {
    * call is answered, which `ask` and `askPage` wait for as they wait for the database. Where no database holds the pod
    * (a browser's, or a folder pod whose `pod.db` is missing or stale) nothing is asked at the open, and the arrivals are
    * matched by the pod's next write or the first call that reads its build but `look`, which waits for them: then
-   * `opened` is undefined and their files are not in it. A match that fails there is made again at the next of those
-   * calls, which is answered over the pod as it stands; one the rules refuse is made no more by a read, and the next
-   * run of the matcher (`pod.match()`, an import, connect or entry) tells of it, as the refusal of the older run.
+   * `opened` is undefined and their files are not in it. A match that fails there is made again by the next write or
+   * `pod.match()`, never by a read: the reads after it are answered over the pod as it stands. A run the rules refuse is
+   * made no more by a read and does not stop the other arrivals owed; a later run of the matcher (`pod.match()`, an
+   * import that matches, connect or entry) tells of it as its `refused` only if the rules refuse it again, so a session
+   * that only reads is not told.
    * Otherwise it runs after `openPod` returns, as the pod's first step, and `opened` settles once the step and the
    * rebuild after it have run, with the files the step wrote, and rejects as a step that fails rejects its call. The
    * step starts once the pod has no call queued or running at a turn of the timers, so the calls made as `openPod`
@@ -246,8 +248,9 @@ export interface Pod {
    * A matcher run taking the import, entry session or connect `activity` made, or, with none, a recheck of the pod's
    * joins (M7), which takes no record an arrival brought by itself. Before either, the pod matches each arrival no run
    * took, as a step of its own, so a stop between an arrival and its run is made good here, as at the next open; an
-   * older run the rules refuse is the call's refusal, which is where a refusal of the match a read of the pod's build
-   * made for it (`opened`) is told. A recheck with no activity is a call an app can make to learn it.
+   * older run the rules refuse is the call's refusal. A refusal of the match a read of the pod's build made for it
+   * (`opened`) is kept nowhere: this call asks again, and tells it only if the rules refuse the run again; a session that
+   * only reads is not told.
    */
   match(activity?: string): Promise<Done>;
   /**
@@ -284,7 +287,7 @@ export interface Pod {
    * How each report of a variant stands to the row of the variant classifications table the app holds that the variant
    * finds (`tables/agreement.rq`): the report's entry (`report`), the row (`row`), the version (`origin`) and the
    * `verdict`. It is answered over the app's current version of the table, kept as an answer is. It writes nothing but,
-   * where it is the first read of the pod's build, the matches the pod is owed (`opened`).
+   * where it is the first read of the build of a pod with no database, the matches the pod is owed (`opened`). Where a database holds the pod and an arrival is owed, it runs before the open's step, over the pod as it was.
    */
   agreement(): Promise<TextRow[]>;
   /**
@@ -292,8 +295,8 @@ export interface Pod {
    * (`tables/medication-classes-through-precise-ingredients.rq`): the entry
    * (`entry`), its `medication`, the `class`, the `relation` the class row gives it, the version of the drug classes
    * table that holds the row (`origin`) and the code the row is on (`through`). It is answered over the current
-   * versions of the tables, and reads the pod. It writes nothing but, where it is the first read of the pod's build, the
-   * matches the pod is owed (`opened`), which can join the records it reads. A combination product is in no class:
+   * versions of the tables, and reads the pod. It writes nothing but, where it is the first read of the build of a pod with no database, the
+   * matches the pod is owed (`opened`), which can join the records it reads. Where a database holds the pod and an arrival is owed, it runs before the open's step, over the pod as it was. A combination product is in no class:
    * MED-RT classes none.
    */
   medicationClasses(): Promise<TextRow[]>;
@@ -304,16 +307,16 @@ export interface Pod {
    * holds the row (`origin`) and the `entry` of the pod's result for it. A required member the pod has no result for is a
    * row with no `entry`. A member reached directly and through a nested panel is a row for each `via`, and a member with
    * several results a row for each. It is answered over the current versions of the tables, and reads the pod. It
-   * writes nothing but, where it is the first read of the pod's build, the matches the pod is owed (`opened`), which can
-   * join the records it reads.
+   * writes nothing but, where it is the first read of the build of a pod with no database, the matches the pod is owed (`opened`), which can
+   * join the records it reads. Where a database holds the pod and an arrival is owed, it runs before the open's step, over the pod as it was.
    */
   panelResults(panel: string): Promise<TextRow[]>;
   /**
    * The reference table versions that joined each entry's records (`tables/joined-by.rq`): the `entry` and the version
    * (`used`) that a counting machine Same cited while joining one of its records. The rule list and the records'
    * versions are never among them, a Same that no longer counts names nothing, and an entry joined without a table has no
-   * row. It reads the pod. It writes nothing but, where it is the first read of the pod's build, the matches the pod is
-   * owed (`opened`), which are what it reports.
+   * row. It reads the pod. It writes nothing but, where it is the first read of the build of a pod with no database, the matches the pod is
+   * owed (`opened`), which are what it reports. Where a database holds the pod and an arrival is owed, it runs before the open's step, over the pod as it was.
    */
   joinedBy(): Promise<TextRow[]>;
   /**
@@ -1186,8 +1189,10 @@ class OpenPod implements Pod {
     given: (page: Page) => T,
   ): Promise<T> {
     if (this.#closing) return this.#next(queued);
-    await this.#checking;
-    const answered = asked();
+    // The place among the calls is taken in this turn: the database is asked once the check of what the open owes is made.
+    const answered = (this.#checking ?? Promise.resolve()).then(() =>
+      this.#closing ? undefined : asked(),
+    );
     let found: Page | undefined;
     const waiting = this.#next(async () => {
       const first = await answered.catch(() => undefined);

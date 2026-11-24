@@ -653,6 +653,8 @@ export class CorePod {
   #performing = false;
   /** Whether the check for arrivals no run is informed by was left to the pod's next step or first read of its build, and not yet made, or made and failed. */
   #owedLeft = false;
+  /** Whether a heal made for a read failed: a read makes none after it, so a heal that keeps failing is paid once by the reads of a session. */
+  #owedFailedAtRead = false;
   /** The check and the matches it finds, while a step or read triggered them: a trigger that comes meanwhile waits for it. It never rejects. */
   #owedRun: Promise<void> | undefined;
   /** The quads the matcher's views lent from the kept build's store have had it remove and add again. */
@@ -1627,8 +1629,8 @@ export class CorePod {
 
   /**
    * A matcher run for each arrival the matcher has not taken but `besides`, oldest first, each its own step: what a
-   * stop between an arrival and its run left undone. It stops at the first run the rules refuse, and gives that
-   * refusal.
+   * stop between an arrival and its run left undone. A run the rules refuse leaves its arrival owed and does not stop
+   * the others; the first refusal is given.
    */
   async matchTheOwed(besides?: string): Promise<Performed> {
     await this.#owedRun;
@@ -1641,7 +1643,13 @@ export class CorePod {
    * where it cannot say, which leaves the check to the pod's next step or first read of its build.
    */
   async arrivalsOwedWithoutABuild(): Promise<string[] | undefined> {
-    const arrivals = await this.#arrivalsFromDatabase();
+    let arrivals: string[] | undefined;
+    try {
+      arrivals = await this.#arrivalsFromDatabase();
+    } catch (error) {
+      this.#owedLeft = true;
+      throw error;
+    }
     if (arrivals === undefined) this.#owedLeft = true;
     return arrivals;
   }
@@ -1662,13 +1670,13 @@ export class CorePod {
   /**
    * Asks what is owed, and matches it, if it was left for the first step or build and none has asked it since, or the
    * last asking failed: a refusal is not made again by a read or step, and is told by the next run of the matcher, which
-   * asks again. A trigger that comes while the matches are made waits for them. What fails here does not fail the step
+   * asks again, if the rules refuse it again. A failure at a read is made again by a step or `match`, never by a read. A trigger that comes while the matches are made waits for them. What fails here does not fail the step
    * or read that triggered it, which goes on over the pod as it stands.
    */
   async #askedWhatIsOwed(forRead = false): Promise<void> {
     if (this.#performing) return;
     if (this.#owedRun === undefined) {
-      if (!this.#owedLeft) return;
+      if (!this.#owedLeft || (forRead && this.#owedFailedAtRead)) return;
       this.#owedLeft = false;
       const run = this.#matchedWhatIsOwed(forRead).finally(() => {
         if (this.#owedRun === run) this.#owedRun = undefined;
@@ -1688,6 +1696,7 @@ export class CorePod {
       );
     } catch {
       this.#owedLeft = true;
+      if (forRead) this.#owedFailedAtRead = true;
     }
   }
 
@@ -1697,14 +1706,14 @@ export class CorePod {
     asking = true,
   ): Promise<Performed> {
     const wrote: string[] = [];
+    let refused: string | undefined;
     for (const arrival of new Set(arrivals)) {
       if (arrival === besides) continue;
       const performed = await this.#matched(arrival, asking);
       wrote.push(...performed.wrote);
-      if (performed.refused !== undefined)
-        return { wrote, refused: performed.refused };
+      refused ??= performed.refused;
     }
-    return { wrote };
+    return refused === undefined ? { wrote } : { wrote, refused };
   }
 
   /**

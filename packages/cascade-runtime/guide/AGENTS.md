@@ -828,9 +828,11 @@ the pod's next write or the first call that reads the pod's build (a question,
 `agreement`, `medicationClasses`, `panelResults`, `joinedBy`), which waits for them;
 a session that only looks (`look` never makes them), checks an entry, retitles or is
 answered from kept answers never pays for them. A match that fails there is made again
-at the next such call, and the call that triggered it is answered over the pod as it
-stands; one the rules refuse is made no more by a read, and `await pod.match()` (or
-the next import, connect or entry) tells of it as its `refused`. A pod closed before
+by the next write or `await pod.match()`, never by a read, and the call that triggered it
+and the reads after it are answered over the pod as it stands; one the rules refuse is
+made no more by a read and does not stop the other arrivals owed. A later `await pod.match()`
+(or the next import that matches, connect or entry) tells of it as its `refused` only if
+the rules refuse it again, so a session that only reads is not told. A pod closed before
 the step started is left as it was, and the next open takes them. A pod in memory gets the package's starter copies.
 
 What a page shows of the tables, the same `Tables` answers, in Node and in a

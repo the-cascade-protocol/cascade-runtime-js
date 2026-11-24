@@ -1277,8 +1277,8 @@ describe("Importing a health export · pod.import()", () => {
         }
       });
 
-    /** `kept` with the next write to the pod's folder, while `armed.error` is set, throwing it, once. */
-    function writesThrowing(armed: { error?: Error }): Parts {
+    /** `kept` with the next write to the pod's folder, while `armed.error` is set, throwing it, once, or at every write while `armed.always` is. */
+    function writesThrowing(armed: { error?: Error; always?: boolean }): Parts {
       return {
         ...kept,
         folder: (path, iri) => {
@@ -1293,7 +1293,7 @@ describe("Importing a health export · pod.import()", () => {
                 if (typeof key === "string" && key.startsWith("write"))
                   return (...given: unknown[]) => {
                     const error = armed.error;
-                    armed.error = undefined;
+                    if (armed.always !== true) armed.error = undefined;
                     if (error !== undefined) throw error;
                     return call.apply(target, given);
                   };
@@ -1305,8 +1305,8 @@ describe("Importing a health export · pod.import()", () => {
       };
     }
 
-    it("answers the question that triggered a heal that failed, and makes the heal again at the next trigger", async () => {
-      const armed: { error?: Error } = {};
+    it("answers the question that triggered a heal that failed, makes the heal no more for a read, and makes it again at the next `match`", async () => {
+      const armed: { error?: Error; always?: boolean } = {};
       const pod = await openPodWith(
         writesThrowing(armed),
         await stopped("stopped-heal-fails"),
@@ -1314,14 +1314,26 @@ describe("Importing a health export · pod.import()", () => {
       try {
         await pod.opened;
         armed.error = new Error("the disk is full");
+        armed.always = true;
         assert.equal((await select(pod, SAMES)).length, 0);
+        for (let again = 0; again < 2; again++) {
+          const { result, seen } = await probing(() => select(pod, SAMES));
+          assert.equal(result.length, 0);
+          assert.ok(
+            !seen.spans.has("matcher.of") &&
+              !seen.spans.has("core-pod.step.perform"),
+            [...seen.spans.keys()].join(", "),
+          );
+        }
+        armed.error = undefined;
+        assert.equal((await pod.match()).refused, undefined);
         assert.ok((await select(pod, SAMES)).length > 0);
       } finally {
         await pod.close();
       }
     });
 
-    it("answers the question that triggered a heal the rules refused, makes it no more for a read, and tells of it in the next run of the matcher", async () => {
+    it("answers the question that triggered a heal the rules refused, and makes it no more for a read", async () => {
       const armed: { error?: Error } = {};
       const pod = await openPodWith(
         writesThrowing(armed),
@@ -1333,8 +1345,74 @@ describe("Importing a health export · pod.import()", () => {
         assert.equal((await select(pod, SAMES)).length, 0);
         const { seen } = await probing(() => select(pod, SAMES));
         assert.ok(!seen.spans.has("matcher.of"));
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("tells a refusal in a `match` whose own run the rules refuse, and not in the one after it", async () => {
+      const armed: { error?: Error } = {};
+      const pod = await openPodWith(
+        writesThrowing(armed),
+        await stopped("stopped-match-refused"),
+      );
+      try {
+        await pod.opened;
+        armed.error = new Refusal("the rules refuse the run");
+        await select(pod, SAMES);
         armed.error = new Refusal("the rules refuse the run");
         assert.equal((await pod.match()).refused, "the rules refuse the run");
+        assert.equal((await pod.match()).refused, undefined);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes its place among the calls as it is asked, so an import made at once after it does not change its answer", async () => {
+      const at = join(pods, "place-in-queue");
+      const first = await openPodWith(kept, at);
+      try {
+        const done = await first.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await first.judge(about(first, profile));
+        assert.ok(done.activity);
+        await first.match(done.activity);
+      } finally {
+        await first.close();
+      }
+      const pod = await openPodWith(kept, at);
+      try {
+        const question = "pod/What each import brought in";
+        const before = (await pod.ask(question)).length;
+        const asked = pod.ask(question);
+        const imported = pod.import(exported("x-e4"), { match: false });
+        assert.equal((await asked).length, before);
+        await imported;
+        assert.ok((await pod.ask(question)).length > before);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("heals the arrivals the rules do not refuse when one is refused, leaving the refused one owed", async () => {
+      const folder = join(pods, "stopped-two-owed");
+      const stopping = await openPodWith(kept, folder);
+      try {
+        for (const name of ["x-e10", "x-e12"]) {
+          const done = await stopping.import(exported(name), { match: false });
+          for (const profile of done.unclaimedProfiles)
+            await stopping.judge(about(stopping, profile));
+        }
+      } finally {
+        await stopping.close();
+      }
+      const armed: { error?: Error } = {};
+      const pod = await openPodWith(writesThrowing(armed), folder);
+      try {
+        await pod.opened;
+        const owed = "pod/Which arrivals has the matcher not taken";
+        armed.error = new Refusal("the rules refuse the run");
+        assert.equal((await pod.ask(owed)).length, 1);
       } finally {
         await pod.close();
       }
