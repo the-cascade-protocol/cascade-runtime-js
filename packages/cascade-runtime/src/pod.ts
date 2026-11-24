@@ -1067,12 +1067,14 @@ class OpenPod implements Pod {
         this.#databaseFirst(
           fromDatabase,
           async () => {
-            const answered = await fromDatabase(true);
+            const wanting: Wanting = {};
+            const answered = await fromDatabase(wanting);
             if (answered !== undefined) return answered;
             const rows = await this.#askedOfStore(
               question,
               lens ?? this.#parts.lens,
             );
+            this.#databaseAfter(wanting);
             return pageOfRows(question, rows, size, after);
           },
           (answered) => answered,
@@ -1090,19 +1092,18 @@ class OpenPod implements Pod {
     lens: string | undefined,
     size: number,
     after: string | undefined,
-  ): (building?: boolean) => Promise<Page | undefined> {
+  ): (wanting?: Wanting) => Promise<Page | undefined> {
     if (after === undefined || isPageKey(after)) {
       const page = after === undefined ? { size } : { size, after };
-      return (building) =>
-        this.#fromDatabase(question, lens, page, building === true);
+      return (wanting) => this.#fromDatabase(question, lens, page, wanting);
     }
     const before = entriesBefore(question, after);
-    return async (building) => {
+    return async (wanting) => {
       const answered = await this.#fromDatabase(
         question,
         lens,
         { size: before + size },
-        building === true,
+        wanting,
       );
       if (answered === undefined) return undefined;
       const { rows, next } = pageOfRows(question, answered.rows, size, after);
@@ -1148,8 +1149,8 @@ class OpenPod implements Pod {
     question: string,
     lens: string | undefined,
     page?: PageAsked,
-    /** Whether the call is in its turn among the pod's calls, where a database that holds nothing is built for the question. */
-    building = false,
+    /** Given by a call that is in its turn among the pod's calls and goes on to answer from the store: set, where a database is to be built, to the lens asked under. */
+    wanting?: Wanting,
   ): Promise<Page | undefined> {
     if (this.#closed) return undefined;
     const asked = lens ?? this.#parts.lens;
@@ -1158,14 +1159,13 @@ class OpenPod implements Pod {
     questionText(offered, question);
     const { sql, lists } = offered.questions.get(question)!;
     if (sql === undefined || this.#closed) return undefined;
-    let answer = await this.#core.answered(asked, sql, page);
+    const answer = await this.#core.answered(asked, sql, page);
     if (
       answer === undefined &&
-      building &&
-      !this.#closed &&
-      (await this.#core.keptDatabaseForQuestion(asked).catch(() => false))
+      wanting !== undefined &&
+      this.#core.wantsDatabaseAfterAnswer(asked)
     )
-      answer = await this.#core.answered(asked, sql, page);
+      wanting.lens = asked;
     if (answer === undefined || this.#closed) return undefined;
     const rows = answer.rows.map((row) => withLists(row, lists));
     return answer.next === undefined ? { rows } : { rows, next: answer.next };
@@ -1649,16 +1649,34 @@ class OpenPod implements Pod {
     question: string | { query: string },
     options: { lens?: string },
   ): Promise<Row[]> {
+    const wanting: Wanting = {};
     if (typeof question === "string") {
       const answered = await this.#fromDatabase(
         question,
         options.lens,
         undefined,
-        true,
+        wanting,
       );
       if (answered !== undefined) return answered.rows;
     }
-    return this.#askedOfStore(question, options.lens ?? this.#parts.lens);
+    const rows = await this.#askedOfStore(
+      question,
+      options.lens ?? this.#parts.lens,
+    );
+    this.#databaseAfter(wanting);
+    return rows;
+  }
+
+  /**
+   * Has the database built from the kept build, as a call of its own after the call that was answered from the store,
+   * which does not wait for it, nor do the questions that come while it is built: they are answered from the store.
+   */
+  #databaseAfter(wanting: Wanting): void {
+    const lens = wanting.lens;
+    if (lens === undefined || this.#closing || this.#closed) return;
+    this.#next(() => this.#core.keepDatabaseAfterAnswer(lens)).catch(
+      () => undefined,
+    );
   }
 
   /**
@@ -2007,6 +2025,11 @@ async function tablesChanged(
  * whose calls always overlap cannot hold the newer tables back for good.
  */
 const DEFERRED_AT_MOST_MS = 2000;
+
+/** What a question answered from the store says of the database: the lens it was asked under, set where the pod is to have one built. */
+interface Wanting {
+  lens?: string;
+}
 
 /** The open's step, while it waits for the pod's queue to have no call queued or running at a turn of the timers. */
 interface Waiting {

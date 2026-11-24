@@ -1310,6 +1310,43 @@ describe("Answering a pod's questions from its database, a page at a time · pod
       assert.deepEqual(found, stored);
     });
 
+    it("holds a step and a retitle that come as pod.db is being built until it is built, and keeps pod.db equal to the build kept beside the pod", async () => {
+      const folder = await copied(first, "asked-no-database-stepping");
+      await rm(join(besideOf(folder), DATABASE), { force: true });
+      const held = buildHeld(parts);
+      const title = "Retitled as pod.db was built";
+      const built = await callsOf(async () => {
+        const pod = await openPodWith(held.parts, folder);
+        try {
+          await within(
+            "the first answer waited for the build of pod.db",
+            pod.ask(THEN),
+          );
+          await within("the build of pod.db did not start", held.begun);
+          const stepping = pod.import(laterPull()[0]!, {
+            claimProfiles: claiming,
+          });
+          const retitling = pod.retitle(title);
+          setTimeout(held.release, 50);
+          await stepping;
+          await retitling;
+        } finally {
+          held.release();
+          await pod.close();
+        }
+      });
+      assert.equal(built.get(WHOLE), 1, "pod.db built whole more than once");
+      assert.ok(
+        (built.get(STEP) ?? 0) > 0,
+        "the step did not keep pod.db current",
+      );
+      const kept = await canonicalGraphs(readDatabase(folder, statementsIn));
+      assert.deepEqual(
+        kept,
+        await canonicalGraphs(await builtStatements(folder)),
+      );
+    });
+
     it("builds pod.db to its end when the pod is closed as it is being built after the first answer, with no rejection left unhandled and nothing built again at close", async () => {
       const folder = await copied(first, "asked-no-database-closing");
       await rm(join(besideOf(folder), DATABASE), { force: true });
