@@ -31,7 +31,7 @@ runs:
       run: |
         set -euo pipefail
         starter="${GITHUB_WORKSPACE}/cascade-starter-kit"
-        body=$(bash "${ACTION_PATH}/../../scripts/pull-request-body.sh")
+        body=$(bash "${ACTION_PATH}/../depends-on/pull-request-body.sh")
         pair=$(printf '%s\n' "$body" | tr -d '\r' \
           | grep -iEo '^[[:space:]]*Depends-On:[[:space:]]*(https://github\.com/)?the-cascade-protocol/cascade-starter-kit(#|/pull/)[0-9]+' \
           | head -n 1 | grep -Eo '[0-9]+$' || true)

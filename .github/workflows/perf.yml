@@ -11,7 +11,7 @@ name: perf
 #   that run gives no file the job goes on, warns, and the comment compares with the latest push's file as before, saying so.
 #   A hand-started run on a branch other than main does the same and puts the comparison in its summary. It reads the
 #   `Depends-On:` lines of that branch's open pull request as a run the pull request started would (the actions
-#   depends-on and starter, through .github/scripts/pull-request-body.sh; the vocabulary and the adapters, which the Bridge
+#   depends-on and starter, through .github/actions/depends-on/pull-request-body.sh; the vocabulary and the adapters, which the Bridge
 #   spec's start action places, follow when it does the same); main's checkouts under main/ stay at the default branches.
 # - A push to main and the nightly run write their file to the orphan branch `perf-data`, at
 #   runtime/YYYY/MM/DD/<run>-<sha7>-<event>.json, and put the table in the job summary. The nightly run and a

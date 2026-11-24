@@ -3,7 +3,7 @@ description: >
   Where to check `repository` out, as this pull request's body names it on a `Depends-On:` line: the head of that open
   pull request, else its default branch (a merged or closed one, or none named, or no pull request). A run started by
   hand on a branch other than the default one reads the body of that branch's open pull request in this repository
-  (.github/scripts/pull-request-body.sh), as a run the pull request started does. The start action does this for the
+  (.github/actions/depends-on/pull-request-body.sh), as a run the pull request started does. The start action does this for the
   vocabulary and the adapters only; the checkouts of other repositories ask it.
 inputs:
   repository:
@@ -32,7 +32,7 @@ runs:
       run: |
         set -euo pipefail
         repository="$REPOSITORY"; ref=""
-        body=$(bash "${ACTION_PATH}/../../scripts/pull-request-body.sh")
+        body=$(bash "${ACTION_PATH}/pull-request-body.sh")
         pair=$(printf '%s\n' "$body" | tr -d '\r' \
           | grep -iEo "^[[:space:]]*Depends-On:[[:space:]]*(https://github\.com/)?${REPOSITORY}(#|/pull/)[0-9]+" \
           | head -n 1 | grep -Eo '[0-9]+$' || true)
