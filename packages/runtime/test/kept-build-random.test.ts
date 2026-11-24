@@ -259,6 +259,14 @@ async function story(seed: number) {
             { kind: "import", export: exported, converted },
             writer,
           );
+          // An import of documents the pod keeps already made no act, so no judgment or matcher run can name it.
+          if (
+            replaying
+              .replayed()
+              .steps.find((done) => done.step.name === `${name}-${which}`)
+              ?.activity === undefined
+          )
+            own[writer]?.pop();
         });
     add(5, async () => {
       const outputs = 1 + draw.below(2);

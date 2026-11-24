@@ -316,7 +316,7 @@ export interface Done {
   readonly wrote: readonly string[];
   /** Why the rules refused the step; it then wrote nothing. */
   readonly refused?: string;
-  /** The import, entry session or connect it made. */
+  /** The import, entry session or connect it made: none for an import of documents the pod already keeps, which also runs no matcher. */
   readonly activity?: string;
   /** The judgment it filed, as the package named it. */
   readonly judgment?: string;

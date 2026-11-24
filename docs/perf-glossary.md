@@ -102,10 +102,10 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `rss` | Memory the process was holding when the scenario's work was done, in bytes: after the first screen and before closing for a new pod, after the first answer and before closing for a pod given a document again, after the second read for a reopened one, after a first read and before the pages for the question pages. |
 | `peak-rss` | The most memory the process held at any moment, in bytes. |
 | `probed-total` | The scenario's time in one run with the probe on, which slows some work; its stages are from this run and are for finding where time goes, never for adding up to the headline. |
-| `phase-loading-the-adapter` | Import part: loading the adapter that knows this kind of record. |
+| `phase-loading-the-adapter` | Import part: loading the adapter that knows this kind of record and, on a pod that already holds records, reading the revisions it holds. An import whose every document the pod already holds loads and reads neither, and has no such part. |
 | `phase-converting` | Import part: converting the source record into the pod's own format. |
 | `phase-saving` | Import part: writing the converted records into the pod. |
-| `phase-judging` | Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs. |
+| `phase-judging` | Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part. |
 | `files/all` | Every file the pod holds, counted by the pod's layout: the kinds' counts add up to it. |
 | `files/on-disk` | Every file in the pod's folder as the disk has it. For a plain pod it equals the count above; for an encrypted pod it also counts the sealed index. |
 | `files/beside` | The files kept beside the pod: its database, its kept build and its kept answers. |

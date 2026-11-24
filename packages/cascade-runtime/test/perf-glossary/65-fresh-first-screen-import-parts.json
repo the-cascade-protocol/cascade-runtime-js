@@ -1,9 +1,9 @@
 {
   "measures": {
-    "phase-loading-the-adapter": "Import part: loading the adapter that knows this kind of record.",
+    "phase-loading-the-adapter": "Import part: loading the adapter that knows this kind of record and, on a pod that already holds records, reading the revisions it holds. An import whose every document the pod already holds loads and reads neither, and has no such part.",
     "phase-converting": "Import part: converting the source record into the pod's own format.",
     "phase-saving": "Import part: writing the converted records into the pod.",
-    "phase-judging": "Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs."
+    "phase-judging": "Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part."
   },
   "measureFamilies": [
     {

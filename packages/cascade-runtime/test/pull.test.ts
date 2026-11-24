@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { loadHospital } from "@the-cascade-protocol/sandbox/node";
+import { probing, type Seen } from "@cascade-runtime/runtime/probe";
 import {
   type Done,
+  type Imported,
   openPod,
   type Pod,
   type Pull,
@@ -17,6 +27,25 @@ import { importClaimingEveryProfile } from "./claiming.js";
 import { pulled } from "./hospitals.js";
 
 const HYPERTENSION = "http://snomed.info/id/59621000";
+
+/** The SHA-256 of every file under the folder, by its path in it. */
+async function hashed(folder: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+  for (const entry of await readdir(folder, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    files.set(
+      path.slice(folder.length),
+      createHash("sha256")
+        .update(await readFile(path))
+        .digest("hex"),
+    );
+  }
+  return files;
+}
 
 /** A clock stopped at the time, whose milliseconds end in zeros, as a stored `xsd:dateTime` drops them. */
 function stopped(time: string): { now: () => Date } {
@@ -113,6 +142,82 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
     it("writes nothing when it is imported again from the folder's path", () => {
       assert.equal(again.refused, undefined);
       assert.deepEqual(again.wrote, []);
+      assert.equal(again.activity, undefined);
+    });
+  });
+
+  describe("given a pull a pod kept in a folder holds, imported again after the pod is opened again", () => {
+    let held: Imported;
+    let seen: Seen;
+    let first: Seen;
+    let filesBefore: Map<string, string>;
+    let filesAfter: Map<string, string>;
+    let rowsBefore: Row[];
+    let rowsAfter: Row[];
+
+    before(async () => {
+      const kept = await mkdtemp(join(tmpdir(), "cascade-held-"));
+      try {
+        let podHere = await openPod(kept);
+        ({ seen: first } = await probing(() =>
+          importClaimingEveryProfile(podHere, pullFiles(north, "north")),
+        ));
+        rowsBefore = await podHere.ask("pod/My active conditions");
+        await podHere.close();
+        filesBefore = await hashed(kept);
+        // Opened again and asked nothing yet, so no build is kept for the import to read.
+        podHere = await openPod(kept);
+        ({ result: held, seen } = await probing(() =>
+          podHere.import(pullFiles(north, "north")),
+        ));
+        filesAfter = await hashed(kept);
+        rowsAfter = await podHere.ask("pod/My active conditions");
+        await podHere.close();
+      } finally {
+        await rm(kept, { recursive: true, force: true });
+      }
+    });
+
+    it("files no activity and runs no matcher, writing nothing", () => {
+      assert.equal(held.refused, undefined);
+      assert.deepEqual(held.wrote, []);
+      assert.equal(held.activity, undefined);
+      assert.equal(held.matched, undefined);
+    });
+
+    it("performs no step: it reads none of the pod's revisions or its kept build, loads no adapter, rebuilds nothing and asks no matcher", () => {
+      // The pod's first import makes these spans, so a span renamed in the source cannot make the absence below pass.
+      for (const name of [
+        "arrivals.revisionsOf",
+        "core-pod.import.adapters",
+        "arrivals.accepting",
+        "matcher.of",
+        "core-pod.step.rebuild:import",
+      ])
+        assert.ok((first.spans.get(name)?.calls ?? 0) > 0, name);
+      for (const name of [
+        "arrivals.revisionsOf",
+        "core-pod.import.adapters",
+        "arrivals.accepting",
+        "kept.readBack",
+        "kept.whole",
+        "pod.match",
+        "matcher.of",
+      ])
+        assert.equal(seen.spans.get(name)?.calls ?? 0, 0, name);
+      assert.deepEqual(
+        [...seen.spans.keys()].filter((name) =>
+          name.startsWith("core-pod.step.rebuild"),
+        ),
+        [],
+      );
+    });
+
+    it("leaves every file of the pod as it was, and the same rows for a later question", () => {
+      assert.ok(filesBefore.size > 0);
+      assert.deepEqual(filesAfter, filesBefore);
+      assert.deepEqual(rowsAfter, rowsBefore);
+      assert.ok(rowsBefore.length > 0);
     });
   });
 });
