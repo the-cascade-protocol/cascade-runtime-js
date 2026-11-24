@@ -2,6 +2,7 @@ import {
   FRONT_PAGE,
   OWNER,
   REPOSITORIES,
+  V1_REPOSITORIES,
   WANT_ORDER,
   WANTS,
 } from "./front-page.js";
@@ -352,6 +353,13 @@ export async function agentFiles<Ctx extends { readonly base?: string }>(
       item(name, `${OWNER}/${name}`, about),
       ...(site === undefined ? [] : [item(`${name} site`, site)]),
     ]),
+    ...V1_REPOSITORIES.map(({ name, about, status }) =>
+      item(
+        name,
+        `${OWNER}/${name}`,
+        `Cascade Protocol v1. ${about}. ${status}.`,
+      ),
+    ),
   ]);
   const parts = WANT_ORDER.filter((want) => wanted.has(want));
 

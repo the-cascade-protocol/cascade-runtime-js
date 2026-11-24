@@ -2,14 +2,13 @@
 //   node scripts/sync-chrome.mjs                rewrites the copy and its header
 //   node scripts/sync-chrome.mjs --check        exits 1 when the website's file differs from the copy
 //   node scripts/sync-chrome.mjs --from <url>   reads that address of the file instead
-// The address is ${WEBSITE_URL}/css/chrome.css, WEBSITE_URL defaulting to the website's site-docs deployment. An
+// The address is ${WEBSITE_URL}/css/chrome.css, WEBSITE_URL defaulting to the website, https://cascadeprotocol.org. An
 // address it cannot read (offline) is reported and exits 0 under --check, so such a run never fails a build; on GitHub Actions it is also a ::warning::.
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const WEBSITE =
-  process.env.WEBSITE_URL || "https://site-docs.cascadeprotocol-org.pages.dev";
+const WEBSITE = process.env.WEBSITE_URL || "https://cascadeprotocol.org";
 const COPY = fileURLToPath(
   new URL("../packages/site/src/chrome.css", import.meta.url),
 );

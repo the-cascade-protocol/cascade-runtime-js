@@ -1,5 +1,7 @@
-/* https://site-docs.cascadeprotocol-org.pages.dev/css/chrome.css, copied 2026-11-15 */
-/* 1. Tokens ---------------------------------------------------------------- */
+/* https://cascadeprotocol.org/css/chrome.css, copied 2026-11-23 */
+/* Cascade Protocol site chrome: tokens, skip link, alpha strip, header,
+   Developers row (sx-subbar) and footer. GENERATED from css/site.css by
+   scripts/build-chrome-css.py; do not edit. Change css/site.css and rerun. */
 
 :root {
     --ink: #14202a;
@@ -23,11 +25,6 @@
     :root { --gutter: 16px; }
 }
 
-/* 2. Shared chrome: alpha strip, header, footer ----------------------------- */
-
-.b-skip { position: absolute; left: -9999px; }
-.b-skip:focus { left: 16px; top: 8px; z-index: 100; background: #ffffff; padding: 8px 12px; }
-
 .sx-strip {
     background: var(--ink);
     color: #ffffff;
@@ -38,23 +35,15 @@
     padding: 10px 16px;
     text-align: center;
 }
-.sx-strip a, body.b .sx-strip a { color: #ffb38a; font-weight: 500; text-decoration: none; white-space: nowrap; }
-.sx-strip a:hover, body.b .sx-strip a:hover { color: #ffb38a; text-decoration: underline; }
 
-.sx-banner {
-    background: #fff4e0;
-    border-bottom: 1px solid var(--amber);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.5;
-    padding: 12px 16px;
-    text-align: center;
-}
-.sx-banner a { color: var(--link); font-weight: 500; }
+.sx-strip a { color: #ffb38a; font-weight: 500; text-decoration: none; }
+
+.sx-strip a:hover { text-decoration: underline; }
 
 .sx-header { background: #ffffff; border-bottom: 1px solid var(--rule); position: relative; z-index: 50; }
+
 .sx-header * { box-sizing: border-box; }
+
 .sx-bar {
     max-width: var(--wrap);
     margin: 0 auto;
@@ -64,6 +53,7 @@
     align-items: center;
     gap: 4px;
 }
+
 .sx-logo {
     display: flex;
     align-items: center;
@@ -76,9 +66,13 @@
     font-size: 17px;
     text-decoration: none;
 }
+
 .sx-logo:hover { color: var(--ink); text-decoration: none; }
+
 .sx-logo svg { flex: none; }
+
 .sx-nav { display: flex; align-items: center; gap: 2px; }
+
 .sx-nav a {
     display: inline-flex;
     align-items: center;
@@ -90,10 +84,13 @@
     text-decoration: none;
     border-bottom: 2px solid transparent;
 }
+
 .sx-nav a:hover { border-bottom-color: var(--rule); color: var(--ink); text-decoration: none; }
+
 .sx-nav a[aria-current="page"] { border-bottom-color: var(--pencil); font-weight: 600; }
 
 .sx-menu { display: none; }
+
 .sx-menu summary {
     list-style: none;
     display: inline-flex;
@@ -106,8 +103,11 @@
     color: var(--ink);
     cursor: pointer;
 }
+
 .sx-menu summary::-webkit-details-marker { display: none; }
+
 .sx-menu[open] summary { background: var(--ink); color: #ffffff; }
+
 .sx-menu nav {
     position: absolute;
     left: 0;
@@ -119,6 +119,7 @@
     display: flex;
     flex-direction: column;
 }
+
 .sx-menu nav a {
     display: flex;
     align-items: center;
@@ -136,18 +137,23 @@
 }
 
 .sx-footer { background: #ffffff; font-family: var(--sans); color: var(--ink); margin-top: 0; padding: 0; border: 0; }
+
 .sx-footer * { box-sizing: border-box; }
+
 .sx-footer-wrap {
     max-width: var(--wrap);
     margin: 0 auto;
     padding: 40px var(--gutter);
 }
+
 .sx-footer-inner { border-top: 3px solid var(--ink); padding-top: 32px; }
+
 .sx-footer-cols {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
     gap: 32px;
 }
+
 .sx-footer h2 {
     font-family: var(--mono);
     font-size: 13px;
@@ -156,7 +162,9 @@
     margin: 0 0 6px;
     line-height: 1.4;
 }
+
 .sx-footer ul { list-style: none; margin: 0; padding: 0; }
+
 .sx-footer li a {
     display: flex;
     align-items: center;
@@ -166,8 +174,11 @@
     text-decoration: none;
     border-bottom: 1px solid var(--rule-soft);
 }
+
 .sx-footer li a:hover { color: var(--link); }
+
 .sx-footer p { margin: 0 0 12px; font-size: 15px; line-height: 1.5; color: var(--ink-2); }
+
 .sx-footer-legal {
     display: flex;
     flex-wrap: wrap;
@@ -179,6 +190,35 @@
     line-height: 1.5;
     color: var(--muted);
 }
+
 .sx-footer-legal span { margin-right: auto; }
+
 .sx-footer-legal a { color: var(--muted); display: inline-flex; align-items: center; min-height: 32px; }
 
+.b-skip { position: absolute; left: -9999px; }
+
+.b-skip:focus { left: 16px; top: 8px; z-index: 100; background: #ffffff; padding: 8px 12px; }
+
+.b-wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); }
+
+.sx-strip a,.b .sx-strip a { color:#ffb38a;font-weight:500;text-decoration:none;white-space:nowrap; }
+
+.sx-strip a:hover,.b .sx-strip a:hover { color:#ffb38a;text-decoration:underline; }
+
+.sx-logo,.b .sx-logo,.b .sx-logo:hover { color:var(--ink) }
+
+.sx-nav a,.b .sx-nav a,.b .sx-nav a:hover,.sx-menu nav a,.b .sx-menu nav a { color:var(--ink) }
+
+.sx-banner { background:#fff4e0;border-bottom:1px solid var(--amber);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;padding:12px 16px;text-align:center; }
+
+.sx-banner a { color:var(--link);font-weight:500; }
+
+.sx-subbar { background:var(--paper);border-bottom:1px solid var(--rule) }
+
+.sx-subbar * { box-sizing:border-box }
+
+.sx-subbar nav { display:flex;flex-wrap:wrap;gap:4px 28px;padding-top:12px;padding-bottom:12px;font-size:15px }
+
+.sx-subbar a { color:var(--ink-2);text-decoration:none;padding:4px 0 }
+
+.sx-subbar a[aria-current] { color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--pencil) }
