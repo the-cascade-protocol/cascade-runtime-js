@@ -6,6 +6,7 @@ import { ccdaDownload } from "@cascade-runtime/ccda-download";
 import { daysBefore, laterInUtc, reachedIn } from "../src/arrivals.js";
 import {
   BridgeError,
+  type Conversion,
   type ConvertOptions,
   type LoadedAdapter,
 } from "../src/bridge.js";
@@ -511,6 +512,20 @@ describe("Turning an adapter's arrivals into revisions · CorePod.import(), reac
       assert.equal(asked.length, 1);
       assert.equal(asked[0]?.findings, undefined);
       assert.equal(asked[0]?.census, undefined);
+    });
+  });
+
+  describe("given the one adapter of the document's media type", () => {
+    it("converts the document without asking the adapter whether it accepts it", async () => {
+      const adapter = counting(true, {
+        graph: new Uint8Array(),
+        detected: true,
+      });
+      const { seen } = await probing(() => importWith(adapter));
+      assert.equal(adapter.converted, 1);
+      assert.equal(adapter.asked, 0);
+      assert.equal(seen.spans.get("arrivals.accepting")?.calls ?? 0, 0);
+      assert.equal(seen.spans.get("arrivals.convert")?.calls, 1);
     });
   });
 
@@ -1097,11 +1112,12 @@ async function badInputReplay(): Promise<Replayed> {
 }
 
 /**
- * A pod whose import of one C-CDA document is given `adapter`; `files` is the pod's files, and `adaptersAsked` is called
- * when the import asks for its adapters, which it does only for a document the pod does not keep.
+ * A pod whose import of one C-CDA document is given `adapter`, or each of those listed, in order; `files` is the pod's
+ * files, and `adaptersAsked` is called when the import asks for its adapters, which it does only for a document the pod
+ * does not keep.
  */
 async function importWith(
-  adapter: LoadedAdapter,
+  adapter: LoadedAdapter | readonly LoadedAdapter[],
   files: Files = new MemoryFiles("https://pod.example/"),
   adaptersAsked: () => void = () => undefined,
 ) {
@@ -1127,8 +1143,34 @@ async function importWith(
   });
   return pod.import(download, "summary.xml", async () => {
     adaptersAsked();
-    return () => [adapter];
+    return () => (Array.isArray(adapter) ? adapter : [adapter]);
   });
+}
+
+/**
+ * An adapter that is asked what the runtime may ask of it: `asked` counts its `accepts` calls and `converted` its
+ * `convert` calls. Its convert gives `conversion`, or fails with it where it is an error. Its accepts gives `accepts`.
+ */
+function counting(
+  accepts: boolean,
+  conversion: Conversion | Error,
+): LoadedAdapter & { asked: number; converted: number } {
+  const adapter = {
+    asked: 0,
+    converted: 0,
+    accepts: () => {
+      adapter.asked++;
+      return Promise.resolve(accepts);
+    },
+    convert: () => {
+      adapter.converted++;
+      return conversion instanceof Error
+        ? Promise.reject(conversion)
+        : Promise.resolve(conversion);
+    },
+    free: () => Promise.resolve(),
+  };
+  return adapter;
 }
 
 /** An adapter that fails with `kind` when asked to `on`, and is otherwise as a real one does. */
@@ -1320,6 +1362,71 @@ describe("Refusing a step that cannot be filed · Performed.refused", () => {
           [],
           on,
         );
+    });
+  });
+
+  describe("given a document no adapter of its media type accepts", () => {
+    const REFUSED = "summary.xml: no adapter of application/cda+xml accepts it";
+
+    it("returns `refused` for the one adapter, whose conversion says it does not accept the document, and writes no file", async () => {
+      const adapter = counting(false, {
+        graph: new Uint8Array(),
+        detected: false,
+      });
+      const files = new MemoryFiles("https://pod.example/");
+      const done = await importWith(adapter, files);
+      assert.equal(done.refused, REFUSED);
+      assert.deepEqual(done.wrote, []);
+      assert.deepEqual(await files.list(""), []);
+      assert.equal(adapter.asked, 0);
+    });
+
+    it("returns `refused` for the one adapter, whose conversion fails, when asking it says it does not accept the document", async () => {
+      const adapter = counting(false, new BridgeError("document", "it fails"));
+      const done = await importWith(adapter);
+      assert.equal(done.refused, REFUSED);
+      assert.deepEqual(done.wrote, []);
+    });
+
+    it("asks the one adapter whose conversion says nothing of it, and refuses when it does not accept the document", async () => {
+      const adapter = counting(false, { graph: new Uint8Array() });
+      const done = await importWith(adapter);
+      assert.equal(done.refused, REFUSED);
+      assert.equal(adapter.asked, 1);
+    });
+
+    it("returns `refused` for an adapter that is none, naming no adapter", async () => {
+      const done = await importWith([]);
+      assert.equal(done.refused, REFUSED);
+    });
+
+    it("asks each adapter in turn where several share the media type, and converts with the first that accepts it", async () => {
+      const declining = counting(false, new Error("unreached"));
+      const accepting = counting(true, {
+        graph: new Uint8Array(),
+        detected: true,
+      });
+      const never = counting(true, new Error("unreached"));
+      await importWith([declining, accepting, never]);
+      assert.deepEqual(
+        [declining, accepting, never].map(({ asked, converted }) => [
+          asked,
+          converted,
+        ]),
+        [
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      );
+    });
+
+    it("refuses where several adapters share the media type and none accepts it", async () => {
+      const done = await importWith([
+        counting(false, new Error("unreached")),
+        counting(false, new Error("unreached")),
+      ]);
+      assert.equal(done.refused, REFUSED);
     });
   });
 

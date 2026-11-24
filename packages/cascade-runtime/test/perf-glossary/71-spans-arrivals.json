@@ -9,7 +9,7 @@
       "within": "scenario.import"
     },
     "arrivals.accepting": {
-      "says": "Finding which adapter accepts this document.",
+      "says": "Finding which adapter accepts this document, where more than one adapter takes its kind of document: the only adapter of a kind is not asked, and its conversion says whether it accepts the document.",
       "within": "scenario.import"
     },
     "arrivals.parsegraph": {

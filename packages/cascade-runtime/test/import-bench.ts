@@ -103,7 +103,6 @@ export const HOT_SPOTS = {
     "store.query",
     "read.first",
     "arrivals.convert",
-    "arrivals.accepting",
     "core-pod.import.adapters",
     "core-pod.step.perform",
     "core-pod.step.commit",

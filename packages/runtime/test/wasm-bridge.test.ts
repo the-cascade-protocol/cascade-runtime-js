@@ -20,6 +20,7 @@ import {
   type LoadedAdapter,
 } from "../src/bridge.js";
 import { appleHealthExport } from "@cascade-runtime/apple-health";
+import { ccdaDownload } from "@cascade-runtime/ccda-download";
 import { CorePod } from "../src/core-pod.js";
 import { MemoryFiles } from "../src/files.js";
 import { parseGraph } from "../src/graph.js";
@@ -276,6 +277,26 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
         inWorkerAdapter.convert(await standIn(expected.document, "{ not json")),
         (error) => isBridgeError(error) && error.kind === "document",
       );
+    });
+
+    it("says in its conversion that the adapter accepts a document it does, as asking does", async () => {
+      assert.equal(await inWorkerAdapter.accepts(expected.document), true);
+      assert.equal(
+        (await inWorkerAdapter.convert(expected.document)).detected,
+        true,
+      );
+    });
+
+    it("says in its conversion that the adapter does not accept a document it does not, as asking does", async () => {
+      const [ccda] = adaptersOf("application/cda+xml");
+      assert.ok(ccda !== undefined);
+      const note = await standIn(
+        expected.document,
+        '<?xml version="1.0"?><note><to>Alex</to></note>',
+      );
+      const other = { ...note, envelope: undefined };
+      assert.equal(await ccda.accepts(other), false);
+      assert.equal((await ccda.convert(other)).detected, false);
     });
 
     it("converts the next document with the same loaded adapter", async () => {
@@ -987,6 +1008,39 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       const [savedPod, live] = pods;
       assert.ok((savedPod?.length ?? 0) > 0);
       assert.equal(notIsomorphic(savedPod ?? [], live ?? []), undefined);
+    });
+  });
+
+  /** @rule runtime/arrivals.feature A14 */
+  describe("given a document the one adapter of its media type does not accept, imported through the WebAssembly Bridge", () => {
+    it("returns `refused`, naming the media type, and writes no file", async () => {
+      const download = new MemoryFiles("https://download.example/");
+      await download.write(
+        "summary.xml",
+        new TextEncoder().encode('<ClinicalDocument xmlns="urn:hl7-org:v3"/>'),
+      );
+      const files = new MemoryFiles("https://pod.example/");
+      const time = new StoryTime();
+      time.begin("2026-06-01T09:00:00Z");
+      const done = await new CorePod({
+        runtime: RUNTIME,
+        pod: files,
+        address: "https://pod.example/",
+        subject: "urn:uuid:3c9f1a2e-7b64-4d08-9e5a-6f2b8c1d4e70",
+        title: "",
+        vocabulary: await vocabulary(),
+        layout: await layout(),
+        newStore,
+        time,
+        importers: [ccdaDownload],
+        references: () => Promise.reject(new Error("an import reads no table")),
+      }).import(download, "summary.xml", async () => adaptersOf);
+      assert.equal(
+        done.refused,
+        "summary.xml: no adapter of application/cda+xml accepts it",
+      );
+      assert.deepEqual(done.wrote, []);
+      assert.deepEqual(await files.list(""), []);
     });
   });
 

@@ -1189,6 +1189,13 @@ async function refusing<T>(path: string, call: () => Promise<T>): Promise<T> {
   }
 }
 
+/** The refusal of a document no adapter of its media type accepts (A14). */
+function unaccepted(found: ExportDocument): Refusal {
+  return new Refusal(
+    `${found.path}: no adapter of ${found.mediaType} accepts it`,
+  );
+}
+
 /** The first adapter of the document's media type that accepts it; none accepting it refuses the step (A14). */
 async function accepting(
   adapters: AdaptersOf,
@@ -1198,9 +1205,31 @@ async function accepting(
   for (const adapter of adapters(found.mediaType))
     if (await refusing(found.path, () => adapter.accepts(document)))
       return adapter;
-  throw new Refusal(
-    `${found.path}: no adapter of ${found.mediaType} accepts it`,
-  );
+  throw unaccepted(found);
+}
+
+/**
+ * What `convert` gives for a document that its adapter, the only one of its media type, is not asked about first: its
+ * conversion says whether it accepts the document, and one it does not accept is refused (A14). Where the conversion
+ * fails, or says nothing of it, the adapter is asked, as it was before the conversion: what asking says, a refusal or a
+ * failure of its own, is what the step gives, and an adapter that accepts the document gives the conversion's own failure.
+ */
+async function convertedAsking(
+  adapter: LoadedAdapter,
+  found: ExportDocument,
+  document: BridgeDocument,
+  convert: () => Promise<Conversion>,
+): Promise<Conversion> {
+  const accepts = () => refusing(found.path, () => adapter.accepts(document));
+  let converted: Conversion;
+  try {
+    converted = await refusing(found.path, convert);
+  } catch (error) {
+    if (!(await accepts())) throw unaccepted(found);
+    throw error;
+  }
+  if (!(converted.detected ?? (await accepts()))) throw unaccepted(found);
+  return converted;
 }
 
 /**
@@ -1252,10 +1281,11 @@ async function serverRecord(
  * Files an export's documents, each converted by the first adapter of its media type that accepts it: A1 to A11, with
  * the import named by a new random ID (N7), and the refusals of A14. Every document whose bytes the pod does not keep
  * is kept, whether or not it wrote a revision (A10). `onProgress` is told of each conversion as its
- * adapter is found. Each conversion is held to `budget`; one that passes it stops the step with the Bridge's error.
+ * adapter is found, which is as it begins where one adapter takes the document's media type: that one is not asked
+ * whether it accepts the document, and refuses it, once converted, where its conversion says it does not. Each conversion is held to `budget`; one that passes it stops the step with the Bridge's error.
  * The adapters are asked for, and the pod's revisions read, only once a document is found that the pod does not keep: an
  * export whose documents it keeps all makes no import, and gives no name. The revisions are read while the first such
- * document is accepted and converted, and are waited for when its conversion is back.
+ * document is converted, or first accepted by an adapter that is asked, and are waited for when its conversion is back.
  * Gives the import's name, the patient profiles the versions of its new revisions name, the files it wrote for each
  * record it revised, and each source change time an arrival stated that its revision does not carry, being no
  * `xsd:dateTime` that states its time zone.
@@ -1297,8 +1327,8 @@ export async function fileExport(
       facts: { iri: `${documentIri}#facts`, bytes: read(found, started) },
     };
     const loaded = (adaptersOf ??= await adapters());
-    // The pod's revisions are read while the Bridge accepts and converts: the two depend on each other only where the
-    // arrivals are compared with the revisions, and the Bridge runs in workers.
+    // The pod's revisions are read while the Bridge converts (and accepts, where several adapters share the media type): the
+    // two depend on each other only where the arrivals are compared with the revisions, and the Bridge runs in workers.
     if (reading === undefined) {
       reading = timedAside("arrivals.revisionsOf", () => Revisions.of(context));
       // Its failure is thrown where it is awaited; until then it is handled, not lost.
@@ -1306,19 +1336,27 @@ export async function fileExport(
     }
     const pending = reading;
     const conversion = await overlapping(pending, async () => {
-      const adapter = await timedAside("arrivals.accepting", () =>
-        accepting(loaded, found, document),
-      );
+      // The only adapter of a media type is not asked: its conversion says whether it accepts the document.
+      const candidates = loaded(found.mediaType);
+      const [only] = candidates.length === 1 ? candidates : [];
+      const adapter =
+        only ??
+        (await timedAside("arrivals.accepting", () =>
+          accepting(loaded, found, document),
+        ));
       await onProgress?.({ part: "converting", done, of: documents.length });
       return timedAside("arrivals.convert", async () => {
         const began = probed() ? performance.now() : 0;
-        const converted = await refusing(found.path, () =>
+        const convert = () =>
           adapter.convert(document, {
             ...conversionBudget(budget, found.bytes.length),
             // Only a probed run asks the Bridge to time its stages; any other converts as it always did.
             ...(probed() && { profile: true }),
-          }),
-        );
+          });
+        const converted =
+          only === undefined
+            ? await refusing(found.path, convert)
+            : await convertedAsking(adapter, found, document, convert);
         bridgeSpans(converted, began);
         return converted;
       });
