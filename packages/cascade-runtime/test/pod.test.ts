@@ -970,7 +970,10 @@ describe("Importing a health export · pod.import()", () => {
     it("matches it when the pod is opened again, as it would have been matched", async () => {
       const wanted = await matchedInSession("matched-in-session");
       assert.ok(wanted > 0);
-      const pod = await openPodWith(kept, await stopped("stopped-before-match"));
+      const pod = await openPodWith(
+        kept,
+        await stopped("stopped-before-match"),
+      );
       try {
         const opened = await pod.opened;
         assert.equal(opened?.refused, undefined);
@@ -1242,11 +1245,11 @@ describe("Recording a hospital connection · pod.connect()", () => {
     assert.ok(first.wrote.length > 0);
   });
 
-  it("runs the matcher at once, which writes only when the same hospital connects again from a new address", () => {
+  it("runs the matcher at once, which writes its act alone until the same hospital connects again from a new address", () => {
     assert.equal(first.matched?.refused, undefined);
-    assert.deepEqual(first.matched?.wrote, []);
+    assert.equal(first.matched?.wrote.length, 1);
     assert.equal(moved.matched?.refused, undefined);
-    assert.ok(moved.matched?.wrote.length);
+    assert.ok((moved.matched?.wrote.length ?? 0) > 1);
   });
 });
 
@@ -3261,6 +3264,8 @@ describe("Opening a pod again · openPod()", () => {
           first,
           "0b6f3c1e-2d4a-4e8b-9c7f-1a2b3c4d5e6f",
         );
+        // The entry's match is made, so the reopened pod has no match owed to write an act before the next one.
+        await first.match();
         head1 = first.head;
       } finally {
         await first.close();

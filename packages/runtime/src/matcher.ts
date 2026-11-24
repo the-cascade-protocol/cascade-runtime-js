@@ -1907,10 +1907,7 @@ export async function runMatcher(
           actsTaken(context, activity),
         );
   const taken =
-    activity !== undefined &&
-    (await timedAside("matcher.runInformedBy", () =>
-      runInformedBy(context, activity),
-    ));
+    activity !== undefined && (await runInformedBy(context, activity));
   const matcher = await timedAside("matcher.of", () =>
     Matcher.of(context, references, undefined, takes),
   );

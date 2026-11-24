@@ -513,7 +513,8 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       scratch.push(folder);
       const imported = async (name: string) => {
         const pod = await openedAt(join(folder, name, "pod"), false);
-        await pod.import(syntheticPull(20), { claimProfiles });
+        // Not matched: a matcher run after the About would hash the About's random blank-node labels into its snapshot's set hash, which the fingerprint's mask does not see.
+        await pod.import(syntheticPull(20), { claimProfiles, match: false });
         await pod.close();
         return folderFingerprint(join(folder, name, "pod"));
       };

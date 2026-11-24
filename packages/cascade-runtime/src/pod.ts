@@ -98,7 +98,10 @@ export interface ImportOptions extends ConvertBudget {
    * `profile/What needs review` with `ownerAbout`. An import claims no profile by itself, and `true` is refused.
    */
   readonly claimProfiles?: readonly string[];
-  /** Runs the matcher on the import; on unless false. */
+  /**
+   * Runs the matcher on the import; on unless false. An import stopped before its match, or made with this false and
+   * never matched, is matched at the pod's next open, and before the next import, connect, entry or `match()`.
+   */
   readonly match?: boolean;
   /** Told as each part of the import begins, with what is done so far; the import goes on once what it returns settles. */
   readonly onProgress?: (progress: ImportProgress) => void | Promise<void>;
@@ -165,11 +168,15 @@ export interface Pod {
   readonly owner: string;
   /**
    * The open that gives the pod the app's newer tables (O1, O2), which runs after `openPod` returns, as the pod's first
-   * step: it settles once the step and the rebuild after it have run, to undefined when the tables had not changed, and
-   * rejects as a step that fails rejects its call. The step starts once the pod has no call queued or running at a turn
+   * step: it settles once the step and the rebuild after it have run, to undefined when the tables had not changed and no
+   * match was owed, and rejects as a step that fails rejects its call. The step starts once the pod has no call queued or running at a turn
    * of the timers, so the calls made as `openPod` returns, and those made from their answers, run before it, on the pod
-   * as it was opened; calls that keep the queue busy hold it back for at most 2 s of them, and `close` starts it. Once it
-   * runs, a question by name is answered from `pod.db`, as during any step, or else with the rows kept for the pod as it
+   * as it was opened; calls that keep the queue busy hold it back for at most 2 s of them, and `close` starts it. The
+   * step also matches each arrival no matcher run is informed by (`pod/Which arrivals has the matcher not taken`): an
+   * import, entry session, connect or sync a stop left unmatched, each as a step of its own, whatever the tables. So with
+   * the tables unchanged `opened` settles to undefined when nothing is owed, the step being one question answered from
+   * the pod's database, and otherwise with the files the matches wrote; a `close` that comes first runs the open for
+   * changed tables and leaves the matches for the next open. Once it runs, a question by name is answered from `pod.db`, as during any step, or else with the rows kept for the pod as it
    * was opened, where they were kept,
    * `unheldTableVersions` with the versions read over the pod as it was opened, and any other call, `close` too, waits
    * for the step. A browser's pod drawn from its kept answers
@@ -213,6 +220,11 @@ export interface Pod {
   judge(turtle: string): Promise<Done>;
   /** Why `judge` would fail on the Turtle before the pod's rules are asked, or nothing, writing nothing. */
   checkJudgment(turtle: string): Promise<string | undefined>;
+  /**
+   * A matcher run taking the import, entry session or connect `activity` made, or, with none, a recheck of the pod's
+   * joins (M7), which takes no record an arrival brought by itself. Before either, the pod matches each arrival no run
+   * took, as a step of its own, so a stop between an arrival and its run is made good here, as at the next open.
+   */
   match(activity?: string): Promise<Done>;
   /**
    * The named question's rows. One with a `.sql` beside its `.rq`, under the app's lens, is answered from the database
@@ -1408,7 +1420,9 @@ class OpenPod implements Pod {
         await onProgress?.({ part: "judging", done: index + 1, of });
       }
       const matched = matching
-        ? await timedAside("pod.match", () => this.#core.matchWithTheOwed(activity))
+        ? await timedAside("pod.match", () =>
+            this.#core.matchWithTheOwed(activity),
+          )
         : undefined;
       return { filed, activity, matched, claimedProfiles };
     });

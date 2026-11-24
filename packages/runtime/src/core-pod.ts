@@ -98,7 +98,8 @@ const TYPE = `${RDF}type`;
 const DATASET = "dataset:";
 const MATCHER_VIEW = "matcher view";
 /** The vocabulary's question for the arrivals no matcher run is informed by, less its suffix. */
-const NOT_TAKEN = "queries/questions/pod/Which arrivals has the matcher not taken";
+const NOT_TAKEN =
+  "queries/questions/pod/Which arrivals has the matcher not taken";
 /**
  * The quads the matcher's views and the steps' rebuilds may remove from the kept build's store and add again before the
  * build moves to a store of its own.
@@ -1570,7 +1571,9 @@ export class CorePod {
         : undefined;
     if (answer !== undefined)
       return answer.rows.flatMap(({ arrival }) => arrival ?? []);
-    const { rows } = await (everyday ? this.selectKept(query) : this.select(query));
+    const { rows } = await (everyday
+      ? this.selectKept(query)
+      : this.select(query));
     return rows.flatMap((row) => row.get("arrival")?.value ?? []);
   }
 
