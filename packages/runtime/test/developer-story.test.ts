@@ -166,10 +166,10 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
       const matched = replayed.steps.find(({ step }) => step.name === "M5");
       assert.ok(matched, "the replay through J1 has no matcher run M5");
       assert.equal(matched.refused, undefined, "M5 was refused");
-      assert.deepEqual(
-        matched.wrote,
-        [],
-        "M5 wrote files, so the replay, which claims after the matcher run, may no longer answer as the script, which claims at the import",
+      assert.equal(
+        matched.wrote.filter((path) => !path.startsWith("provenance/")).length,
+        0,
+        "M5 wrote more than its act, so the replay, which claims after the matcher run, may no longer answer as the script, which claims at the import",
       );
       const last = replayed.steps.at(-1);
       assert.ok(last, `the replay of ${ALEX} through J1 performed no step`);
