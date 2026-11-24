@@ -985,7 +985,16 @@ class OpenPod implements Pod {
 
   match(activity?: string): Promise<Done> {
     this.#writing();
-    return this.#next(() => this.#core.match(activity));
+    return this.#next(async () => {
+      const matched = await this.#core.match(activity);
+      await this.#keptDatabase();
+      return matched;
+    });
+  }
+
+  /** The database is a cache of the pod's files: where it cannot be built now, it is built at close and the questions go to the store. */
+  async #keptDatabase(): Promise<void> {
+    await this.#core.keptDatabase().catch(() => undefined);
   }
 
   ask(question: string, options?: { lens?: string }): Promise<Row[]>;
@@ -1058,7 +1067,7 @@ class OpenPod implements Pod {
         this.#databaseFirst(
           fromDatabase,
           async () => {
-            const answered = await fromDatabase();
+            const answered = await fromDatabase(true);
             if (answered !== undefined) return answered;
             const rows = await this.#askedOfStore(
               question,
@@ -1081,16 +1090,20 @@ class OpenPod implements Pod {
     lens: string | undefined,
     size: number,
     after: string | undefined,
-  ): () => Promise<Page | undefined> {
+  ): (building?: boolean) => Promise<Page | undefined> {
     if (after === undefined || isPageKey(after)) {
       const page = after === undefined ? { size } : { size, after };
-      return () => this.#fromDatabase(question, lens, page);
+      return (building) =>
+        this.#fromDatabase(question, lens, page, building === true);
     }
     const before = entriesBefore(question, after);
-    return async () => {
-      const answered = await this.#fromDatabase(question, lens, {
-        size: before + size,
-      });
+    return async (building) => {
+      const answered = await this.#fromDatabase(
+        question,
+        lens,
+        { size: before + size },
+        building === true,
+      );
       if (answered === undefined) return undefined;
       const { rows, next } = pageOfRows(question, answered.rows, size, after);
       const following = next ?? answered.next;
@@ -1135,6 +1148,8 @@ class OpenPod implements Pod {
     question: string,
     lens: string | undefined,
     page?: PageAsked,
+    /** Whether the call is in its turn among the pod's calls, where a database that holds nothing is built for the question. */
+    building = false,
   ): Promise<Page | undefined> {
     if (this.#closed) return undefined;
     const asked = lens ?? this.#parts.lens;
@@ -1143,7 +1158,14 @@ class OpenPod implements Pod {
     questionText(offered, question);
     const { sql, lists } = offered.questions.get(question)!;
     if (sql === undefined || this.#closed) return undefined;
-    const answer = await this.#core.answered(asked, sql, page);
+    let answer = await this.#core.answered(asked, sql, page);
+    if (
+      answer === undefined &&
+      building &&
+      !this.#closed &&
+      (await this.#core.keptDatabaseForQuestion(asked).catch(() => false))
+    )
+      answer = await this.#core.answered(asked, sql, page);
     if (answer === undefined || this.#closed) return undefined;
     const rows = answer.rows.map((row) => withLists(row, lists));
     return answer.next === undefined ? { rows } : { rows, next: answer.next };
@@ -1397,8 +1419,8 @@ class OpenPod implements Pod {
         disclaimedProfiles: [],
         heldBackProfiles: [],
       };
-    // The database is a cache of the pod's files: where it cannot be built now, it is built at close and the questions go to the store.
-    await this.#core.keptDatabase().catch(() => undefined);
+    // An import that does not match leaves its claims, a retitle and the match to come, each of which would rewrite the database by keyed writes: it is built when the match ends, or at the first question.
+    if (options.match !== false) await this.#keptDatabase();
     return {
       ...filed,
       ...(matched === undefined ? {} : { matched }),
@@ -1628,7 +1650,12 @@ class OpenPod implements Pod {
     options: { lens?: string },
   ): Promise<Row[]> {
     if (typeof question === "string") {
-      const answered = await this.#fromDatabase(question, options.lens);
+      const answered = await this.#fromDatabase(
+        question,
+        options.lens,
+        undefined,
+        true,
+      );
       if (answered !== undefined) return answered.rows;
     }
     return this.#askedOfStore(question, options.lens ?? this.#parts.lens);

@@ -10,6 +10,7 @@ import {
   type CpuNote,
   type Flame,
   databaseKept,
+  databaseRemoved,
   type Job,
   type Measured,
   nameOf,
@@ -360,7 +361,8 @@ async function scenariosAt(
     }
 
     // Reopening after the process was stopped before it closed: a new pod, imported into by a process that is killed after
-    // the import and the first screen, so that the database the import built is beside it and no build is kept, and opened as often as the others.
+    // the import and the first screen, and the database the import built taken away, as when the process stopped before any
+    // was built: so that no database or kept build is beside it, the worst case, and opened as often as the others.
     if (wants("reopen-after-kill")) {
       log(`${where}: reopen-after-kill, the import that is killed`);
       const folder = place("killed");
@@ -368,8 +370,7 @@ async function scenariosAt(
         { ...ctx.unprobed("killed", "killed"), label: "killed", n: 0 },
         work,
       );
-      const found = await databaseKept(folder, encrypted);
-      if (!found)
+      if (!(await databaseKept(folder, encrypted)))
         throw new Error(
           "the process that was killed left no database beside the pod: the import builds it before it returns",
         );
@@ -379,6 +380,13 @@ async function scenariosAt(
       );
       if (counted.stored === undefined)
         throw new Error("the stored scenario counted nothing");
+      // Counting reads the pod and may build a database for its questions: the copies are made from the pod without one.
+      await databaseRemoved(folder, encrypted);
+      const found = await databaseKept(folder, encrypted);
+      if (found)
+        throw new Error(
+          "the database beside the killed pod was not taken away",
+        );
       await onCopiesOf(
         "reopen-after-kill",
         dirname(folder),

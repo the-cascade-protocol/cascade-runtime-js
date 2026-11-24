@@ -159,16 +159,25 @@ export async function databaseKept(
   folder: string,
   encrypted: boolean,
 ): Promise<boolean> {
-  if (!encrypted) return databaseBeside(folder).exists();
+  return (await databaseOf(folder, encrypted)).exists();
+}
+
+/** The database beside the pod in the folder taken away, as when the process stopped before any was built. */
+export async function databaseRemoved(
+  folder: string,
+  encrypted: boolean,
+): Promise<void> {
+  await (await databaseOf(folder, encrypted)).remove();
+}
+
+async function databaseOf(folder: string, encrypted: boolean) {
+  if (!encrypted) return databaseBeside(folder);
   const key = await openHeader(
     await readFile(join(folder, ...HEADER.split("/"))),
     SECRET,
     (await resolved()).derive,
   );
-  return databaseBeside(
-    folder,
-    await keptBesideName(key, DATABASE_BESIDE),
-  ).exists();
+  return databaseBeside(folder, await keptBesideName(key, DATABASE_BESIDE));
 }
 
 /** A scenario at a size, the first part of the names of its rows and files. */

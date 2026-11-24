@@ -62,6 +62,10 @@
       "says": "Saving the database whole, from the pod's current facts.",
       "within": "core-pod.keepdatabase"
     },
+    "core-pod.keepdatabase.failed": {
+      "says": "Saving the database whole did not work: its questions are answered from the pod's files instead, and saving is tried again when the pod closes. One entry for each failure.",
+      "within": "core-pod.keepdatabase"
+    },
     "core-pod.keepbuild": {
       "says": "Preparing the content of the saved database.",
       "within": "core-pod.keepdatabase"

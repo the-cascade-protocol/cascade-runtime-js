@@ -56,6 +56,7 @@ const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
 const LAB_RESULTS = "clinical/lab-results.ttl";
 const MANIFEST = "manifest.ttl";
 const WHOLE = "core-pod.keepDatabase.whole";
+const FAILED = "core-pod.keepDatabase.failed";
 const STEP = "core-pod.step.database";
 const KEPT_WHOLE = "kept.whole";
 const WORDS = "t-shirt abacus yo-yo zoom drop-down felt-tip";
@@ -108,6 +109,14 @@ async function session<T>(
 async function spansOf(run: () => Promise<unknown>): Promise<string[]> {
   const { seen } = await probing(run);
   return [...seen.spans.keys()];
+}
+
+/** How many times each span `run` took was entered. */
+async function callsOf(
+  run: () => Promise<unknown>,
+): Promise<Map<string, number>> {
+  const { seen } = await probing(run);
+  return new Map([...seen.spans].map(([name, spent]) => [name, spent.calls]));
 }
 
 /** The later pull, of records the first did not hold. */
@@ -373,6 +382,78 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
         "pod.db built again at close",
       );
       assert.equal(closed(), opened(), "a connection to pod.db is left open");
+    });
+  });
+
+  describe("given an app that imports without matching, claims, retitles and then matches", () => {
+    it("builds pod.db whole once, as the match ends, never at the import or its claims and retitle, and builds nothing more at close", async () => {
+      const folder = join(pods, "kit-flow");
+      const database = join(besideOf(folder), DATABASE);
+      const pod = await openPodWith(parts, folder, { title: "Annie Easley" });
+      const calls = (spans: Map<string, number>, name: string) =>
+        spans.get(name) ?? 0;
+      let atClose: Map<string, number> | undefined;
+      try {
+        const before = await callsOf(async () => {
+          await pod.import(syntheticPulls(1)[0]!, {
+            claimProfiles: claiming,
+            match: false,
+          });
+          await pod.retitle("Annie J. Easley");
+        });
+        assert.equal(calls(before, WHOLE), 0, "pod.db built before the match");
+        assert.equal(calls(before, STEP), 0, "pod.db written by keyed writes");
+        assert.equal(existsSync(database), false, "pod.db made before match");
+        const atMatch = await callsOf(() => pod.match());
+        assert.equal(calls(atMatch, WHOLE), 1, "pod.db not built by match");
+        assert.equal(existsSync(database), true);
+      } finally {
+        atClose = await callsOf(() => pod.close());
+      }
+      assert.equal(atClose !== undefined && calls(atClose, WHOLE), 0);
+    });
+  });
+
+  describe("given a failing build of the database", () => {
+    it("records the failure as core-pod.keepDatabase.failed, answers the questions from the store with the rows of a pod that holds no database, and tries again at close", async () => {
+      const folder = join(pods, "build-fails");
+      const failing: Parts = {
+        ...parts,
+        databaseBeside: async (path, name) => ({
+          ...(await parts.databaseBeside!(path, name)),
+          builtWhole: () => Promise.reject(new Error("the build failed")),
+        }),
+      };
+      const pod = await openPodWith(failing, folder);
+      let atClose: Map<string, number> | undefined;
+      const found: Record<string, unknown> = {};
+      let atImport: Map<string, number> | undefined;
+      try {
+        atImport = await callsOf(() =>
+          pod.import(syntheticPulls(2)[0]!, { claimProfiles: claiming }),
+        );
+        for (const question of [THEN, ...FIRST_SCREEN])
+          found[question] = await pod.ask(question);
+      } finally {
+        atClose = await callsOf(() => pod.close());
+      }
+      assert.equal(atImport?.get(FAILED), 1, "the failure left no span");
+      assert.equal(atClose.get(FAILED), 1, "close did not try and fail again");
+      assert.ok(
+        Object.values(found).some((rows) => (rows as unknown[]).length > 0),
+        "no first-screen question gave a row",
+      );
+      const { result: stored } = await session(
+        await copied(folder, "build-fails-store"),
+        async (again) => {
+          const rows: Record<string, unknown> = {};
+          for (const question of [THEN, ...FIRST_SCREEN])
+            rows[question] = await again.ask(question);
+          return rows;
+        },
+        storeOnly(parts),
+      );
+      assert.deepEqual(found, stored);
     });
   });
 
@@ -1056,6 +1137,50 @@ describe("Answering a pod's questions from its database, a page at a time · pod
         storeOnly(parts),
       );
       assert.deepEqual(fresh, stored);
+    });
+  });
+
+  describe("given a pod opened with no database beside it", () => {
+    it("builds pod.db once at the first question, answers it and the first screen from it reading no dataset, with the rows the store gives", async () => {
+      const folder = await copied(first, "asked-no-database");
+      await rm(join(besideOf(folder), DATABASE), { force: true });
+      const asked = [THEN, ...FIRST_SCREEN];
+      const watched = counting(parts);
+      const found: Record<string, unknown> = {};
+      let built: Map<string, number> | undefined;
+      let datasets: number | undefined;
+      try {
+        const pod = await openPodWith(watched.parts, folder);
+        try {
+          const before = watched.loads.datasets;
+          built = await callsOf(async () => {
+            for (const question of asked)
+              found[question] = await pod.ask(question);
+          });
+          datasets = watched.loads.datasets - before;
+        } finally {
+          await pod.close();
+        }
+      } finally {
+        watched.restore();
+      }
+      assert.equal(built?.get(WHOLE), 1, "pod.db built once by the questions");
+      assert.equal(datasets, 0, "a dataset was loaded to answer");
+      assert.ok(
+        Object.values(found).some((rows) => (rows as unknown[]).length > 0),
+        "no first-screen question gave a row",
+      );
+      const { result: stored } = await session(
+        await copied(first, "asked-no-database-store"),
+        async (pod) => {
+          const rows: Record<string, unknown> = {};
+          for (const question of asked)
+            rows[question] = await pod.ask(question);
+          return rows;
+        },
+        storeOnly(parts),
+      );
+      assert.deepEqual(found, stored);
     });
   });
 
