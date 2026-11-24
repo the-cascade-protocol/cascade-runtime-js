@@ -1043,6 +1043,51 @@ describe("Importing a health export · pod.import()", () => {
         spans.join(", "),
       );
     });
+
+    it("reads no build back and builds none for a session that opens a pod with no database and asks what it kept an answer to", async () => {
+      const at = join(pods, "kept-answer-only");
+      await cp((await alexPod()).folder, at, { recursive: true });
+      const question = "pod/My active allergies";
+      const first = await openPodWith(kept, at);
+      let wanted: Row[];
+      try {
+        wanted = await first.ask(question);
+      } finally {
+        await first.close();
+      }
+      const { result, seen } = await probing(async () => {
+        const pod = await openPodWith(kept, at);
+        try {
+          await pod.opened;
+          return await pod.ask(question);
+        } finally {
+          await pod.close();
+        }
+      });
+      assert.deepEqual(result, wanted);
+      const spans = [...seen.spans.keys()];
+      assert.deepEqual(
+        spans.filter(
+          (span) =>
+            span === "matcher.of" ||
+            span === "core-pod.matcherSelect" ||
+            span.startsWith("core-pod.step.") ||
+            /^kept\.(readBack|whole)/.test(span),
+        ),
+        [],
+        spans.join(", "),
+      );
+    });
+
+    it("leaves what a stop left owed to the first step or question that needs the build, and `opened` settles with none of it", async () => {
+      const pod = await openPodWith(kept, await stopped("stopped-first-step"));
+      try {
+        assert.equal(await pod.opened, undefined);
+        assert.ok((await select(pod, SAMES)).length > 0);
+      } finally {
+        await pod.close();
+      }
+    });
   });
 
   describe("with `timeBudgetSeconds` or `memoryBudgetMiB`, the limits of a conversion", () => {

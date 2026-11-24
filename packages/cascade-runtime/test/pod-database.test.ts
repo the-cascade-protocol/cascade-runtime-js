@@ -458,7 +458,7 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
   });
 
   describe("given a pod killed with an import never matched, and opened again", () => {
-    it("matches the import in `opened`, from the files alone: no build, no database and no kept answer was written by a close", async () => {
+    it("matches the import at the first question that needs the build, from the files alone: no build, no database and no kept answer was written by a close, and `opened` waits for none of it", async () => {
       const at = join(pods, "killed-unmatched");
       const pod = await openPodWith(parts, at);
       let killed: string;
@@ -481,9 +481,33 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
         });
         return { opened, runs: runs.length };
       });
-      assert.equal(healed.result.opened?.refused, undefined);
-      assert.ok((healed.result.opened?.wrote.length ?? 0) > 0);
+      assert.equal(healed.result.opened, undefined);
       assert.equal(healed.result.runs, 1);
+      assert.ok(healed.spans.includes("matcher.of"), healed.spans.join(", "));
+    });
+  });
+
+  describe("given a pod closed before its first step ran, with an import never matched", () => {
+    it("leaves the arrival owed at that close, and the next open matches it", async () => {
+      const at = join(pods, "closed-before-step");
+      await session(at, async (pod) => {
+        const done = await pod.import(syntheticPulls(1)[0]!, {
+          claimProfiles: claiming,
+          match: false,
+        });
+        assert.ok(done.activity);
+      });
+      const closing = await probing(async () => {
+        const pod = await openPodWith(parts, at);
+        await pod.close();
+      });
+      assert.ok(
+        !closing.seen.spans.has("matcher.of"),
+        [...closing.seen.spans.keys()].join(", "),
+      );
+      const healed = await session(at, (pod) => pod.opened);
+      assert.ok((healed.result?.wrote.length ?? 0) > 0);
+      assert.ok(healed.spans.includes("matcher.of"), healed.spans.join(", "));
     });
   });
 
