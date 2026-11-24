@@ -277,7 +277,9 @@ at, so an EARL report names the same entries on every machine.
 CI runs the compatibility check on every pull request and nightly, never on a
 push to `main`, where each job shows its own result. `compatibility.json` declares this repository to it as a
 runtime: it checks the vocabulary and the adapters out beside this repository,
-picked as any counterpart is, and runs `npm run conformance` on them. The tests
+picked as any counterpart is, and runs `npm run conformance` on them, on Oxigraph's published native build where the
+run is on Linux x64 (`scripts/compatibility-host.mjs` fetches it and sets `CASCADE_OXIGRAPH=native`; a run that sets
+`CASCADE_OXIGRAPH` itself keeps its choice). The tests
 and the pod build then read those checkouts. On a pull request the check is the
 jobs side by side that "What a pull request must pass" lists, and `compatibility` is the job that
 reports once they have. CI publishes each kit's pod and site,
