@@ -1236,18 +1236,20 @@ async function serverRecord(
  * the import named by a new random ID (N7), and the refusals of A14. Every document whose bytes the pod does not keep
  * is kept, whether or not it wrote a revision (A10). `onProgress` is told of each conversion as its
  * adapter is found. Each conversion is held to `budget`; one that passes it stops the step with the Bridge's error.
- * Gives the import's name, the patient profiles the versions of its new revisions name, the files it wrote for each record it
- * revised, and each source change time an arrival stated that its revision does not carry, being no `xsd:dateTime` that
- * states its time zone.
+ * The adapters are asked for, and the pod's revisions read, only once a document is found that the pod does not keep: an
+ * export whose documents it keeps all makes no import, and gives no name.
+ * Gives the import's name, the patient profiles the versions of its new revisions name, the files it wrote for each
+ * record it revised, and each source change time an arrival stated that its revision does not carry, being no
+ * `xsd:dateTime` that states its time zone.
  */
 export async function fileExport(
   context: StepContext,
   documents: readonly ExportDocument[],
-  adapters: AdaptersOf,
+  adapters: () => Promise<AdaptersOf>,
   onProgress?: OnProgress,
   budget: ConvertBudget = {},
 ): Promise<{
-  readonly activity: string;
+  readonly activity: string | undefined;
   readonly patients: string[];
   readonly filesOf: ReadonlyMap<string, readonly string[]>;
   readonly changeTimesDropped: readonly ChangeTimeDropped[];
@@ -1257,9 +1259,8 @@ export async function fileExport(
   const name = time.newId();
   const started = time.now();
   const { layout } = context;
-  const revisions = await timedAside("arrivals.revisionsOf", () =>
-    Revisions.of(context),
-  );
+  let revisions: Revisions | undefined;
+  let adaptersOf: AdaptersOf | undefined;
   const kept = new Map<string, Triple[]>();
   const wentBack: WentBack[] = [];
   const served = new Set<string>();
@@ -1276,8 +1277,12 @@ export async function fileExport(
       envelope: found.envelope,
       facts: { iri: `${documentIri}#facts`, bytes: read(found, started) },
     };
+    const loaded = (adaptersOf ??= await adapters());
+    const held = (revisions ??= await timedAside("arrivals.revisionsOf", () =>
+      Revisions.of(context),
+    ));
     const adapter = await timedAside("arrivals.accepting", () =>
-      accepting(adapters, found, document),
+      accepting(loaded, found, document),
     );
     await onProgress?.({ part: "converting", done, of: documents.length });
     const conversion = await timedAside("arrivals.convert", async () => {
@@ -1307,15 +1312,15 @@ export async function fileExport(
         changeTimesDropped.push({ record: record.value, changeTime });
     await timedAside("arrivals.revisions", async () => {
       await timedAside("arrivals.revisions.prepare", () =>
-        revisions.prepare(arriving),
+        held.prepare(arriving),
       );
       for (const arrival of arriving) {
-        const repeated = await revisions.repeats(arrival);
+        const repeated = await held.repeats(arrival);
         const older = repeated
-          ? revisions.holding(arrival)
-          : await revisions.revise(arrival, writes);
+          ? held.holding(arrival)
+          : await held.revise(arrival, writes);
         if (older === undefined) continue;
-        const contradicted = await revisions.contradictedBy(arrival);
+        const contradicted = await held.contradictedBy(arrival);
         if (contradicted.length > 0) wentBack.push({ older, contradicted });
       }
     });
@@ -1344,13 +1349,19 @@ export async function fileExport(
         );
     }
   }
+  if (revisions === undefined || kept.size === 0)
+    return {
+      activity: undefined,
+      patients: [],
+      filesOf: new Map(),
+      changeTimesDropped,
+    };
+  const filing = revisions;
   await timedAside("arrivals.revisions.write", () =>
-    revisions.write(writes, wentBack),
+    filing.write(writes, wentBack),
   );
   const patients = [...revisions.patients].sort();
   const { filesOf } = revisions;
-  if (kept.size === 0)
-    return { activity: name, patients, filesOf, changeTimesDropped };
   const descriptions = [...kept.values()];
   const forms = new Set(await Promise.all(descriptions.map(canonical)));
   if (forms.size > 1)

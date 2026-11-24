@@ -1347,10 +1347,17 @@ export class CorePod {
           throw new Refusal(
             `no importer of ${importers.map((importer) => importer.name).join(", ") || "none"} reads ${folder}`,
           );
-        await onProgress?.({ part: "loading the adapter" });
-        const loaded = await timedAside("core-pod.import.adapters", adapters);
         const filed = await timedAside("arrivals.fileExport", () =>
-          fileExport(context, documents, loaded, onProgress, budget),
+          fileExport(
+            context,
+            documents,
+            async () => {
+              await onProgress?.({ part: "loading the adapter" });
+              return timedAside("core-pod.import.adapters", adapters);
+            },
+            onProgress,
+            budget,
+          ),
         );
         profilesNamed = filed.patients;
         changeTimesDropped = filed.changeTimesDropped;
@@ -2192,6 +2199,13 @@ export class CorePod {
       }
     }
     if (options.build === undefined) return performed;
+    // An import of documents the pod keeps already changed nothing, so there is nothing to rebuild.
+    if (
+      kind === "import" &&
+      performed.refused === undefined &&
+      change.written.length === 0
+    )
+      return performed;
     if (deferred && at !== undefined) {
       const before = this.#pending;
       this.#pending = {
