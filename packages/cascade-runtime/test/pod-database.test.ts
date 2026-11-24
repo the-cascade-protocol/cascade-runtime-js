@@ -1381,6 +1381,64 @@ describe("Answering a pod's questions from its database, a page at a time · pod
         readDatabase(folder, ledgerOf) !== undefined,
         "pod.db was left with no ledger",
       );
+      assert.deepEqual(
+        await canonicalGraphs(readDatabase(folder, statementsIn)),
+        await canonicalGraphs(await builtStatements(folder)),
+      );
+    });
+
+    it("builds pod.db from the kept build as the first answer left it, though a queued call adds a graph to the kept build and drops it later while pod.db is built", async () => {
+      const folder = await copied(first, "asked-no-database-mutated");
+      await rm(join(besideOf(folder), DATABASE), { force: true });
+      const held = buildHeld(parts);
+      const marker = "urn:test:added-while-pod-db-is-built";
+      const afterAnswer = CorePod.prototype.keepDatabaseAfterAnswer;
+      const unheld = CorePod.prototype.unheldTableVersions;
+      let lens = "";
+      CorePod.prototype.keepDatabaseAfterAnswer = async function (
+        this: CorePod,
+        given,
+      ) {
+        lens = given;
+        await afterAnswer.call(this, given);
+      };
+      CorePod.prototype.unheldTableVersions = async function (this: CorePod) {
+        const union = await this.dataset(lens);
+        await union.add(
+          [[iri("urn:test:s"), iri("urn:test:p"), literal("x")]],
+          marker,
+        );
+        await within("the build of pod.db did not start", held.begun);
+        await union.drop(marker);
+        return [];
+      };
+      try {
+        const pod = await openPodWith(held.parts, folder);
+        try {
+          await within(
+            "the first answer waited for the build of pod.db",
+            pod.ask(THEN),
+          );
+          const mutating = pod.unheldTableVersions();
+          setTimeout(held.release, 50);
+          await mutating;
+        } finally {
+          held.release();
+          await pod.close();
+        }
+      } finally {
+        CorePod.prototype.keepDatabaseAfterAnswer = afterAnswer;
+        CorePod.prototype.unheldTableVersions = unheld;
+      }
+      const kept = readDatabase(folder, statementsIn);
+      assert.deepEqual(
+        kept.filter((line) => line.includes("urn:test:")),
+        [],
+      );
+      assert.deepEqual(
+        await canonicalGraphs(kept),
+        await canonicalGraphs(await builtStatements(folder)),
+      );
     });
   });
 

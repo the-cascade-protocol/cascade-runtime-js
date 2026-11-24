@@ -996,6 +996,7 @@ export class CorePod {
   async #keepDatabase(
     built: KeptBuild,
     dumped: () => Promise<Uint8Array>,
+    graphs: ReadonlySet<string> = built.union.graphs,
   ): Promise<PodDatabase | undefined> {
     const hash = this.#builtHash;
     if (hash === undefined || this.#built !== built) return undefined;
@@ -1012,7 +1013,7 @@ export class CorePod {
       try {
         const dump = await dumped();
         await timedAside("core-pod.keepDatabase.whole", () =>
-          database.builtWhole(dump, built.union.graphs, hash),
+          database.builtWhole(dump, graphs, hash),
         );
       } catch {
         await timedAside("core-pod.keepDatabase.failed", () =>
@@ -1089,8 +1090,14 @@ export class CorePod {
     await this.#withBuilt();
     if (this.#built !== built || this.#databaseClosed) return;
     this.#databaseTriedFor = built;
+    // The build is read here, inside the queued call, before any await: `dump` runs to its end without one, and `graphs`
+    // is copied. The detached part reads only these, so a read that changes the kept build in place while the database
+    // is being opened and built (`unheldTableVersions`) cannot reach the database.
+    const dump = built.union.store.dump();
+    dump.catch(() => undefined);
+    const graphs = new Set(built.union.graphs);
     const building: Promise<void> = timedAside("core-pod.keepDatabase", () =>
-      this.#keepDatabase(built, () => built.union.store.dump()),
+      this.#keepDatabase(built, () => dump, graphs),
     )
       .then(
         (database) => {
@@ -2049,8 +2056,9 @@ export class CorePod {
     if (kept === undefined) {
       const dataset = await this.#keptDataset();
       if (dataset !== undefined) {
-        // KeptMatcherJudgments adds a version's rows to the union it reads and drops them after: safe on the kept dataset only
-        // because a pod's reads and steps run one at a time.
+        // KeptMatcherJudgments adds a version's rows to the union it reads and drops them after, in place on the kept
+        // dataset. The steps, `retitle` and `close` wait for the database build; the build itself reads a dump and a copy
+        // of the graphs taken in `keepDatabaseAfterAnswer`, before it awaits, so this change cannot reach the database.
         kept = this.#held(KEPT, () =>
           this.#keptMatcherJudgments.of(dataset, () => this.#tables()),
         );
