@@ -16,7 +16,7 @@ import { randomId } from "../src/ids.js";
 import { LAYOUT_FILE, LAYOUT_GRAPH, Layout } from "../src/layout.js";
 import { matcherView, runMatcher } from "../src/matcher.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
-import { probing } from "../src/probe.js";
+import { probing, type SpanEvent } from "../src/probe.js";
 import {
   iri,
   KeptFiles,
@@ -888,23 +888,32 @@ describe("Keeping one build of a pod across steps · CorePodOptions.build, CoreP
 
   describe("when a step puts quads in the kept build, and the pod moves the build to a store of its own after enough of them replace others", () => {
     /** How many times the pod moved its kept build to a store of its own, over the replay of one example of the arrivals, once `threshold` quads had been replaced. */
+    async function seenOver(example: string, threshold: number) {
+      const build = await vocabularyBuild(await vocabulary(), await layout());
+      const { seen } = await probing(
+        () =>
+          replayed("runtime/arrivals.feature", example, {
+            importers: [appleHealthExport],
+            build: {
+              lens: "everyday",
+              derive: deriveWith(build),
+              incremental: build,
+              renewAfterMoved: threshold,
+            },
+          }),
+        { trace: true },
+      );
+      return seen;
+    }
     async function compactionsOver(
       example: string,
       threshold: number,
     ): Promise<number> {
-      const build = await vocabularyBuild(await vocabulary(), await layout());
-      const { seen } = await probing(() =>
-        replayed("runtime/arrivals.feature", example, {
-          importers: [appleHealthExport],
-          build: {
-            lens: "everyday",
-            derive: deriveWith(build),
-            incremental: build,
-            renewAfterMoved: threshold,
-          },
-        }),
+      return (
+        (await seenOver(example, threshold)).counts.get(
+          "core-pod.compactions",
+        ) ?? 0
       );
-      return seen.counts.get("core-pod.compactions") ?? 0;
     }
 
     it("does not move the build when the only step is an import into a pod that held nothing, though it adds more quads than the threshold, for little is there to replace", async () => {
@@ -924,6 +933,48 @@ describe("Keeping one build of a pod across steps · CorePodOptions.build, CoreP
           20,
         )) > 0,
       );
+    });
+
+    /** Each move of the build to a store of its own in `events`, with the names of the spans it was made within that a step's performing or rebuild are. */
+    function movesWithin(events: readonly SpanEvent[]): string[][] {
+      return events
+        .filter(({ name }) => name === "core-pod.compact")
+        .map((move) => {
+          const within: string[] = [];
+          for (let at = move.parent; at >= 0; at = events[at]?.parent ?? -1) {
+            const name = events[at]?.name ?? "";
+            if (
+              name === "core-pod.step.perform" ||
+              name.startsWith("core-pod.step.rebuild")
+            )
+              within.push(name);
+          }
+          return within;
+        });
+    }
+
+    it("moves it before the step that follows, never inside the step that replaced the quads: no move is made within an import's performing or its rebuild", async () => {
+      const moves = movesWithin(
+        (
+          await seenOver(
+            "the peanut allergy changes and changes back, and its third revision sets its first version again",
+            20,
+          )
+        ).events ?? [],
+      );
+      assert.ok(moves.length > 0);
+      assert.deepEqual(moves.flat(), []);
+    });
+
+    it("moves it not within the matcher's run either, though the matcher lends its view from the build and puts it back", async () => {
+      const { seen } = await probing(
+        () =>
+          replaySyncRun(PERFORMERS.matcher as Perform, { renewAfterMoved: 1 }),
+        { trace: true },
+      );
+      const moves = movesWithin(seen.events ?? []);
+      assert.ok(moves.length > 0);
+      assert.deepEqual(moves.flat(), []);
     });
   });
 
