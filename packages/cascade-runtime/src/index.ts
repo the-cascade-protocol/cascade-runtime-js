@@ -119,14 +119,52 @@ export { configureTables } from "./node/resolved.js";
 
 const beside = new Map<string, Promise<Tables>>();
 
+/** How many pods opened by `openPod` from each folder's tables are open or opening, by the folder of the tables. */
+const holding = new Map<string, number>();
+
+function tablesFolder(pods: string): string {
+  return join(absolute(pods), ".tables");
+}
+
+/**
+ * Counts a pod opened from the folder's tables until the function returned is called. The call that ends the last
+ * count releases the folder's tables, which stay in `beside`, once what they began in the background has ended, unless
+ * a pod is opened from them again before then.
+ */
+function holdTablesBeside(pods: string): () => void {
+  const folder = tablesFolder(pods);
+  holding.set(folder, (holding.get(folder) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    const left = (holding.get(folder) ?? 1) - 1;
+    if (left > 0) {
+      holding.set(folder, left);
+      return;
+    }
+    holding.delete(folder);
+    void beside
+      .get(folder)
+      ?.then(async (tables) => {
+        await tables.idle();
+        if (!holding.has(folder)) tables.release();
+      })
+      .catch(() => undefined);
+  };
+}
+
 /**
  * The tables an app keeps for the pods in the folder: `.tables/` in it, beside `.answers/`, copied whole from the
  * starter copies and checked against the feeds in the background when first asked for, unless `cascade-runtime.json`
  * turns `checkOnOpen` off; the first use answers with the tables held, and a later one with what the check kept. With a
- * `phase`, the copy and the check are waited for and reported.
+ * `phase`, the copy and the check are waited for and reported. The same tables are returned for the folder for as long
+ * as the process lives, and are never copied or checked again; once the last pod `openPod` opened from the folder has
+ * closed and the copy and the check have ended, they let go of what they read and worked out, which the next use reads
+ * again from the store.
  */
 export function tablesBeside(pods = "pods", phase?: Phase): Promise<Tables> {
-  const folder = join(absolute(pods), ".tables");
+  const folder = tablesFolder(pods);
   let found = beside.get(folder);
   if (found === undefined) {
     const finding = resolved().then(async (parts) => {
@@ -179,13 +217,28 @@ export async function openPod(
 ): Promise<Pod> {
   acceptOptions("openPod", options, { title: true, secret: true, key: true });
   const parts = await resolved();
-  return openFolderPod(
-    folder === undefined
-      ? parts
-      : { ...parts, tables: await tablesBeside(dirname(absolute(folder))) },
-    folder,
-    options,
-  );
+  if (folder === undefined) return openFolderPod(parts, folder, options);
+  const pods = dirname(absolute(folder));
+  const release = holdTablesBeside(pods);
+  try {
+    const pod = await openFolderPod(
+      { ...parts, tables: await tablesBeside(pods) },
+      folder,
+      options,
+    );
+    const close = pod.close.bind(pod);
+    pod.close = async () => {
+      try {
+        await close();
+      } finally {
+        release();
+      }
+    };
+    return pod;
+  } catch (error) {
+    release();
+    throw error;
+  }
 }
 
 /**

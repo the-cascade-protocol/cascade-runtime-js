@@ -113,6 +113,10 @@ class Lazy<T> {
     return this.#made;
   }
 
+  get isMade(): boolean {
+    return this.#made !== undefined;
+  }
+
   forget(): void {
     this.#made = undefined;
   }
@@ -131,6 +135,8 @@ export class Tables {
   readonly #indexes: VersionIndexes;
   readonly #context: TablesContext;
   #queue: Promise<unknown> = Promise.resolve();
+  /** The `start`s that have not ended: what `idle` waits for. */
+  readonly #running = new Set<Promise<unknown>>();
   #started: Promise<void> | undefined;
   #written = 0;
   readonly #references = new Lazy(() =>
@@ -215,13 +221,49 @@ export class Tables {
    * anyway, then lists each current version the copies carry no listing of, so a first search or lookup lists none; a
    * start cut short goes on from where it stopped. The bytes written, or 0 when the store held them already.
    */
-  async start(): Promise<number> {
+  start(): Promise<number> {
+    const running = this.#startAndCopy();
+    this.#running.add(running);
+    const ended = (): void => {
+      this.#running.delete(running);
+    };
+    running.then(ended, ended);
+    return running;
+  }
+
+  async #startAndCopy(): Promise<number> {
     const before = this.#written;
     await this.#start();
     const copied =
       (await this.#starterFiles?.copyAll(await this.#shippedStems())) ?? 0;
     const listed = await this.#indexes.keep(currentOf(await this.references()));
     return this.#written - before + copied + listed;
+  }
+
+  /** Settles once every `start` and check begun so far has ended, whether it kept anything or failed; it starts none. */
+  async idle(): Promise<void> {
+    await Promise.allSettled([...this.#running, this.#queue]);
+  }
+
+  /** How many things read or worked out of the stored tables it keeps in memory; 0 after `release`. */
+  keptInMemory(): number {
+    return (
+      this.#indexes.kept +
+      [this.#references, this.#concepts, this.#kinds].filter(
+        (lazy) => lazy.isMade,
+      ).length
+    );
+  }
+
+  /**
+   * Lets go of what it has read and worked out of the stored tables, which the next use reads again from the store;
+   * what the store holds, and what it records of the pods, stays, and a use already begun finishes.
+   */
+  release(): void {
+    this.#references.forget();
+    this.#concepts.forget();
+    this.#kinds.forget();
+    this.#indexes.forgetAll();
   }
 
   /**
