@@ -762,7 +762,7 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       return { ...whole, entry: whole.entry.slice(0, 300) };
     };
 
-    it("changes only the addresses: each entry is named by its server, each reference to an entry by that name, and put back they are the Bundle that was generated", async () => {
+    it("changes only the addresses: each entry is named by its server, each reference to an entry as Type/id, and put back they are the Bundle that was generated", async () => {
       const was = await generated();
       const now = atServer(structuredClone(was), BASE);
       assert.equal(now.entry.length, was.entry.length);
@@ -778,8 +778,26 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
           `${BASE}/${resource.resourceType}/${resource.id}`,
         );
       const text = JSON.stringify(now);
-      const references = text.split(`"reference":"${BASE}/`).length - 1;
-      assert.ok(references > 100, `${references} references now name a server`);
+      const references = (
+        text.match(/"reference":"[A-Za-z]+\/[0-9a-f-]+"/g) ?? []
+      ).length;
+      assert.ok(
+        references > 100,
+        `${references} references now name a Type/id`,
+      );
+      const named = new Set(
+        now.entry.map(
+          ({ resource }) => `${resource.resourceType}/${resource.id}`,
+        ),
+      );
+      const dangling = (
+        text.match(/"reference":"[A-Za-z]+\/[0-9a-f-]+"/g) ?? []
+      ).filter((each) => !named.has(each.slice(13, -1)));
+      assert.deepEqual(
+        dangling,
+        [],
+        "a reference names an entry the slice lacks",
+      );
       const identifiers = (bundle: object) =>
         JSON.stringify(bundle).split(`"value":"urn:uuid:`).length - 1;
       assert.ok(identifiers(was) > 0, "the slice holds identifiers to keep");
@@ -790,10 +808,17 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
       assert.deepEqual(
         JSON.parse(
-          text.replace(
-            new RegExp(`${BASE}/[A-Za-z]+/[0-9a-f-]+`, "g"),
-            (address) => back.get(address) ?? address,
-          ),
+          text
+            .replace(
+              /"reference":"([A-Za-z]+\/[0-9a-f-]+)"/g,
+              (whole, local: string) =>
+                `"reference":"${back.get(`${BASE}/${local}`) ?? local}"`,
+            )
+            .replace(
+              new RegExp(`"fullUrl":"(${BASE}/[A-Za-z]+/[0-9a-f-]+)"`, "g"),
+              (whole, address: string) =>
+                `"fullUrl":"${back.get(address) ?? address}"`,
+            ),
         ),
         was,
       );
