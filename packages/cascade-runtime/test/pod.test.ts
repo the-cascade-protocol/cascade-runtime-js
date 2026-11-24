@@ -922,6 +922,100 @@ describe("Importing a health export · pod.import()", () => {
       assert.equal(imported.matched, undefined);
       assert.equal(matched.refused, undefined);
     });
+
+    it("has that run write its act, informed by the import, when the import's records need no judgment", async () => {
+      assert.equal(matched.wrote.length, 1);
+      assert.deepEqual(
+        await select(
+          waiting,
+          `SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy <${imported.activity ?? ""}> }`,
+        ).then((rows) => rows.length),
+        1,
+      );
+    });
+  });
+
+  describe("given an import made with `match: false` and a pod stopped before its match", () => {
+    const SAMES = `SELECT ?judgment WHERE { ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same }`;
+
+    /** Alex's x-e10 imported without its match, its patients claimed, and the pod closed with the match not made. */
+    async function stopped(name: string): Promise<string> {
+      const folder = join(pods, name);
+      const pod = await openPodWith(kept, folder);
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+      } finally {
+        await pod.close();
+      }
+      return folder;
+    }
+
+    /** What the matcher joined of x-e10 in a session that matched it. */
+    async function matchedInSession(name: string): Promise<number> {
+      const pod = await openPodWith(kept, join(pods, name));
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        assert.ok(done.activity);
+        await pod.match(done.activity);
+        return (await select(pod, SAMES)).length;
+      } finally {
+        await pod.close();
+      }
+    }
+
+    it("matches it when the pod is opened again, as it would have been matched", async () => {
+      const wanted = await matchedInSession("matched-in-session");
+      assert.ok(wanted > 0);
+      const pod = await openPodWith(kept, await stopped("stopped-before-match"));
+      try {
+        const opened = await pod.opened;
+        assert.equal(opened?.refused, undefined);
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes it at `pod.match()` with no activity, in the session that made it", async () => {
+      const wanted = await matchedInSession("matched-in-session-for-recheck");
+      const pod = await openPodWith(kept, join(pods, "rechecked-in-session"));
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        assert.equal((await select(pod, SAMES)).length, 0);
+        await pod.match();
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("leaves a pod whose every import was matched opened with no step run", async () => {
+      const at = join(pods, "every-import-matched");
+      await cp((await alexPod()).folder, at, { recursive: true });
+      const { result, seen } = await probing(async () => {
+        const pod = await openPodWith(kept, at);
+        try {
+          return await pod.opened;
+        } finally {
+          await pod.close();
+        }
+      });
+      assert.equal(result, undefined);
+      const spans = [...seen.spans.keys()];
+      assert.deepEqual(
+        spans.filter(
+          (span) => span === "matcher.of" || span.startsWith("core-pod.step."),
+        ),
+        [],
+        spans.join(", "),
+      );
+    });
   });
 
   describe("with `timeBudgetSeconds` or `memoryBudgetMiB`, the limits of a conversion", () => {
