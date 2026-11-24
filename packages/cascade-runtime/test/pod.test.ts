@@ -61,6 +61,7 @@ import { shipped } from "../src/tables.js";
 import {
   checkSecret,
   type Exported,
+  type ImportOptions,
   type ImportProgress,
   openPod,
   type Pod,
@@ -112,6 +113,8 @@ const STORAGE = "http://www.w3.org/ns/pim/space#storage";
 const HAD_MEMBER = "http://www.w3.org/ns/prov#hadMember";
 const UUID4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_ANYWHERE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 /** The pod's working copy, kept beside it in its answers' folder. */
 const BUILT_BESIDE = "build.trig";
 const SESSION = "5c5734fb-433f-4ed1-8de7-1ad16d7d21cc";
@@ -844,15 +847,47 @@ describe("Importing a health export · pod.import()", () => {
     });
   });
 
-  describe("with `claimProfiles`, the list of the patients the person confirmed", () => {
+  describe("with `claimProfiles`, the list of the patients the person confirmed, or a function of the patients the import names that returns it", () => {
     it("claims exactly the listed patients the import names, once each, and returns the rest in `unclaimedProfiles`", async () => {
       const [j1, j2] = [await profileOf("J1"), await profileOf("J2")];
-      for (const [name, list, claimed, unclaimed] of [
+      const cases: readonly (readonly [
+        string,
+        ImportOptions["claimProfiles"],
+        readonly string[],
+        readonly string[],
+      ])[] = [
         ["one of two", [j1], [j1], [j2]],
         ["the same one twice", [j2, j2], [j2], [j1]],
         ["none", [], [], [j1, j2]],
         ["one the import does not name", ["urn:uuid:not-in-it"], [], [j1, j2]],
-      ] as const) {
+        [
+          "a function returning all it is given",
+          (named) => named,
+          [j1, j2],
+          [],
+        ],
+        [
+          "a function returning one it is given and one it is not",
+          () => [j2, "urn:uuid:not-in-it"],
+          [j2],
+          [j1],
+        ],
+        ["a function returning none", () => [], [], [j1, j2]],
+        [
+          "a function that adds a profile to the list it is given, which is frozen, and returns it",
+          (named) => {
+            try {
+              (named as string[]).push("urn:uuid:not-named");
+            } catch {
+              // a frozen list refuses it
+            }
+            return named;
+          },
+          [j1, j2],
+          [],
+        ],
+      ];
+      for (const [name, list, claimed, unclaimed] of cases) {
         const claiming = await openPodWith(kept, join(pods, `list-${name}`));
         try {
           const done = await claiming.import(exported("x-e6"), {
@@ -860,8 +895,8 @@ describe("Importing a health export · pod.import()", () => {
             match: false,
           });
           assert.deepEqual(
-            done.claimedProfiles.map(({ profile }) => profile),
-            claimed,
+            done.claimedProfiles.map(({ profile }) => profile).sort(),
+            [...claimed].sort(),
             name,
           );
           assert.deepEqual(done.unclaimedProfiles, [...unclaimed].sort(), name);
@@ -874,20 +909,113 @@ describe("Importing a health export · pod.import()", () => {
 
     it("files no About for a pod's own subject, and none for a patient a counting About already ties", async () => {
       const [j1, j2] = [await profileOf("J1"), await profileOf("J2")];
-      const tied = await openPodWith(kept, join(pods, "list-tied"));
-      try {
-        await tied.import(exported("x-e2"), { match: false });
-        await tied.judge(about(tied, j1));
-        const done = await tied.import(exported("x-e6"), {
-          claimProfiles: [j1, j2, tied.subject],
-          match: false,
-        });
-        assert.deepEqual(
-          done.claimedProfiles.map(({ profile }) => profile),
-          [j2],
-        );
-      } finally {
-        await tied.close();
+      for (const [form, claimProfiles] of [
+        ["list", (subject: string) => [j1, j2, subject]],
+        ["function", (subject: string) => () => [j1, j2, subject]],
+      ] as const) {
+        const tied = await openPodWith(kept, join(pods, `${form}-tied`));
+        try {
+          await tied.import(exported("x-e2"), { match: false });
+          await tied.judge(about(tied, j1));
+          const done = await tied.import(exported("x-e6"), {
+            claimProfiles: claimProfiles(tied.subject),
+            match: false,
+          });
+          assert.deepEqual(
+            done.claimedProfiles.map(({ profile }) => profile),
+            [j2],
+            form,
+          );
+        } finally {
+          await tied.close();
+        }
+      }
+    });
+
+    it("gives a function, once, the profiles the import names, each once, and files what a list of them files", async () => {
+      const [j1, j2] = [await profileOf("J1"), await profileOf("J2")];
+      const told: (readonly string[])[] = [];
+      /** What the import left in a pod, its files by path and text, the names a run makes for itself and the times it takes left out. */
+      const filedBy = async (
+        claimProfiles: ImportOptions["claimProfiles"],
+        name: string,
+      ): Promise<Map<string, string>> => {
+        const folder = join(pods, name);
+        const claiming = await openPodWith(kept, folder);
+        try {
+          await claiming.import(exported("x-e6"), { claimProfiles });
+        } finally {
+          await claiming.close();
+        }
+        const masked = (text: string) =>
+          text
+            .replace(UUID_ANYWHERE, "<uuid>")
+            .replace(/ni:\/\/\/sha-256;[\w-]+/g, "<digest>")
+            .replace(
+              /buildInputsHash> "[0-9a-f]+"/g,
+              'buildInputsHash> "<hash>"',
+            )
+            .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>");
+        const held = new Map<string, string>();
+        for (const path of await filesIn(folder)) {
+          const at = relative(folder, path).split(sep).join("/");
+          if (!at.startsWith("archives/"))
+            held.set(
+              masked(at),
+              masked(await readFile(path, "latin1"))
+                .split("\n")
+                .sort()
+                .join("\n"),
+            );
+        }
+        return held;
+      };
+      const byList = await filedBy([j1, j2], "same-list");
+      const byFunction = await filedBy(
+        (named) => (told.push(named), named),
+        "same-function",
+      );
+      assert.deepEqual(
+        told.map((named) => [...named].sort()),
+        [[j1, j2].sort()],
+      );
+      assert.ok(byList.size > 0);
+      assert.deepEqual(
+        [...byFunction.keys()].sort(),
+        [...byList.keys()].sort(),
+      );
+      for (const [path, text] of byList)
+        assert.equal(byFunction.get(path), text, path);
+    });
+
+    it("throws a TypeError for a function that returns anything but a list of IRIs", async () => {
+      for (const [name, returned] of [
+        ["nothing", undefined],
+        ["a string", "urn:uuid:p"],
+        ["a list holding a number", [1]],
+        ["a promise", Promise.resolve([])],
+      ] as const) {
+        const claiming = await openPodWith(kept, join(pods, `bad-${name}`));
+        try {
+          await assert.rejects(
+            claiming.import(exported("x-e6"), {
+              claimProfiles: (() => returned) as never,
+            }),
+            /^TypeError: pod\.import options\.claimProfiles, a function, returned /,
+            name,
+          );
+          const again = await claiming.import(exported("x-e6"), {
+            match: false,
+          });
+          assert.deepEqual(again.wrote, [], `${name}: the import is filed`);
+          assert.deepEqual(
+            await claiming.ask("judgment/Who judged what"),
+            [],
+            `${name}: no claim is filed`,
+          );
+        } finally {
+          await claiming.close();
+        }
       }
     });
   });

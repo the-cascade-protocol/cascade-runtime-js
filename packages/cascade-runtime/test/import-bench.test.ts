@@ -3,8 +3,9 @@ import { before, describe, it } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openPod } from "cascade-runtime";
-import { probing } from "@cascade-runtime/runtime/probe";
+import { openPod, type Pod } from "cascade-runtime";
+import { probing, type Seen } from "@cascade-runtime/runtime/probe";
+import { importedAsTheApp } from "./perf-data.js";
 import {
   growBench,
   HOT_SPOTS,
@@ -129,9 +130,82 @@ describe("Timing an import by mechanism · importBench(), syntheticPull(), probi
       ]);
     });
 
+    it("rebuilds the pod twice when `claimProfiles` is a function of the profiles the pull names, which it is given once, and so does an import made as the app makes it", async () => {
+      const first = await profileOf("first");
+      const told: (readonly string[])[] = [];
+      const rebuilds = (seen: Seen) =>
+        [...seen.spans]
+          .filter(([name]) => name.startsWith("core-pod.step.rebuild:"))
+          .map(([name, { calls }]): [string, number] => [name, calls])
+          .sort(([a], [b]) => (a < b ? -1 : 1));
+      for (const [name, made] of [
+        [
+          "pod.import",
+          (pod: Pod, pull: ReadonlyMap<string, Uint8Array>) =>
+            pod.import(pull, {
+              claimProfiles: (named) => {
+                told.push(named);
+                return named;
+              },
+            }),
+        ],
+        ["importedAsTheApp", importedAsTheApp],
+      ] as const) {
+        const pod = await openPod();
+        try {
+          const { result, seen } = await probing(() =>
+            made(pod, syntheticPull(40, { hospital: "first" })),
+          );
+          assert.deepEqual(
+            rebuilds(seen),
+            [
+              ["core-pod.step.rebuild:import+judge", 1],
+              ["core-pod.step.rebuild:match", 1],
+            ],
+            name,
+          );
+          assert.equal(result.refused, undefined, name);
+          assert.deepEqual(
+            result.claimedProfiles.map(({ profile }) => profile),
+            first,
+            name,
+          );
+          assert.deepEqual(result.unclaimedProfiles, [], name);
+        } finally {
+          await pod.close();
+        }
+      }
+      assert.deepEqual(told, [first]);
+    });
+
     it("reports every counted mechanism with a non-zero count", () => {
       for (const name of HOT_SPOTS.counts)
         assert.ok((run.counts[name] ?? 0) > 0, `${name} was not counted`);
+    });
+
+    it("marks `judging` for an import made as the app makes it into a pod whose profile is already claimed, so the match's time is not counted as saving", async () => {
+      const pod = await openPod();
+      try {
+        const marks = async (pull: ReadonlyMap<string, Uint8Array>) => {
+          const told: { part: string; done?: number; of?: number }[] = [];
+          const made = await importedAsTheApp(pod, pull, (progress) => {
+            told.push(progress);
+          });
+          assert.equal(made.refused, undefined);
+          return {
+            made,
+            judging: told.filter(({ part }) => part === "judging"),
+          };
+        };
+        const first = await marks(syntheticPull(40, { hospital: "first" }));
+        assert.ok(first.made.claimedProfiles.length > 0);
+        const again = await marks(syntheticPull(41, { hospital: "first" }));
+        assert.deepEqual(again.made.claimedProfiles, []);
+        assert.ok(again.made.matched !== undefined);
+        assert.deepEqual(again.judging, [{ part: "judging", done: 0, of: 1 }]);
+      } finally {
+        await pod.close();
+      }
     });
 
     it("reports each matcher rule that ran by its justification, with its store queries, none for a rule that applies to no record the import began and has no row", () => {

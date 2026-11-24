@@ -55,7 +55,7 @@ which an app writes itself: `pickExport()` returns the folder they chose,
 `askPerson(question, shown)` their yes or no, `showPerson(shown)` tells them.
 
 ```js
-import { openPod, ownerAbout } from "cascade-runtime";
+import { openPod } from "cascade-runtime";
 const pod = await openPod("pods/mine", { title: "My records" });
 ```
 
@@ -111,26 +111,25 @@ async function bringIn(folder, { claim = true, ...options } = {}) {
   });
   if (sources === undefined) return undefined;
   if (!(await askPerson("Are these records yours?", sources))) return undefined;
-  const filed = await pod.import(folder, { ...options, match: false });
+  // An import claims no profile by itself. The yes above is for every patient the export names, so the function returns
+  // them all: the import files an About for each it names that nothing answers yet, and the pod is rebuilt once for both.
+  const filed = await pod.import(folder, {
+    ...options,
+    match: false,
+    ...(claim && { claimProfiles: (named) => named }),
+  });
   if (filed.refused) await showPerson(`Not brought in: ${filed.refused}`);
-  const claimed = [];
-  // An import claims no profile by itself. The yes above is for every patient the export names, so each gets an About.
-  for (const profile of claim ? filed.unclaimedProfiles : []) {
-    const { judgment } = await pod.judge(ownerAbout(pod, profile));
-    if (judgment !== undefined) claimed.push({ profile, judgment });
-  }
   if (options.match !== false && filed.activity) await pod.match(filed.activity);
   const naming = await recordsBy("profile/Which records name it", "profile");
-  const done = new Set(claimed.map(({ profile }) => profile));
-  const unclaimedProfiles = filed.unclaimedProfiles.filter((p) => !done.has(p));
+  const { claimedProfiles, unclaimedProfiles } = filed;
   const { disclaimedProfiles, heldBackProfiles } = filed;
   await showPerson({
-    claimedProfiles: claimed.map(({ profile: p }) => [p, naming(p)]),
+    claimedProfiles: claimedProfiles.map(({ profile: p }) => [p, naming(p)]),
     unclaimedProfiles,
     disclaimedProfiles,
     heldBackProfiles,
   });
-  return { ...filed, claimedProfiles: claimed, unclaimedProfiles };
+  return filed;
 }
 
 await bringIn(pickExport());
@@ -140,8 +139,10 @@ await bringIn(pickExport());
 The look names no patient: `holdsSubjectsRecords` means the pod holds the subject's records
 from that server, or from a document that custodian wrote, not that this
 export's are theirs; a second server is a source of its own, and so is a
-hospital's custodian beside its server. `import` claims no profile by itself: `bringIn` files an About for every profile not yet claimed,
-runs the matcher (call no `match`), and writes nothing of an export already in.
+hospital's custodian beside its server. `import` claims no profile by itself: `bringIn` gives `claimProfiles` a function of the profiles the
+import names, so that one call files the export and an About for every profile not yet claimed, and the pod is rebuilt once for both. Then
+`bringIn` runs the matcher (call no `match`), and writes nothing of an export already in. A list, `claimProfiles: [profile]`, claims the
+profiles it names where the app has them beforehand; an app that learns them from the import uses the function.
 
 The four lists are of the profiles of the versions this import wrote: `claimedProfiles` (the Abouts `bringIn` filed),
 `unclaimedProfiles` (no counting About or NotAbout answers them), `disclaimedProfiles` (a counting NotAbout answers them: the
@@ -243,10 +244,11 @@ const files = pullFiles(record, "cascade-north-1");
 if (
   await askPerson("Are these records yours?", await hospitalPod.look(files))
 ) {
-  const brought = await hospitalPod.import(files, { match: false });
+  const brought = await hospitalPod.import(files, {
+    claimProfiles: (named) => named,
+    match: false,
+  });
   if (brought.refused) await showPerson(`Not brought in: ${brought.refused}`);
-  for (const profile of brought.unclaimedProfiles)
-    await hospitalPod.judge(ownerAbout(hospitalPod, profile));
   if (brought.activity) await hospitalPod.match(brought.activity);
 }
 await hospitalPod.close();
@@ -661,8 +663,8 @@ await confirmClaims(await bringIn(pickExport()));
 
 ## The steps run separately
 
-After the yes, `import` with `{ match: false }` only files, and claims nothing
-(`claimProfiles` names the profiles the person confirmed beforehand), so each profile is asked about alone: claim each
+After the yes, `import` with `{ match: false }` and no `claimProfiles` only files, and claims nothing
+(`claimProfiles` names the profiles the person confirmed beforehand, as a list or as a function of the profiles the import names), so each profile is asked about alone: claim each
 `unclaimedProfiles` one with an About, then `match` the import's `activity`. A stop
 between the import and its `match` is made good by the pod: the next open, and the next
 `import`, `connect`, `enter` or `match()`, first match each arrival no matcher run took. `match()`

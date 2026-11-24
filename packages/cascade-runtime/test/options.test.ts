@@ -180,20 +180,25 @@ describe("Refusing an option a call does not know · import(), openPod(), connec
     });
   });
 
-  describe("given a `claimProfiles` that is not a list of profile IRIs", () => {
-    it("throws, saying it takes the list the person confirmed and naming the per-profile path, for `true`, `false`, a string, null, an object and a list holding a non-string", async () => {
+  describe("given a `claimProfiles` that is neither a list of profile IRIs nor a function", () => {
+    it("throws, saying it takes the list the person confirmed or a function that returns it and naming the per-profile path, for `true`, `false`, a string, null, an object and a list holding a non-string", async () => {
       for (const given of [true, false, "urn:uuid:p", null, {}, [1], [""]])
         assert.equal(
           await refusedWith(() =>
             pod.import("x", { claimProfiles: given } as never),
           ),
-          `pod.import options.claimProfiles takes the list of the profile IRIs the person confirmed, not ${JSON.stringify(given)}: an import claims no profile by itself. To claim one profile at a time, file its About with pod.judge, then call pod.match(activity).`,
+          `pod.import options.claimProfiles takes the list of the profile IRIs the person confirmed, or a function of the profiles the import names that returns it, not ${JSON.stringify(given)}: an import claims no profile by itself. To claim one profile at a time, file its About with pod.judge, then call pod.match(activity).`,
           JSON.stringify(given),
         );
     });
 
-    it("takes an empty list, a list of IRIs and a frozen list", async () => {
-      for (const given of [[], ["urn:uuid:p"], Object.freeze(["urn:uuid:p"])])
+    it("takes an empty list, a list of IRIs, a frozen list and a function", async () => {
+      for (const given of [
+        [],
+        ["urn:uuid:p"],
+        Object.freeze(["urn:uuid:p"]),
+        (named: readonly string[]) => named,
+      ])
         assert.ok(
           (await pod.import("x", { claimProfiles: given })).refused,
           JSON.stringify(given),

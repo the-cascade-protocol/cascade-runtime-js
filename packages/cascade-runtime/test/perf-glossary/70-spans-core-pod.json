@@ -17,7 +17,11 @@
       "within": "scenario.import"
     },
     "core-pod.step.rebuild-import": {
-      "says": "Re-deriving what the imported records change.",
+      "says": "Re-deriving what the imported records change, when the import is made without the claim that the records are the person's. With the claim in the same call, one rebuild covers both and is the rebuild-import-judge row.",
+      "within": "scenario.import"
+    },
+    "core-pod.step.rebuild-import-judge": {
+      "says": "Re-deriving, once, what the imported records and the person's claim that they are theirs change: the import and its claims share this one rebuild, where each made its own before.",
       "within": "scenario.import"
     },
     "core-pod.step.rebuild-match": {

@@ -96,8 +96,17 @@ export interface ImportOptions extends ConvertBudget {
    * it wrote names, when no counting About or counting NotAbout answers it. An export the pod already holds wrote no
    * version, so a re-import claims nothing, whatever the list: claim a profile found through
    * `profile/What needs review` with `ownerAbout`. An import claims no profile by itself, and `true` is refused.
+   *
+   * A function takes the profiles the import's versions name, each once, in a frozen list, and returns the list: an app that learns
+   * them only from the import imports and claims in this one call, where the import and each claim would rebuild
+   * the pod, and these share one rebuild. It is called once, after the documents are converted and filed and before
+   * the claims, and not at all for an import that is refused. What it returns that the import does not name is
+   * ignored, as a list's is, and a result that is no list of IRIs throws a `TypeError`, with the import filed and no
+   * claim. It is not awaited: the profiles are in hand, and an app that must ask the person first claims with
+   * `pod.judge`.
    */
-  readonly claimProfiles?: readonly string[];
+  readonly claimProfiles?:
+    readonly string[] | ((named: readonly string[]) => readonly string[]);
   /**
    * Runs the matcher on the import; on unless false. An import stopped before its match, or made with this false and
    * never matched, is matched at the pod's next open, and before the next import, connect, entry or `match()`.
@@ -115,6 +124,13 @@ function shown(value: unknown): string {
   }
 }
 
+function isProfileList(given: unknown): given is readonly string[] {
+  return (
+    Array.isArray(given) &&
+    given.every((profile) => typeof profile === "string" && profile !== "")
+  );
+}
+
 /** Throws for an option `pod.import` does not take; the browser's pod checks before it loads the engine. */
 export function acceptImportOptions(options: ImportOptions): void {
   acceptOptions("pod.import", options, {
@@ -128,15 +144,11 @@ export function acceptImportOptions(options: ImportOptions): void {
   const { claimProfiles, timeBudgetSeconds, memoryBudgetMiB } = options;
   if (
     claimProfiles !== undefined &&
-    !(
-      Array.isArray(claimProfiles) &&
-      claimProfiles.every(
-        (profile) => typeof profile === "string" && profile !== "",
-      )
-    )
+    typeof claimProfiles !== "function" &&
+    !isProfileList(claimProfiles)
   )
     throw new TypeError(
-      `pod.import options.claimProfiles takes the list of the profile IRIs the person confirmed, not ${shown(claimProfiles)}: an import claims no profile by itself. To claim one profile at a time, file its About with pod.judge, then call pod.match(activity).`,
+      `pod.import options.claimProfiles takes the list of the profile IRIs the person confirmed, or a function of the profiles the import names that returns it, not ${shown(claimProfiles)}: an import claims no profile by itself. To claim one profile at a time, file its About with pod.judge, then call pod.match(activity).`,
     );
   if (
     timeBudgetSeconds !== undefined &&
@@ -1374,11 +1386,16 @@ class OpenPod implements Pod {
         heldBackProfiles: [],
       };
     const { onProgress, timeBudgetSeconds, memoryBudgetMiB } = options;
-    const confirmed = new Set(options.claimProfiles);
+    const { claimProfiles } = options;
+    const confirmedBy =
+      typeof claimProfiles === "function" ? claimProfiles : undefined;
+    const confirmed = new Set(
+      typeof claimProfiles === "function" ? [] : claimProfiles,
+    );
     // What the import writes holds no judgment, so which profiles are answered now is which are answered once it is
     // written. It is read from the pod's kept build, built if the pod was just opened, which the import then continues from.
     const answered =
-      confirmed.size > 0
+      confirmedBy !== undefined || confirmed.size > 0
         ? await timed("pod.profilesTied", () => this.#profilesAnswered(true))
         : new Map<string, "About" | "NotAbout">();
     // The import, the judgments that claim its profiles and the pod's build after them (one rebuild of all three) come
@@ -1404,7 +1421,16 @@ class OpenPod implements Pod {
           claimedProfiles,
         };
       const matching = options.match !== false;
-      const profiles = [...new Set(profilesNamed ?? [])].filter(
+      const named = [...new Set(profilesNamed ?? [])];
+      if (confirmedBy !== undefined) {
+        const returned: unknown = confirmedBy(Object.freeze([...named]));
+        if (!isProfileList(returned))
+          throw new TypeError(
+            `pod.import options.claimProfiles, a function, returned ${shown(returned)}, not a list of the profile IRIs the person confirmed.`,
+          );
+        for (const profile of returned) confirmed.add(profile);
+      }
+      const profiles = named.filter(
         (profile) =>
           confirmed.has(profile) &&
           profile !== this.subject &&
