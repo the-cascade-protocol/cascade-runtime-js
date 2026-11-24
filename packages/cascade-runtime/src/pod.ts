@@ -1419,7 +1419,7 @@ class OpenPod implements Pod {
         disclaimedProfiles: [],
         heldBackProfiles: [],
       };
-    // An import that does not match leaves its claims, a retitle and the match to come, each of which would rewrite the database by keyed writes: it is built when the match ends, or at the first question.
+    // An import that does not match leaves its claims, a retitle and the match to come, each of which would rewrite the database by keyed writes: it is built when the match ends, or after the first question's answer.
     if (options.match !== false) await this.#keptDatabase();
     return {
       ...filed,
