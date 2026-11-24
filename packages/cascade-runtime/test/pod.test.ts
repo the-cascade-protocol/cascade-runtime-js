@@ -1277,7 +1277,7 @@ describe("Importing a health export · pod.import()", () => {
         }
       });
 
-    /** `kept` with the writes to the pod's folder throwing `armed.error` while one is set. */
+    /** `kept` with the next write to the pod's folder, while `armed.error` is set, throwing it, once. */
     function writesThrowing(armed: { error?: Error }): Parts {
       return {
         ...kept,
@@ -1292,7 +1292,9 @@ describe("Importing a health export · pod.import()", () => {
                 const call = value as (...of: unknown[]) => unknown;
                 if (typeof key === "string" && key.startsWith("write"))
                   return (...given: unknown[]) => {
-                    if (armed.error !== undefined) throw armed.error;
+                    const error = armed.error;
+                    armed.error = undefined;
+                    if (error !== undefined) throw error;
                     return call.apply(target, given);
                   };
                 return call.bind(target);
@@ -1313,7 +1315,6 @@ describe("Importing a health export · pod.import()", () => {
         await pod.opened;
         armed.error = new Error("the disk is full");
         assert.equal((await select(pod, SAMES)).length, 0);
-        armed.error = undefined;
         assert.ok((await select(pod, SAMES)).length > 0);
       } finally {
         await pod.close();
@@ -1332,6 +1333,7 @@ describe("Importing a health export · pod.import()", () => {
         assert.equal((await select(pod, SAMES)).length, 0);
         const { seen } = await probing(() => select(pod, SAMES));
         assert.ok(!seen.spans.has("matcher.of"));
+        armed.error = new Refusal("the rules refuse the run");
         assert.equal((await pod.match()).refused, "the rules refuse the run");
       } finally {
         await pod.close();
