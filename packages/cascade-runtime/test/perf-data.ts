@@ -83,7 +83,8 @@ export async function loadDataset(id: DatasetId): Promise<Dataset> {
   );
   if (patient === undefined) throw new Error(`${input.path} has no Patient`);
   // A Bundle whose entries are named urn:uuid:… has no server; the pull is given one, as a hospital's would be.
-  const fhirBase = patient.fullUrl.startsWith("https://")
+  const served = patient.fullUrl.startsWith("https://");
+  const fhirBase = served
     ? patient.fullUrl.slice(
         0,
         patient.fullUrl.lastIndexOf(`/Patient/${patient.resource.id}`),
@@ -93,10 +94,55 @@ export async function loadDataset(id: DatasetId): Promise<Dataset> {
     id,
     sha256,
     records: bundle.entry.length,
-    bundle,
+    bundle: served ? bundle : atServer(bundle, fhirBase),
     fhirBase,
     patient: patient.resource.id,
   };
+}
+
+/**
+ * The Bundle as a server's pull of it would be, made in place: each entry's `fullUrl`, where it is a `urn:uuid:` (a generator's
+ * name, which a Bundle holds before any server has the resource), becomes `<fhirBase>/<ResourceType>/<id>`, and each
+ * `reference` that named an entry by its `urn:uuid:` becomes the relative `<ResourceType>/<id>`, as a HAPI-style server's pull
+ * writes it. Nothing else is touched: an Identifier's `value` that happens to be a `urn:uuid:` is the source's identifier, not an
+ * address, and a reference to a resource of no entry is left as it was. The Bundle stays a `transaction` with its `entry.request`
+ * and keeps its conditional (`Practitioner?identifier=...`) and `#` references, which a server pull would not carry, so the pod
+ * links to practitioners, locations and organizations less than a real pull's. It changes the Bundle given, which `loadDataset`
+ * has just parsed, so a Bundle of 50 MB is not held twice.
+ */
+export function atServer<B extends object>(bundle: B, fhirBase: string): B {
+  const { entry } = bundle as unknown as {
+    entry: {
+      fullUrl?: string;
+      resource: { resourceType: string; id: string };
+    }[];
+  };
+  const address = new Map<string, string>();
+  const relative = new Map<string, string>();
+  for (const { fullUrl, resource } of entry)
+    if (fullUrl?.startsWith("urn:uuid:")) {
+      const local = `${resource.resourceType}/${resource.id}`;
+      address.set(fullUrl, `${fhirBase}/${local}`);
+      relative.set(fullUrl, local);
+    }
+  const rename = (value: unknown): void => {
+    if (value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const member of value) rename(member);
+      return;
+    }
+    const object = value as Record<string, unknown>;
+    for (const [key, member] of Object.entries(object))
+      if (key === "reference" && typeof member === "string")
+        object[key] = relative.get(member) ?? member;
+      else rename(member);
+  };
+  for (const each of entry) {
+    rename(each.resource);
+    if (each.fullUrl !== undefined)
+      each.fullUrl = address.get(each.fullUrl) ?? each.fullUrl;
+  }
+  return bundle;
 }
 
 export function pullOf(

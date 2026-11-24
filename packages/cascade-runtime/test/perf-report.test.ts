@@ -19,7 +19,7 @@ import { after, before, describe, it } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { openPod } from "cascade-runtime";
 import { unpack, wholeBuildJob } from "@cascade-runtime/runtime/node";
@@ -71,6 +71,8 @@ import {
   floorRows,
   tabulated,
   explained,
+  atServer,
+  inputOf,
   fileOpsAt,
   foldersCompared,
   fileOpsOnce,
@@ -717,6 +719,172 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         "a record about no one known to be the subject is left out",
       );
       assert.ok((await results(true)) > 0, "claimed, its results are shown");
+    });
+  });
+
+  describe("given the lifetime record of a Synthea patient, whose Bundle names its entries urn:uuid:, imported as a hospital's pull is", () => {
+    it("writes a handful of files for one entry more, where a record named from the document is named again whole", async () => {
+      const data = await loadDataset(LARGE);
+      const some = {
+        ...(data.bundle as { entry: object[] }),
+        entry: (data.bundle as { entry: object[] }).entry.slice(0, 300),
+      };
+      const pod = await openPod();
+      try {
+        await importedAsTheApp(pod, pullOf(data, some));
+        const more = await importedAsTheApp(
+          pod,
+          pullOf(data, oneMoreBundle(some).bundle),
+        );
+        assert.ok(
+          more.wrote.length <= 12,
+          `one entry more wrote ${more.wrote.length} files`,
+        );
+      } finally {
+        await pod.close();
+      }
+    });
+
+    interface Source {
+      entry: {
+        fullUrl: string;
+        resource: { resourceType: string; id: string };
+      }[];
+    }
+    const BASE = "https://synthea.demo.invalid/fhir";
+    /** The first 300 entries of the Bundle as the adapter commits it, with the urn:uuid: names it was generated with. */
+    const generated = async (): Promise<Source> => {
+      const whole = JSON.parse(
+        new TextDecoder().decode(
+          gunzipSync(await readFile((await inputOf(LARGE)).path)),
+        ),
+      ) as Source;
+      return { ...whole, entry: whole.entry.slice(0, 300) };
+    };
+
+    it("changes only the addresses: each entry is named by its server, each reference to an entry as Type/id, and put back they are the Bundle that was generated", async () => {
+      const was = await generated();
+      const now = atServer(structuredClone(was), BASE);
+      assert.equal(now.entry.length, was.entry.length);
+      const back = new Map(
+        now.entry.map(({ fullUrl }, at) => [
+          fullUrl,
+          (was.entry[at] as Source["entry"][number]).fullUrl,
+        ]),
+      );
+      for (const { fullUrl, resource } of now.entry)
+        assert.equal(
+          fullUrl,
+          `${BASE}/${resource.resourceType}/${resource.id}`,
+        );
+      const text = JSON.stringify(now);
+      const references = (
+        text.match(/"reference":"[A-Za-z]+\/[0-9a-f-]+"/g) ?? []
+      ).length;
+      assert.ok(
+        references > 100,
+        `${references} references now name a Type/id`,
+      );
+      const named = new Set(
+        now.entry.map(
+          ({ resource }) => `${resource.resourceType}/${resource.id}`,
+        ),
+      );
+      const dangling = (
+        text.match(/"reference":"[A-Za-z]+\/[0-9a-f-]+"/g) ?? []
+      ).filter((each) => !named.has(each.slice(13, -1)));
+      assert.deepEqual(
+        dangling,
+        [],
+        "a reference names an entry the slice lacks",
+      );
+      const identifiers = (bundle: object) =>
+        JSON.stringify(bundle).split(`"value":"urn:uuid:`).length - 1;
+      assert.ok(identifiers(was) > 0, "the slice holds identifiers to keep");
+      assert.equal(
+        identifiers(now),
+        identifiers(was),
+        "an identifier that is a urn:uuid: is not an address",
+      );
+      assert.deepEqual(
+        JSON.parse(
+          text
+            .replace(
+              /"reference":"([A-Za-z]+\/[0-9a-f-]+)"/g,
+              (whole, local: string) =>
+                `"reference":"${back.get(`${BASE}/${local}`) ?? local}"`,
+            )
+            .replace(
+              new RegExp(`"fullUrl":"(${BASE}/[A-Za-z]+/[0-9a-f-]+)"`, "g"),
+              (whole, address: string) =>
+                `"fullUrl":"${back.get(address) ?? address}"`,
+            ),
+        ),
+        was,
+      );
+    });
+
+    it("keeps every question's rows: as many records, and as many rows of each question the first screen asks, as the Bundle with the names it was generated with", async () => {
+      const was = await generated();
+      const now = atServer(structuredClone(was), BASE);
+      const patient = (was.entry[0] as Source["entry"][number]).resource.id;
+      const shown = async (bundle: object) => {
+        const pod = await openPod();
+        try {
+          await importedAsTheApp(
+            pod,
+            pullOf(
+              { fhirBase: BASE, patient } as Awaited<
+                ReturnType<typeof loadDataset>
+              >,
+              bundle,
+            ),
+          );
+          const rows = new Map<string, Awaited<ReturnType<typeof pod.ask>>>();
+          for (const question of FIRST_SCREEN)
+            rows.set(question, await pod.ask(question));
+          return rows;
+        } finally {
+          await pod.close();
+        }
+      };
+      const [before, after] = [await shown(was), await shown(now)];
+      assert.ok((before.get("pod/My lab results") ?? []).length > 0);
+      assert.deepEqual(
+        [...after].map(([question, rows]) => [question, rows.length]),
+        [...before].map(([question, rows]) => [question, rows.length]),
+      );
+      const records = (rows: typeof before) =>
+        new Set(
+          (rows.get("entry/Where it came from") ?? []).map(
+            ({ record }) => record,
+          ),
+        ).size;
+      assert.equal(records(after), records(before));
+      // The columns that name something of the pod or the source (an entry, a record, a source address) are what naming changes.
+      const kept = (rows: typeof before, question: string) =>
+        (rows.get(question) ?? [])
+          .map((row) =>
+            JSON.stringify(
+              Object.entries(row).filter(
+                ([, value]) =>
+                  !/pod:\/\/|urn:uuid:|ni:\/\/\/|synthea\.demo/.test(
+                    JSON.stringify(value),
+                  ),
+              ),
+            ),
+          )
+          .sort();
+      for (const question of [
+        "pod/My lab results",
+        "pod/My immunizations",
+        "pod/My medication history",
+      ])
+        assert.deepEqual(
+          kept(after, question),
+          kept(before, question),
+          question,
+        );
     });
   });
 
