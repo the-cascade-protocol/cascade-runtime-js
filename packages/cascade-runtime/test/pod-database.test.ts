@@ -457,6 +457,36 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
     });
   });
 
+  describe("given a pod killed with an import never matched, and opened again", () => {
+    it("matches the import in `opened`, from the files alone: no build, no database and no kept answer was written by a close", async () => {
+      const at = join(pods, "killed-unmatched");
+      const pod = await openPodWith(parts, at);
+      let killed: string;
+      try {
+        const done = await pod.import(syntheticPulls(1)[0]!, {
+          claimProfiles: claiming,
+          match: false,
+        });
+        assert.ok(done.activity);
+        killed = await copied(at, "killed-unmatched-copy");
+        await rm(join(besideOf(killed), DATABASE), { force: true });
+      } finally {
+        await pod.close();
+      }
+      const healed = await session(killed, async (pod) => {
+        const opened = await pod.opened;
+        const runs = await pod.ask({
+          query: `PREFIX cascade: <${CASCADE}> PREFIX prov: <http://www.w3.org/ns/prov#>
+            SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy ?import . ?import a cascade:DocumentImport }`,
+        });
+        return { opened, runs: runs.length };
+      });
+      assert.equal(healed.result.opened?.refused, undefined);
+      assert.ok((healed.result.opened?.wrote.length ?? 0) > 0);
+      assert.equal(healed.result.runs, 1);
+    });
+  });
+
   describe("given a new pod, open and not yet closed", () => {
     it("makes no pod.db at open or by a retitle, builds it whole once as the import ends, holds one connection to it while open, and builds nothing more at close", async () => {
       const { given, opened, closed } = counted();
