@@ -409,6 +409,54 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
     });
   });
 
+  describe("given a pod closed with every import matched, and opened again", () => {
+    it("asks what the matcher has not taken of pod.db alone: `opened` settles to undefined, no matcher is made, no step runs, and the pod is not built", async () => {
+      const at = await copied(first, "opened-matched");
+      const { result, spans } = await session(at, (pod) => pod.opened);
+      assert.equal(result, undefined);
+      assert.ok(spans.includes("core-pod.databaseAnswers"), spans.join(", "));
+      assert.deepEqual(
+        spans.filter(
+          (span) =>
+            span === "matcher.of" ||
+            span.startsWith("core-pod.step.") ||
+            span.startsWith("kept.") ||
+            span === "core-pod.matcherSelect",
+        ),
+        [],
+        spans.join(", "),
+      );
+    });
+  });
+
+  describe("given a pod closed with an import never matched, and opened again", () => {
+    it("matches the import in `opened`, which writes its run's act, and the open after that has none owed", async () => {
+      const at = join(pods, "closed-unmatched");
+      await session(at, async (pod) => {
+        const done = await pod.import(syntheticPulls(1)[0]!, {
+          claimProfiles: claiming,
+          match: false,
+        });
+        assert.ok(done.activity);
+      });
+      const healed = await session(at, async (pod) => {
+        const opened = await pod.opened;
+        const runs = await pod.ask({
+          query: `PREFIX cascade: <${CASCADE}> PREFIX prov: <http://www.w3.org/ns/prov#>
+            SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy ?import . ?import a cascade:DocumentImport }`,
+        });
+        return { opened, runs: runs.length };
+      });
+      assert.equal(healed.result.opened?.refused, undefined);
+      assert.ok((healed.result.opened?.wrote.length ?? 0) > 0);
+      assert.equal(healed.result.runs, 1);
+      assert.ok(healed.spans.includes("matcher.of"), healed.spans.join(", "));
+      const again = await session(at, (pod) => pod.opened);
+      assert.equal(again.result, undefined);
+      assert.ok(!again.spans.includes("matcher.of"), again.spans.join(", "));
+    });
+  });
+
   describe("given a new pod, open and not yet closed", () => {
     it("makes no pod.db at open or by a retitle, builds it whole once as the import ends, holds one connection to it while open, and builds nothing more at close", async () => {
       const { given, opened, closed } = counted();

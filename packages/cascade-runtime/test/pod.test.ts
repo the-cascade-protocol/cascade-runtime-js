@@ -998,6 +998,30 @@ describe("Importing a health export · pod.import()", () => {
       }
     });
 
+    it("takes it before the next import's own match", async () => {
+      const bothMatched = async (name: string, matching: boolean) => {
+        const pod = await openPodWith(kept, join(pods, name));
+        try {
+          const first = await pod.import(exported("x-e10"), { match: false });
+          for (const profile of first.unclaimedProfiles)
+            await pod.judge(about(pod, profile));
+          if (matching && first.activity) await pod.match(first.activity);
+          const later = await pod.import(exported("x-e4"), {
+            claimProfiles: await Promise.all(
+              ["J1", "J2"].map((judgment) => profileOf(judgment)),
+            ),
+          });
+          assert.equal(later.refused, undefined);
+          return (await select(pod, SAMES)).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      const wanted = await bothMatched("both-matched", true);
+      assert.ok(wanted > 0);
+      assert.equal(await bothMatched("first-owed", false), wanted);
+    });
+
     it("leaves a pod whose every import was matched opened with no step run", async () => {
       const at = join(pods, "every-import-matched");
       await cp((await alexPod()).folder, at, { recursive: true });
