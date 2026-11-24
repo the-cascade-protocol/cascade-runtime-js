@@ -1,8 +1,8 @@
 {
   "scenarios": {
     "reopen-after-kill": {
-      "says": "A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the pod has no saved database, so it is built again from every file it holds.",
-      "total": "Opening a pod that was stopped before it closed and answering its first read: what a person waits for after the app was stopped without closing the pod."
+      "says": "A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the pod has no saved database, so it is built again from every file it holds, and the first question also builds the database (about half of that question's time) so the questions after it are answered from it.",
+      "total": "Opening a pod that was stopped before it closed and answering its first read, which also builds the database: what a person waits for after the app was stopped without closing the pod."
     }
   }
 }

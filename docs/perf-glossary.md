@@ -17,7 +17,7 @@ Generated from the files of `packages/cascade-runtime/test/perf-glossary/`; edit
 | `reimport-identical` | A pod that already holds a person's record is given the same file again, as when a person pulls from the same hospital twice. |
 | `reimport-changed` | A pod that already holds a person's record is given the same file with 10 of its laboratory results changed (a value and the time the source changed it), as when a hospital has corrected some results since the last pull. |
 | `add-one-record` | A pod that already holds a person's record is given the same file with one new laboratory result at its end, as when a hospital adds a result after the last pull. |
-| `reopen-after-kill` | A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the pod has no saved database, so it is built again from every file it holds. |
+| `reopen-after-kill` | A pod whose app was stopped without closing it (a crash, a killed process or a power cut after the import) is opened again and answers its first question: the pod has no saved database, so it is built again from every file it holds, and the first question also builds the database (about half of that question's time) so the questions after it are answered from it. |
 | `question-after-update` | A pod that took in an update (the file with 10 laboratory results changed) and was closed is opened again and answers its first question. |
 | `each-query` | Every query of the vocabulary (the derivations, lenses, views, labels, questions and table queries), asked of a copy of the pod a fresh import left: on the reference engine over the pod's own statements and, for the ones that have a SQL version, in SQL on a database holding the same statements, with what each gave compared. |
 
@@ -84,7 +84,7 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `reimport-identical/total` | Opening a pod that already holds the record, importing the same file again and asking a first page of the lab results: what a person waits for when nothing has changed. |
 | `reimport-changed/total` | Opening a pod that already holds the record, importing the file with 10 laboratory results changed and asking a first page of the lab results: what a person waits for after a hospital updates some results. |
 | `add-one-record/total` | Opening a pod that already holds the record, importing the file with one more laboratory result and asking a first page of the lab results: what a person waits for after one new result arrives. |
-| `reopen-after-kill/total` | Opening a pod that was stopped before it closed and answering its first read: what a person waits for after the app was stopped without closing the pod. |
+| `reopen-after-kill/total` | Opening a pod that was stopped before it closed and answering its first read, which also builds the database: what a person waits for after the app was stopped without closing the pod. |
 | `question-after-update/total` | Opening a pod after an update that was closed properly and answering its first read, against the same read of a pod right after its first import: whether the first question after an update is slower. |
 | `each-query/total` | Filling the reference engine and a database from the pod's statements, making every view's screen, and asking every query of the vocabulary once on the reference engine and, where it has one, in SQL. |
 | `total` | The headline: the whole scenario from start to finish, the median of the runs. |
@@ -93,7 +93,7 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `first-screen` | Asking the questions the first screen shows. |
 | `first-read` | The first question asked of the reopened pod ('My active conditions'). |
 | `second-read` | A second question asked of the reopened pod ('My active medications'). |
-| `close` | Closing the pod, saving its database. |
+| `close` | Closing the pod, saving its database if neither the match nor a question has built it already. |
 | `parse` | Floor stage: reading the compressed Bundle, decompressing it and parsing the JSON. A fresh import parses the Bundle too: the harness reads, decompresses and parses it once before the import's clock starts, but the import is handed the Bundle's bytes and, from reading its code, parses them again inside its own time (not traced). So this stage and the import's own parsing are about the same work, with this stage also counting reading and decompressing, which the import's clock does not. |
 | `flatten` | Floor stage: turning each parsed resource into one row of the table for its resource type, plain values as columns and anything nested as its JSON text. |
 | `insert` | Floor stage: creating a table for each resource type and inserting every row in one transaction into a SQLite file on disk, then closing the file. |
@@ -150,7 +150,7 @@ Rows named `<scenario>-<dataset>/stage/<stage>`: where time goes inside one run 
 | `scenario.first-screen` | Asking the questions the app's first screen shows, so the first screen can be drawn. |
 | `scenario.first-read` | The first question asked of a reopened pod. |
 | `scenario.second-read` | A second, different question asked of the reopened pod. |
-| `scenario.close` | Closing the pod, saving its database for the next time it opens. |
+| `scenario.close` | Closing the pod, saving its database for the next time it opens if neither the match nor a question has built it already. |
 | `core-pod.step.perform` | Doing the work of one import step: taking in the new records. Sits inside `scenario.import`. |
 | `core-pod.step.commit` | Writing the step's results to the pod's files and recording that it happened. Sits inside `scenario.import`. |
 | `core-pod.step.finished` | Working out what an act's file holds beside its description: the runtime that did the work and a snapshot of the pod's files. Sits inside `scenario.import`. |
@@ -363,7 +363,7 @@ Rows named `<scenario>-<dataset>/count/<count>`.
 | `records-added` | How many records the pod named for the first time in this import: things the source described that the pod had not met. |
 | `entries-changed` | How many source entries of the document were edited from the first one: 10 laboratory results for the changed file, a row of that job alone. The row's note says exactly what was edited. |
 | `entries-added` | How many source entries the document has more than the first one: 1 for the added laboratory result, a row of that job alone. |
-| `database-found` | 1 if the pod's saved database was beside it when it was opened again, otherwise 0: a process stopped before the import built it leaves none, as the killed pod's does here once the one its import built is taken away, and the pod is then built from every file. |
+| `database-found` | 1 if the pod's saved database was beside it when it was opened again, otherwise 0: a process stopped before the match built it leaves none, as the killed pod's does here once the one its match built is taken away, and the pod is then built from every file. |
 | `files-read` | How many of the pod's files the reopened pod had to read to be built again: every file that holds statements, as the pod's layout says. |
 | `statements-read` | How many statements those files hold. |
 | `queries` | How many queries of the vocabulary outside the matcher there are, each asked once. |

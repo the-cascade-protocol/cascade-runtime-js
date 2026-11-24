@@ -996,7 +996,13 @@ export class CorePod {
     const hash = this.#builtHash;
     if (hash === undefined || this.#built !== built) return undefined;
     const database = await this.#openDatabase(true);
-    if (database === undefined) return undefined;
+    if (database === undefined) {
+      if (this.keepsDatabase && !this.#databaseClosed)
+        await timedAside("core-pod.keepDatabase.failed", () =>
+          Promise.resolve(),
+        );
+      return undefined;
+    }
     if (database.fingerprint !== hash) {
       this.#databaseHolds = undefined;
       try {

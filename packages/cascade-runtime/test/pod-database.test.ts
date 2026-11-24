@@ -455,6 +455,53 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
       );
       assert.deepEqual(found, stored);
     });
+
+    it("tries the build once at the questions of a pod imported into without matching, not at each question", async () => {
+      const failing: Parts = {
+        ...parts,
+        databaseBeside: async (path, name) => ({
+          ...(await parts.databaseBeside!(path, name)),
+          builtWhole: () => Promise.reject(new Error("the build failed")),
+        }),
+      };
+      const pod = await openPodWith(failing, join(pods, "build-fails-asked"));
+      let asked: Map<string, number> | undefined;
+      try {
+        await pod.import(syntheticPulls(2)[0]!, {
+          claimProfiles: claiming,
+          match: false,
+        });
+        asked = await callsOf(async () => {
+          for (const question of [THEN, ...FIRST_SCREEN, ...FIRST_SCREEN])
+            await pod.ask(question);
+        });
+      } finally {
+        await pod.close();
+      }
+      assert.equal(asked?.get(FAILED), 1, "the build was not tried once");
+    });
+
+    it("records the failure when the database cannot be opened", async () => {
+      const unopenable: Parts = {
+        ...parts,
+        databaseBeside: async (path, name) => ({
+          ...(await parts.databaseBeside!(path, name)),
+          open: () => {
+            throw new Error("cannot open");
+          },
+        }),
+      };
+      const pod = await openPodWith(unopenable, join(pods, "no-open"));
+      let atImport: Map<string, number> | undefined;
+      try {
+        atImport = await callsOf(() =>
+          pod.import(syntheticPulls(2)[0]!, { claimProfiles: claiming }),
+        );
+      } finally {
+        await pod.close();
+      }
+      assert.equal(atImport?.get(FAILED), 1, "the failure left no span");
+    });
   });
 
   describe("given a later import, in a later session", () => {

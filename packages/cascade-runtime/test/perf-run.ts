@@ -372,7 +372,7 @@ async function scenariosAt(
       );
       if (!(await databaseKept(folder, encrypted)))
         throw new Error(
-          "the process that was killed left no database beside the pod: the import builds it before it returns",
+          "the process that was killed left no database beside the pod: the match at the end of the import builds it before it returns",
         );
       const counted = await child(
         { ...ctx.unprobed("killed", "stored"), folder },
@@ -380,7 +380,7 @@ async function scenariosAt(
       );
       if (counted.stored === undefined)
         throw new Error("the stored scenario counted nothing");
-      // Counting reads the pod and may build a database for its questions: the copies are made from the pod without one.
+      // The copies are made from the pod without the database the match built, as when the process stopped before any was built.
       await databaseRemoved(folder, encrypted);
       const found = await databaseKept(folder, encrypted);
       if (found)

@@ -15,7 +15,7 @@
     "records-added": "How many records the pod named for the first time in this import: things the source described that the pod had not met.",
     "entries-changed": "How many source entries of the document were edited from the first one: 10 laboratory results for the changed file, a row of that job alone. The row's note says exactly what was edited.",
     "entries-added": "How many source entries the document has more than the first one: 1 for the added laboratory result, a row of that job alone.",
-    "database-found": "1 if the pod's saved database was beside it when it was opened again, otherwise 0: a process stopped before the import built it leaves none, as the killed pod's does here once the one its import built is taken away, and the pod is then built from every file.",
+    "database-found": "1 if the pod's saved database was beside it when it was opened again, otherwise 0: a process stopped before the match built it leaves none, as the killed pod's does here once the one its match built is taken away, and the pod is then built from every file.",
     "files-read": "How many of the pod's files the reopened pod had to read to be built again: every file that holds statements, as the pod's layout says.",
     "statements-read": "How many statements those files hold."
   }
