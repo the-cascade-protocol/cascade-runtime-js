@@ -181,11 +181,13 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
       assert.equal(held.matched, undefined);
     });
 
-    it("performs no step: it reads none of the pod's revisions, loads no adapter, rebuilds nothing and asks no matcher", () => {
+    it("performs no step: it reads none of the pod's revisions or its kept build, loads no adapter, rebuilds nothing and asks no matcher", () => {
       for (const name of [
         "arrivals.revisionsOf",
         "core-pod.import.adapters",
         "arrivals.accepting",
+        "kept.readBack",
+        "kept.whole",
         "pod.match",
         "matcher.of",
       ])
