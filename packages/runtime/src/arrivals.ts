@@ -1300,9 +1300,7 @@ export async function fileExport(
     // The pod's revisions are read while the Bridge accepts and converts: the two depend on each other only where the
     // arrivals are compared with the revisions, and the Bridge runs in workers.
     if (reading === undefined) {
-      reading = timedAside("arrivals.revisionsOf", () =>
-        Revisions.of(context),
-      );
+      reading = timedAside("arrivals.revisionsOf", () => Revisions.of(context));
       // Its failure is thrown where it is awaited; until then it is handled, not lost.
       reading.catch(() => undefined);
     }
