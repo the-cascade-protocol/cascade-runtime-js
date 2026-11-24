@@ -3,7 +3,7 @@
     "phase-loading-the-adapter": "Import part: loading the adapter that knows this kind of record, and, where more than one adapter takes the document's kind, the adapters' accepting of the document. On a pod that already holds records, the read of the revisions the pod holds starts once the adapter is loaded. An import whose every document the pod already holds loads none and reads none, and has no such part.",
     "phase-converting": "Import part: converting the source record into the pod's own format. On a pod that already holds records, the read of the revisions the pod holds begins as this part does, or in the part before where an adapter's accepting of the document came first, and runs on into this one.",
     "phase-saving": "Import part: writing the converted records into the pod.",
-    "phase-judging": "Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part."
+    "phase-judging": "Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, the one re-deriving of the pod's answers that follows the import and those claims, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part."
   },
   "measureFamilies": [
     {

@@ -105,7 +105,7 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `phase-loading-the-adapter` | Import part: loading the adapter that knows this kind of record, and, where more than one adapter takes the document's kind, the adapters' accepting of the document. On a pod that already holds records, the read of the revisions the pod holds starts once the adapter is loaded. An import whose every document the pod already holds loads none and reads none, and has no such part. |
 | `phase-converting` | Import part: converting the source record into the pod's own format. On a pod that already holds records, the read of the revisions the pod holds begins as this part does, or in the part before where an adapter's accepting of the document came first, and runs on into this one. |
 | `phase-saving` | Import part: writing the converted records into the pod. |
-| `phase-judging` | Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part. |
+| `phase-judging` | Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, the one re-deriving of the pod's answers that follows the import and those claims, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part. |
 | `files/all` | Every file the pod holds, counted by the pod's layout: the kinds' counts add up to it. |
 | `files/on-disk` | Every file in the pod's folder as the disk has it. For a plain pod it equals the count above; for an encrypted pod it also counts the sealed index. |
 | `files/beside` | The files kept beside the pod: its database, its kept build and its kept answers. |
@@ -155,7 +155,8 @@ Rows named `<scenario>-<dataset>/stage/<stage>`: where time goes inside one run 
 | `core-pod.step.commit` | Writing the step's results to the pod's files and recording that it happened. Sits inside `scenario.import`. |
 | `core-pod.step.finished` | Working out what an act's file holds beside its description: the runtime that did the work and a snapshot of the pod's files. Sits inside `scenario.import`. |
 | `core-pod.step.keptafter` | Bringing the saved answers up to date after a step. Sits inside `scenario.import`. |
-| `core-pod.step.rebuild-import` | Re-deriving what the imported records change. Sits inside `scenario.import`. |
+| `core-pod.step.rebuild-import` | Re-deriving what the imported records change, when the import is made without the claim that the records are the person's. With the claim in the same call, one rebuild covers both and is the rebuild-import-judge row. Sits inside `scenario.import`. |
+| `core-pod.step.rebuild-import-judge` | Re-deriving, once, what the imported records and the person's claim that they are theirs change: the import and its claims share this one rebuild, where each made its own before. Sits inside `scenario.import`. |
 | `core-pod.step.rebuild-match` | Re-deriving what the 'same record' matching changes. Sits inside `scenario.import`. |
 | `core-pod.step.rebuild-other` | Re-deriving everything else a step changes. Sits inside `scenario.import`. |
 | `core-pod.import.adapters` | Reading the adapter that knows how to convert this kind of record. Sits inside `scenario.import`. |

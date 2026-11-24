@@ -113,6 +113,8 @@ const STORAGE = "http://www.w3.org/ns/pim/space#storage";
 const HAD_MEMBER = "http://www.w3.org/ns/prov#hadMember";
 const UUID4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_ANYWHERE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 /** The pod's working copy, kept beside it in its answers' folder. */
 const BUILT_BESIDE = "build.trig";
 const SESSION = "5c5734fb-433f-4ed1-8de7-1ad16d7d21cc";
@@ -858,7 +860,12 @@ describe("Importing a health export · pod.import()", () => {
         ["the same one twice", [j2, j2], [j2], [j1]],
         ["none", [], [], [j1, j2]],
         ["one the import does not name", ["urn:uuid:not-in-it"], [], [j1, j2]],
-        ["a function returning all it is given", (named) => named, [j1, j2], []],
+        [
+          "a function returning all it is given",
+          (named) => named,
+          [j1, j2],
+          [],
+        ],
         [
           "a function returning one it is given and one it is not",
           () => [j2, "urn:uuid:not-in-it"],
@@ -875,8 +882,8 @@ describe("Importing a health export · pod.import()", () => {
             match: false,
           });
           assert.deepEqual(
-            done.claimedProfiles.map(({ profile }) => profile),
-            claimed,
+            done.claimedProfiles.map(({ profile }) => profile).sort(),
+            [...claimed].sort(),
             name,
           );
           assert.deepEqual(done.unclaimedProfiles, [...unclaimed].sort(), name);
@@ -915,21 +922,57 @@ describe("Importing a health export · pod.import()", () => {
     it("gives a function, once, the profiles the import names, each once, and files what a list of them files", async () => {
       const [j1, j2] = [await profileOf("J1"), await profileOf("J2")];
       const told: (readonly string[])[] = [];
-      const [byList, byFunction] = await Promise.all(
-        [[j1, j2], (named: readonly string[]) => (told.push(named), named)].map(
-          async (claimProfiles, index) => {
-            const claiming = await openPodWith(kept, join(pods, `same-${index}`));
-            try {
-              await claiming.import(exported("x-e6"), { claimProfiles });
-              return await claiming.ask(QUESTION);
-            } finally {
-              await claiming.close();
-            }
-          },
-        ),
+      /** What the import left in a pod, its files by path and text, the names a run makes for itself and the times it takes left out. */
+      const filedBy = async (
+        claimProfiles: ImportOptions["claimProfiles"],
+        name: string,
+      ): Promise<Map<string, string>> => {
+        const folder = join(pods, name);
+        const claiming = await openPodWith(kept, folder);
+        try {
+          await claiming.import(exported("x-e6"), { claimProfiles });
+        } finally {
+          await claiming.close();
+        }
+        const masked = (text: string) =>
+          text
+            .replace(UUID_ANYWHERE, "<uuid>")
+            .replace(/ni:\/\/\/sha-256;[\w-]+/g, "<digest>")
+            .replace(
+              /buildInputsHash> "[0-9a-f]+"/g,
+              'buildInputsHash> "<hash>"',
+            )
+            .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>");
+        const held = new Map<string, string>();
+        for (const path of await filesIn(folder)) {
+          const at = relative(folder, path).split(sep).join("/");
+          if (!at.startsWith("archives/"))
+            held.set(
+              masked(at),
+              masked(await readFile(path, "latin1"))
+                .split("\n")
+                .sort()
+                .join("\n"),
+            );
+        }
+        return held;
+      };
+      const byList = await filedBy([j1, j2], "same-list");
+      const byFunction = await filedBy(
+        (named) => (told.push(named), named),
+        "same-function",
       );
-      assert.deepEqual(told.map((named) => [...named].sort()), [[j1, j2].sort()]);
-      assert.deepEqual(byFunction, byList);
+      assert.deepEqual(
+        told.map((named) => [...named].sort()),
+        [[j1, j2].sort()],
+      );
+      assert.ok(byList.size > 0);
+      assert.deepEqual(
+        [...byFunction.keys()].sort(),
+        [...byList.keys()].sort(),
+      );
+      for (const [path, text] of byList)
+        assert.equal(byFunction.get(path), text, path);
     });
 
     it("throws a TypeError for a function that returns anything but a list of IRIs", async () => {

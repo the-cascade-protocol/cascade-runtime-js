@@ -6,7 +6,6 @@ import { gunzipSync } from "node:zlib";
 import {
   type ImportOptions,
   type Imported,
-  ownerAbout,
   type Pod,
   pullFiles,
 } from "cascade-runtime";
@@ -162,10 +161,11 @@ export function pullOf(
 }
 
 /**
- * An import as an app does it for a person's own record: the pull is filed without matching, the owner files an About for
- * each patient profile it names, and the matcher then runs on the import. The profile is named by what the import holds, so it
- * is known only once the import is made: a profile worked out beforehand from some of the entries is another profile, and a pod
- * that claims none shows no one's results, since every record is left out for having no known subject.
+ * An import as an app does it for a person's own record: one call files the pull without matching and has the owner file an
+ * About for each patient profile it names, the pod rebuilding once for both, and the matcher then runs on the import. The
+ * profile is named by what the import holds, so it is known only once the import is made: a profile worked out beforehand
+ * from some of the entries is another profile, and a pod that claims none shows no one's results, since every record is left
+ * out for having no known subject.
  */
 export async function importedAsTheApp(
   pod: Pod,
@@ -173,17 +173,11 @@ export async function importedAsTheApp(
   onProgress?: ImportOptions["onProgress"],
 ): Promise<Imported> {
   const filed = await pod.import(pull, {
+    claimProfiles: (named) => named,
     match: false,
     ...(onProgress !== undefined && { onProgress }),
   });
   if (filed.activity === undefined) return filed;
-  const profiles = filed.unclaimedProfiles;
-  const of = profiles.length + 1;
-  await onProgress?.({ part: "judging", done: 0, of });
-  for (const [index, profile] of profiles.entries()) {
-    await pod.judge(ownerAbout(pod, profile));
-    await onProgress?.({ part: "judging", done: index + 1, of });
-  }
   const matched = await pod.match(filed.activity);
-  return { ...filed, matched, unclaimedProfiles: [] };
+  return { ...filed, matched };
 }
