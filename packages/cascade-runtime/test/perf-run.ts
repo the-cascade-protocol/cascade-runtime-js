@@ -84,6 +84,11 @@ export function flameBuilds(flame: Flame): FlameBuild[] {
   });
 }
 
+/** What a headline row says of how it was taken: one run, or the median of `runs`, each in a process of its own, over the input `about` names. */
+export function howMeasured(runs: number, about: string): string {
+  return `unprobed, ${runs === 1 ? "one run" : `median of ${runs} runs, each`} in a process of its own; ${about}`;
+}
+
 /** Every scenario wanted at one size, encrypted or not: runs them and gives their rows. */
 async function scenariosAt(
   plan: Plan,
@@ -97,8 +102,7 @@ async function scenariosAt(
   const about = `dataset=${dataset} sha256=${data.sha256} records=${data.records}${encrypted ? " encrypted" : ""}`;
   const wants = (scenario: Scenario) => plan.scenarios.has(scenario);
   const place = (label: string) => join(work, label, "pod");
-  const howOf = (runs: number) =>
-    `unprobed, ${runs === 1 ? "one run" : `median of ${runs} runs, each`} in a process of its own; ${about}`;
+  const howOf = (runs: number) => howMeasured(runs, about);
   const ctx: Context = {
     plan,
     dataset,
