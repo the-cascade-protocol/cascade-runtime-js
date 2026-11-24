@@ -44,7 +44,7 @@
       "says": "Working out a fingerprint of everything a result depends on, to know when it can be reused."
     },
     "core-pod.matcherselect": {
-      "says": "A question the 'same record' matcher puts to the pod's facts, as the matcher reads them."
+      "says": "A question put to the pod's facts as the 'same record' matcher reads them: the matcher's own, and the one that lists the arrivals it has not taken."
     },
     "core-pod.matcherview": {
       "says": "Preparing the pod's facts for the 'same record' matcher."

@@ -9,7 +9,10 @@ name: perf
 #   default branch and its Bridge as a push to main resolves it, is under main/), because the same commits took 23% longer
 #   on a runner with another processor model: a comparison with a file from another job cannot be read to a few percent. If
 #   that run gives no file the job goes on, warns, and the comment compares with the latest push's file as before, saying so.
-#   A hand-started run on a branch other than main does the same and puts the comparison in its summary.
+#   A hand-started run on a branch other than main does the same and puts the comparison in its summary. It reads the
+#   `Depends-On:` lines of that branch's open pull request as a run the pull request started would (the actions
+#   depends-on and starter, through .github/actions/depends-on/pull-request-body.sh; the vocabulary and the adapters, which the Bridge
+#   spec's start action places, follow when it does the same); main's checkouts under main/ stay at the default branches.
 # - A push to main and the nightly run write their file to the orphan branch `perf-data`, at
 #   runtime/YYYY/MM/DD/<run>-<sha7>-<event>.json, and put the table in the job summary. The nightly run and a
 #   hand-started run add the large size, plain and encrypted. A push also names its file in runtime/latest-push.txt,
@@ -134,7 +137,7 @@ jobs:
       # Read by the file's environment: the runner is a hosted one, which other jobs share the machine of.
       PERF_OTHER_LOAD: "a shared hosted runner"
       # Whether main is measured here too, beside this build: a pull request, and a hand-started run on a branch other than main
-      # (which has no pull request but is read the same way). A push to main and the nightly run measure only themselves.
+      # (which has no pull request event but reads its branch's open pull request the same way). A push to main and the nightly run measure only themselves.
       SAME_JOB: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main') }}
     defaults:
       run:
