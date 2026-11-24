@@ -1830,15 +1830,18 @@ async function read(
 }
 
 /**
- * The run as an act, a new random ID (N7), informed by the act whose records it took: written only when the run writes
- * something else, so a run that finds nothing new writes nothing.
+ * The run as an act, a new random ID (N7), informed by the act whose records it took: written when the run writes
+ * something else, and, for a run given an activity no run was informed by before, whatever it writes, so the pod says
+ * the arrival was taken (M1). A recheck, an open's run and a run repeated that finds nothing new write nothing.
  */
 function actOfRun(
   context: StepContext,
   informedBy?: string,
+  taken = false,
 ): string | undefined {
   const { writes, time, layout } = context;
-  if (writes.size === 0) return undefined;
+  if (writes.size === 0 && (informedBy === undefined || taken))
+    return undefined;
   const name = time.newId();
   const run = iri(name);
   writes.act({
@@ -1875,6 +1878,19 @@ async function actsTaken(
     : { acts: new Set(named.flatMap(([act]) => act ?? [])), all: true };
 }
 
+/** Whether the pod already holds a matcher run informed by the activity (M1). */
+async function runInformedBy(
+  context: StepContext,
+  activity: string,
+): Promise<boolean> {
+  const [run] = await column(
+    await context.matcherView(),
+    `SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy <${activity}> } LIMIT 1`,
+    "run",
+  );
+  return run !== undefined;
+}
+
 /**
  * A matcher run: the records the import, entry session or connect it takes made, or those a sync brought, or, taking none, a
  * recheck. Gives the run's act, if it wrote one.
@@ -1890,6 +1906,11 @@ export async function runMatcher(
       : await timedAside("matcher.actsTaken", () =>
           actsTaken(context, activity),
         );
+  const taken =
+    activity !== undefined &&
+    (await timedAside("matcher.runInformedBy", () =>
+      runInformedBy(context, activity),
+    ));
   const matcher = await timedAside("matcher.of", () =>
     Matcher.of(context, references, undefined, takes),
   );
@@ -1901,7 +1922,7 @@ export async function runMatcher(
   } else await timedAside("matcher.take", () => matcher.take(takes));
   await timedAside("matcher.fileFindings", () => matcher.fileFindings());
   matcher.finish();
-  return actOfRun(context, activity);
+  return actOfRun(context, activity, taken);
 }
 
 /** The versions after `from` on the line that ends at `to`, oldest first: none when `to` does not descend from it. */

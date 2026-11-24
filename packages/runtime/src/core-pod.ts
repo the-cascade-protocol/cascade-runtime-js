@@ -27,6 +27,7 @@ import { Unopened } from "./encryption.js";
 import {
   type Files,
   MemoryFiles,
+  readText,
   relative,
   writeAll,
   writeEach,
@@ -96,6 +97,8 @@ const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
 const TYPE = `${RDF}type`;
 const DATASET = "dataset:";
 const MATCHER_VIEW = "matcher view";
+/** The vocabulary's question for the arrivals no matcher run is informed by, less its suffix. */
+const NOT_TAKEN = "queries/questions/pod/Which arrivals has the matcher not taken";
 /**
  * The quads the matcher's views and the steps' rebuilds may remove from the kept build's store and add again before the
  * build moves to a store of its own.
@@ -675,6 +678,10 @@ export class CorePod {
    * it, and then set at the end of each step, so it never changes while a step runs; none where it holds another.
    */
   #databaseAnswers: Promise<PodDatabase | undefined> | undefined;
+  /** The text of the question for the arrivals no matcher run is informed by, and of its `.sql`, read once. */
+  #notTaken:
+    | Promise<{ readonly query: string; readonly sql: string | undefined }>
+    | undefined;
   /** Whether `close` has run, after which the database beside the pod is never opened again. */
   #databaseClosed = false;
   /** The hash of what a build of the pod reads, by the paths it was found for, kept until the pod is next written. */
@@ -1539,6 +1546,63 @@ export class CorePod {
     return migrated === undefined
       ? performed
       : { ...performed, wrote: [...migrated.wrote, ...performed.wrote] };
+  }
+
+  /**
+   * The arrivals no matcher run is informed by, oldest first, as `pod/Which arrivals has the matcher not taken` gives
+   * them: from the database beside the pod when it holds the pod as it stands, else from the build kept across steps.
+   * Nothing is written, and no matcher is made.
+   */
+  async arrivalsNotTaken(): Promise<string[]> {
+    const { vocabulary, build } = this.#options;
+    const asking = (this.#notTaken ??= Promise.all([
+      readText(vocabulary, `${NOT_TAKEN}.rq`),
+      readText(vocabulary, `${NOT_TAKEN}.sql`).catch(() => undefined),
+    ]).then(([query, sql]) => ({ query, sql })));
+    asking.catch(() => {
+      if (this.#notTaken === asking) this.#notTaken = undefined;
+    });
+    const { query, sql } = await asking;
+    const everyday = build?.lens === MATCHER_LENS;
+    const answer =
+      everyday && sql !== undefined
+        ? await this.answered(MATCHER_LENS, sql)
+        : undefined;
+    if (answer !== undefined)
+      return answer.rows.flatMap(({ arrival }) => arrival ?? []);
+    const { rows } = await (everyday ? this.selectKept(query) : this.select(query));
+    return rows.flatMap((row) => row.get("arrival")?.value ?? []);
+  }
+
+  /**
+   * A matcher run for each arrival the matcher has not taken but `besides`, oldest first, each its own step: what a
+   * stop between an arrival and its run left undone. It stops at the first run the rules refuse, and gives that
+   * refusal.
+   */
+  async matchTheOwed(besides?: string): Promise<Performed> {
+    const wrote: string[] = [];
+    for (const arrival of await this.arrivalsNotTaken()) {
+      if (arrival === besides) continue;
+      const performed = await this.match(arrival);
+      wrote.push(...performed.wrote);
+      if (performed.refused !== undefined)
+        return { wrote, refused: performed.refused };
+    }
+    return { wrote };
+  }
+
+  /**
+   * `match`, after the matcher runs of the arrivals it has not taken but the activity given: as a pod's app has its
+   * runs, which are made as a call of its own after each import, entry session and connect, so a stop between the two
+   * is made good by the next run. The files written by all of them, the refusal of the first that is refused.
+   */
+  async matchWithTheOwed(activity?: string): Promise<Performed> {
+    const owed = await this.matchTheOwed(activity);
+    if (owed.refused !== undefined) return owed;
+    const performed = await this.match(activity);
+    return owed.wrote.length === 0
+      ? performed
+      : { ...performed, wrote: [...owed.wrote, ...performed.wrote] };
   }
 
   /**
