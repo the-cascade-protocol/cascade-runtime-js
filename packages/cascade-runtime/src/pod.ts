@@ -2007,8 +2007,10 @@ export async function openPodWith(
  * The pod's first step, which runs after `openPod` returns: when the app's tables changed since the pod was last
  * opened, or it never was, the open that gives it them (O1, O2), with the versions of a kind it was last opened with,
  * which its kept answers are keyed by until that step has run; and, whichever the tables, a matcher run for each
- * arrival no run is informed by, which a stop between an arrival and its run leaves. With nothing to adopt and nothing
- * owed the step is one query, asked of the database beside the pod where it holds the pod as it stands.
+ * arrival no run is informed by, which a stop between an arrival and its run leaves. With nothing to adopt the step is
+ * one query, asked of the database beside the pod where it holds the pod as it stands; where none does, no build is
+ * made or read back to ask it, and it is asked at the pod's next step or the first time a question needs the build, so
+ * a session that only looks, checks an entry or retitles never pays for it.
  */
 async function tablesChanged(
   tables: Tables,
@@ -2041,7 +2043,9 @@ async function tablesChanged(
       }
       // A pod closed before its first step ran is not matched at its close: the next open finds the arrivals still owed.
       if (closing || opened?.refused !== undefined) return opened;
-      const owed = await core.matchTheOwed();
+      const owed = changed
+        ? await core.matchTheOwed()
+        : await core.matchTheOwedWithoutABuild();
       if (owed.wrote.length === 0 && owed.refused === undefined) return opened;
       return {
         unheld: [],

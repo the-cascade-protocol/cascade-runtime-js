@@ -679,7 +679,6 @@ const naming = await recordsBy("profile/Which records name it", "profile");
 for (const profile of filed?.unclaimedProfiles ?? [])
   if (await isMine(profile, naming)) await judged(about(pod, profile));
 if (filed?.activity) await pod.match(filed.activity);
-await pod.match();
 for (const records of (await machineJoins()).values())
   for (const [i, one] of records.entries())
     for (const other of records.slice(i + 1))
@@ -817,7 +816,12 @@ are ticked. Whatever the tables, that step also matches each arrival no matcher 
 was informed by, which a stop between an import and its `match` leaves (an import
 whose profiles no About claims has none to take, and waits for the claim): `opened`
 then settles with the files it wrote, and with nothing to adopt and nothing owed it
-settles undefined, the step one question answered from the pod's database. A pod
+settles undefined, the step one question answered from the pod's database. A pod with
+no database that holds the pod as it stands (a browser's, or a folder's whose `pod.db`
+is missing or stale) builds nothing to ask it when the tables did not change: `opened`
+settles undefined at once, and the arrivals are matched at the pod's next write or the
+first question that needs the build, which waits for them; a session that only looks,
+checks an entry, retitles or is answered from kept answers never pays for them. A pod
 closed before the step started is left as it was, and the next open takes them. A pod in memory gets the package's starter copies.
 
 What a page shows of the tables, the same `Tables` answers, in Node and in a
