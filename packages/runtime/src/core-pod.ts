@@ -215,7 +215,7 @@ export interface Performed {
   readonly wrote: readonly string[];
   /** Why the rules refused it; it then wrote no file of the person's. */
   readonly refused?: string;
-  /** The import or entry session it made. */
+  /** The import or entry session it made: none for an import of documents the pod already keeps. */
   readonly activity?: string;
   /** The versions the pod names that the tables an open was given do not hold (O2). */
   readonly unheld?: readonly string[];

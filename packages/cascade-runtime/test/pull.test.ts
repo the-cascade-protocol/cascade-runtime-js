@@ -149,6 +149,7 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
   describe("given a pull a pod kept in a folder holds, imported again after the pod is opened again", () => {
     let held: Imported;
     let seen: Seen;
+    let first: Seen;
     let filesBefore: Map<string, string>;
     let filesAfter: Map<string, string>;
     let rowsBefore: Row[];
@@ -158,11 +159,14 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
       const kept = await mkdtemp(join(tmpdir(), "cascade-held-"));
       try {
         let podHere = await openPod(kept);
-        await importClaimingEveryProfile(podHere, pullFiles(north, "north"));
-        await podHere.close();
-        podHere = await openPod(kept);
+        ({ seen: first } = await probing(() =>
+          importClaimingEveryProfile(podHere, pullFiles(north, "north")),
+        ));
         rowsBefore = await podHere.ask("pod/My active conditions");
+        await podHere.close();
         filesBefore = await hashed(kept);
+        // Opened again and asked nothing yet, so no build is kept for the import to read.
+        podHere = await openPod(kept);
         ({ result: held, seen } = await probing(() =>
           podHere.import(pullFiles(north, "north")),
         ));
@@ -182,6 +186,15 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
     });
 
     it("performs no step: it reads none of the pod's revisions or its kept build, loads no adapter, rebuilds nothing and asks no matcher", () => {
+      // The pod's first import makes these spans, so a span renamed in the source cannot make the absence below pass.
+      for (const name of [
+        "arrivals.revisionsOf",
+        "core-pod.import.adapters",
+        "arrivals.accepting",
+        "matcher.of",
+        "core-pod.step.rebuild:import",
+      ])
+        assert.ok((first.spans.get(name)?.calls ?? 0) > 0, name);
       for (const name of [
         "arrivals.revisionsOf",
         "core-pod.import.adapters",
