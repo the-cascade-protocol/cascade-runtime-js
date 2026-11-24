@@ -127,6 +127,16 @@ export class VersionIndexes {
       if (key.split(" ").includes(version)) this.#merges.delete(key);
   }
 
+  /** How many listings, merges, notations and inverses are kept. */
+  get kept(): number {
+    return (
+      this.#listings.size +
+      this.#merges.size +
+      this.#notations.size +
+      this.#inverses.size
+    );
+  }
+
   /** Drops what was made of every version, which a next read makes again; a listing being kept finishes. */
   forgetAll(): void {
     this.#listings.clear();

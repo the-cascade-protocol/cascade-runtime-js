@@ -113,6 +113,10 @@ class Lazy<T> {
     return this.#made;
   }
 
+  get isMade(): boolean {
+    return this.#made !== undefined;
+  }
+
   forget(): void {
     this.#made = undefined;
   }
@@ -239,6 +243,16 @@ export class Tables {
   /** Settles once every `start` and check begun so far has ended, whether it kept anything or failed; it starts none. */
   async idle(): Promise<void> {
     await Promise.allSettled([...this.#running, this.#queue]);
+  }
+
+  /** How many things read or worked out of the stored tables it keeps in memory; 0 after `release`. */
+  keptInMemory(): number {
+    return (
+      this.#indexes.kept +
+      [this.#references, this.#concepts, this.#kinds].filter(
+        (lazy) => lazy.isMade,
+      ).length
+    );
   }
 
   /**

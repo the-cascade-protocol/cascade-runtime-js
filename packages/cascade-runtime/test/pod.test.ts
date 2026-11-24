@@ -490,40 +490,47 @@ describe("Opening a pod · openPod()", () => {
   });
 
   describe("given pods in folders of their own, each opened and closed", () => {
-    /** The tables kept beside a folder once the release a last close starts has ended: after the copy it waits for. */
-    async function tablesAfterClose(parent: string): Promise<Tables> {
-      await settled(parent);
+    /** The folder's tables once the release the last close starts has ended: after every start and check they began. */
+    async function releasedTables(parent: string): Promise<Tables> {
+      const tables = await tablesBeside(parent);
+      await tables.idle();
       await new Promise((resolve) => setImmediate(resolve));
-      return tablesBeside(parent);
+      return tables;
     }
 
-    it("keeps no folder's tables once the last pod opened from it has closed, so a process that opens many folders keeps none of them", async () => {
-      const seen: Tables[] = [];
+    /** Reads what the tables answer, so that they keep something in memory. */
+    async function used(parent: string): Promise<Tables> {
+      const tables = await tablesBeside(parent);
+      await tables.held();
+      return tables;
+    }
+
+    it("keeps nothing of a folder's tables in memory once the last pod opened from it has closed, so a process that opens many folders does not grow with them", async () => {
       const parents = [0, 1, 2, 3].map((n) => join(pods, `released-${n}`));
       for (const parent of parents) {
         const pod = await openPod(join(parent, "pod"));
-        seen.push(await tablesBeside(parent));
+        assert.ok((await used(parent)).keptInMemory() > 0, "kept nothing");
         await pod.close();
       }
       for (const [at, parent] of parents.entries()) {
-        assert.ok(
-          !seen.includes(await tablesAfterClose(parent)),
-          `folder ${at} kept its tables`,
+        assert.equal(
+          (await releasedTables(parent)).keptInMemory(),
+          0,
+          `folder ${at} kept its tables in memory`,
         );
-        await settled(parent);
       }
     });
 
-    it("keeps a folder's tables while another pod opened from it is open", async () => {
+    it("keeps a folder's tables in memory while another pod opened from it is open, and lets go after the last close", async () => {
       const parent = join(pods, "released-shared");
       const first = await openPod(join(parent, "first"));
       const second = await openPod(join(parent, "second"));
-      const held = await tablesBeside(parent);
+      const held = await used(parent);
       await first.close();
-      assert.equal(await tablesAfterClose(parent), held);
+      assert.ok((await releasedTables(parent)).keptInMemory() > 0);
       await second.close();
-      assert.notEqual(await tablesAfterClose(parent), held);
-      await settled(parent);
+      assert.equal(await releasedTables(parent), held);
+      assert.equal(held.keptInMemory(), 0);
     });
 
     it("opens a pod again in the folder as it was, with the same answer to whether the tables changed", async () => {
@@ -535,12 +542,23 @@ describe("Opening a pod · openPod()", () => {
       const whileHeld = await again.opened;
       await again.close();
       await beside.close();
-      await tablesAfterClose(parent);
+      await releasedTables(parent);
       const reopened = await openPod(join(parent, "pod"));
       const afterRelease = await reopened.opened;
       await reopened.close();
-      await settled(parent);
       assert.deepEqual(afterRelease, whileHeld);
+    });
+
+    it("returns the same tables after a release, so a reopen makes none again and starts and checks nothing", async () => {
+      const parent = join(pods, "released-same");
+      const pod = await openPod(join(parent, "pod"));
+      const held = await tablesBeside(parent);
+      await pod.close();
+      await releasedTables(parent);
+      const reopened = await openPod(join(parent, "pod"));
+      assert.equal(await tablesBeside(parent), held);
+      await reopened.close();
+      assert.equal(await releasedTables(parent), held);
     });
 
     it("leaves tables an app still holds as they were, answering as they did", async () => {
@@ -549,9 +567,28 @@ describe("Opening a pod · openPod()", () => {
       const held = await tablesBeside(parent);
       const before = await held.held();
       await pod.close();
-      await tablesAfterClose(parent);
+      await releasedTables(parent);
       assert.deepEqual(await held.held(), before);
-      await settled(parent);
+    });
+
+    it("lands a write through tables an app still holds and a write by a pod reopened after the release, made together", async () => {
+      const parent = join(pods, "released-writes");
+      const first = await openPod(join(parent, "pod"));
+      const app = await tablesBeside(parent);
+      await first.close();
+      await releasedTables(parent);
+      const reopened = await openPod(join(parent, "pod"));
+      const podsTables = await tablesBeside(parent);
+      await Promise.all([
+        app.recordOpen("urn:test:app-pod", ["a"], "app"),
+        podsTables.recordOpen("urn:test:reopened-pod", ["b"], "reopened"),
+      ]);
+      await reopened.close();
+      const recorded = JSON.parse(
+        await readFile(join(parent, ".tables", "tables.json"), "utf8"),
+      ) as { pods: Record<string, string[]> };
+      assert.deepEqual(recorded.pods["urn:test:app-pod"], ["a"]);
+      assert.deepEqual(recorded.pods["urn:test:reopened-pod"], ["b"]);
     });
   });
 });

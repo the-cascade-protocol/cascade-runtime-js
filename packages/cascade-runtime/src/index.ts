@@ -128,8 +128,8 @@ function tablesFolder(pods: string): string {
 
 /**
  * Counts a pod opened from the folder's tables until the function returned is called. The call that ends the last
- * count lets go of the folder's tables once what they began in the background has ended, unless a pod is opened from
- * them again before then.
+ * count releases the folder's tables, which stay in `beside`, once what they began in the background has ended, unless
+ * a pod is opened from them again before then.
  */
 function holdTablesBeside(pods: string): () => void {
   const folder = tablesFolder(pods);
@@ -144,13 +144,11 @@ function holdTablesBeside(pods: string): () => void {
       return;
     }
     holding.delete(folder);
-    const kept = beside.get(folder);
-    void kept
+    void beside
+      .get(folder)
       ?.then(async (tables) => {
         await tables.idle();
-        if (holding.has(folder) || beside.get(folder) !== kept) return;
-        beside.delete(folder);
-        tables.release();
+        if (!holding.has(folder)) tables.release();
       })
       .catch(() => undefined);
   };
@@ -160,9 +158,10 @@ function holdTablesBeside(pods: string): () => void {
  * The tables an app keeps for the pods in the folder: `.tables/` in it, beside `.answers/`, copied whole from the
  * starter copies and checked against the feeds in the background when first asked for, unless `cascade-runtime.json`
  * turns `checkOnOpen` off; the first use answers with the tables held, and a later one with what the check kept. With a
- * `phase`, the copy and the check are waited for and reported. The same tables are returned while a pod `openPod`
- * opened from the folder is open; once the last has closed and the copy and the check have ended, a later call makes
- * the tables again from the store, which holds all they held.
+ * `phase`, the copy and the check are waited for and reported. The same tables are returned for the folder for as long
+ * as the process lives, and are never copied or checked again; once the last pod `openPod` opened from the folder has
+ * closed and the copy and the check have ended, they let go of what they read and worked out, which the next use reads
+ * again from the store.
  */
 export function tablesBeside(pods = "pods", phase?: Phase): Promise<Tables> {
   const folder = tablesFolder(pods);
