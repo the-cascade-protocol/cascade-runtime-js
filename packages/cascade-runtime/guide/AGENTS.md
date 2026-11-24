@@ -412,6 +412,9 @@ a column is a list, read it as its array. `ask` with a query of your own has no 
   and the lab's organization record and its name (`?lab`, `?labName`).
 - `pod/What everything is called`: every label.
 - `pod/What was seen more than once`: entries with more than one record, by place.
+- `pod/Which arrivals has the matcher not taken`: each import, entry session, connect and sync that brought a record
+  the matcher takes and that no matcher run is informed by (`?arrival`, `?started`, `?arrivalLabel`). The pod runs a
+  match for each at its next open and before its next import, connect, entry or `match()`, so an app has no need to ask.
 - `pod/Which file states each thing`: where each thing is stated.
 - `pod/Which files are out of place`: files the layout puts elsewhere.
 - `pod/Which reference versions are current`: the matcher's tables in use.
@@ -660,8 +663,11 @@ await confirmClaims(await bringIn(pickExport()));
 
 After the yes, `import` with `{ match: false }` only files, and claims nothing
 (`claimProfiles` names the profiles the person confirmed beforehand), so each profile is asked about alone: claim each
-`unclaimedProfiles` one with an About, then `match` the import's `activity`; `match()`
-rechecks the pod. Then offer each counting join of the matcher's, a pair at a
+`unclaimedProfiles` one with an About, then `match` the import's `activity`. A stop
+between the import and its `match` is made good by the pod: the next open, and the next
+`import`, `connect`, `enter` or `match()`, first match each arrival no matcher run took. `match()`
+with no argument is a recheck of the joins the pod holds: it takes no record of an arrival by itself,
+and it is the pod, before it, that matches the arrivals no run took. Then offer each counting join of the matcher's, a pair at a
 time, filing a Different over a pair the person says no to. `replayKit`, behind
 `npm run pod:load`, fills an empty folder with a kit's story on the tables of the
 folder it is in, for tests only.
@@ -673,7 +679,6 @@ const naming = await recordsBy("profile/Which records name it", "profile");
 for (const profile of filed?.unclaimedProfiles ?? [])
   if (await isMine(profile, naming)) await judged(about(pod, profile));
 if (filed?.activity) await pod.match(filed.activity);
-await pod.match();
 for (const records of (await machineJoins()).values())
   for (const [i, one] of records.entries())
     for (const other of records.slice(i + 1))
@@ -807,7 +812,17 @@ again then to show the newer answers. It rejects if that failed, and the pod
 stays open; the next open runs it again. A browser's pod drawn from its kept
 answers settles `opened` once a call opens it with the engine, or at `close()`.
 It waits on a timer, so under `mock.timers` it never settles until the timers
-are ticked. A pod in memory gets the package's starter copies.
+are ticked. Whatever the tables, that step also matches each arrival no matcher run
+was informed by, which a stop between an import and its `match` leaves (an import
+whose profiles no About claims has none to take, and waits for the claim): `opened`
+then settles with the files it wrote, and with nothing to adopt and nothing owed it
+settles undefined, the step one question answered from the pod's database. A pod with
+no database that holds the pod as it stands (a browser's, or a folder's whose `pod.db`
+is missing or stale) builds nothing to ask it when the tables did not change: `opened`
+settles undefined at once, and the arrivals are matched at the pod's next write or the
+first question that needs the build, which waits for them; a session that only looks,
+checks an entry, retitles or is answered from kept answers never pays for them. A pod
+closed before the step started is left as it was, and the next open takes them. A pod in memory gets the package's starter copies.
 
 What a page shows of the tables, the same `Tables` answers, in Node and in a
 browser (`appTables()`), as plain values: `held()`, each series with its

@@ -1521,7 +1521,15 @@ describe("The pod explorer in a browser · opening a node, the log's slider, a p
             (await tab.locator("#ins h1").textContent()) ?? "",
             new RegExp(`^Act ${hand} of`),
           );
-          const run = actOf(data, "cascade:MatcherRun");
+          // A run that finds nothing to file writes its act alone, and the first of them may be that.
+          const run = data.log.findIndex(
+            (each) =>
+              each.type === "cascade:MatcherRun" &&
+              each.wrote.some((index) =>
+                pathOf(index, data).startsWith("judgments/"),
+              ),
+          );
+          assert.ok(run >= 0, "a matcher run that wrote judgments");
           const row = data.log[run];
           assert.ok(row?.parent !== undefined, "a matcher run has a parent");
           await tab.locator(`#log .act[data-step="${run}"]`).click();

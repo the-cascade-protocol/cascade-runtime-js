@@ -161,7 +161,7 @@ Rows named `<scenario>-<dataset>/stage/<stage>`: where time goes inside one run 
 | `core-pod.import.adapters` | Reading the adapter that knows how to convert this kind of record. Sits inside `scenario.import`. |
 | `core-pod.import.documents` | Taking in the documents (notes, reports) that came with the record. Sits inside `scenario.import`. |
 | `core-pod.inputshash` | Working out a fingerprint of everything a result depends on, to know when it can be reused. |
-| `core-pod.matcherselect` | A question the 'same record' matcher puts to the pod's facts, as the matcher reads them. |
+| `core-pod.matcherselect` | A question put to the pod's facts as the 'same record' matcher reads them: the matcher's own, and the one that lists the arrivals it has not taken. |
 | `core-pod.matcherview` | Preparing the pod's facts for the 'same record' matcher. |
 | `core-pod.databaseanswers` | Checking whether the saved database holds the pod as it stands now, so it can answer in place of a rebuild. |
 | `core-pod.rebuild.writeall` | Writing every rebuilt file out to the pod. |

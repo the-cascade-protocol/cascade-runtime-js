@@ -98,7 +98,10 @@ export interface ImportOptions extends ConvertBudget {
    * `profile/What needs review` with `ownerAbout`. An import claims no profile by itself, and `true` is refused.
    */
   readonly claimProfiles?: readonly string[];
-  /** Runs the matcher on the import; on unless false. */
+  /**
+   * Runs the matcher on the import; on unless false. An import stopped before its match, or made with this false and
+   * never matched, is matched at the pod's next open, and before the next import, connect, entry or `match()`.
+   */
   readonly match?: boolean;
   /** Told as each part of the import begins, with what is done so far; the import goes on once what it returns settles. */
   readonly onProgress?: (progress: ImportProgress) => void | Promise<void>;
@@ -165,11 +168,15 @@ export interface Pod {
   readonly owner: string;
   /**
    * The open that gives the pod the app's newer tables (O1, O2), which runs after `openPod` returns, as the pod's first
-   * step: it settles once the step and the rebuild after it have run, to undefined when the tables had not changed, and
-   * rejects as a step that fails rejects its call. The step starts once the pod has no call queued or running at a turn
+   * step: it settles once the step and the rebuild after it have run, to undefined when the tables had not changed and no
+   * match was owed, and rejects as a step that fails rejects its call. The step starts once the pod has no call queued or running at a turn
    * of the timers, so the calls made as `openPod` returns, and those made from their answers, run before it, on the pod
-   * as it was opened; calls that keep the queue busy hold it back for at most 2 s of them, and `close` starts it. Once it
-   * runs, a question by name is answered from `pod.db`, as during any step, or else with the rows kept for the pod as it
+   * as it was opened; calls that keep the queue busy hold it back for at most 2 s of them, and `close` starts it. The
+   * step also matches each arrival no matcher run is informed by (`pod/Which arrivals has the matcher not taken`): an
+   * import, entry session, connect or sync a stop left unmatched, each as a step of its own, whatever the tables. So with
+   * the tables unchanged `opened` settles to undefined when nothing is owed, the step being one question answered from
+   * the pod's database, and otherwise with the files the matches wrote; a `close` that comes first runs the open for
+   * changed tables and leaves the matches for the next open. Once it runs, a question by name is answered from `pod.db`, as during any step, or else with the rows kept for the pod as it
    * was opened, where they were kept,
    * `unheldTableVersions` with the versions read over the pod as it was opened, and any other call, `close` too, waits
    * for the step. A browser's pod drawn from its kept answers
@@ -213,6 +220,11 @@ export interface Pod {
   judge(turtle: string): Promise<Done>;
   /** Why `judge` would fail on the Turtle before the pod's rules are asked, or nothing, writing nothing. */
   checkJudgment(turtle: string): Promise<string | undefined>;
+  /**
+   * A matcher run taking the import, entry session or connect `activity` made, or, with none, a recheck of the pod's
+   * joins (M7), which takes no record an arrival brought by itself. Before either, the pod matches each arrival no run
+   * took, as a step of its own, so a stop between an arrival and its run is made good here, as at the next open.
+   */
   match(activity?: string): Promise<Done>;
   /**
    * The named question's rows. One with a `.sql` beside its `.rq`, under the app's lens, is answered from the database
@@ -828,13 +840,15 @@ class OpenPod implements Pod {
         if (this.#waiting !== waiting) return;
         this.#waiting = undefined;
         clearTimeout(waiting.ceiling);
-        const unheld = this.#next(() => core.unheldTableVersions());
-        unheld.catch(() => undefined);
-        this.#unheldBefore = unheld;
+        if (adopting.changed) {
+          const unheld = this.#next(() => core.unheldTableVersions());
+          unheld.catch(() => undefined);
+          this.#unheldBefore = unheld;
+        }
         settle(
           this.#next(async () => {
-            const opened = await adopting.open();
-            await core.revision();
+            const opened = await adopting.open(this.#closing);
+            if (opened !== undefined) await core.revision();
             return opened;
           }),
         );
@@ -922,7 +936,7 @@ class OpenPod implements Pod {
         return connected;
       return {
         ...connected,
-        matched: await this.#core.match(connected.activity),
+        matched: await this.#core.matchWithTheOwed(connected.activity),
       };
     });
   }
@@ -947,7 +961,7 @@ class OpenPod implements Pod {
         return entered;
       return {
         ...entered,
-        matched: await this.#core.match(entered.activity),
+        matched: await this.#core.matchWithTheOwed(entered.activity),
       };
     });
   }
@@ -986,7 +1000,7 @@ class OpenPod implements Pod {
   match(activity?: string): Promise<Done> {
     this.#writing();
     return this.#next(async () => {
-      const matched = await this.#core.match(activity);
+      const matched = await this.#core.matchWithTheOwed(activity);
       await this.#keptDatabase();
       return matched;
     });
@@ -1406,7 +1420,9 @@ class OpenPod implements Pod {
         await onProgress?.({ part: "judging", done: index + 1, of });
       }
       const matched = matching
-        ? await timedAside("pod.match", () => this.#core.match(activity))
+        ? await timedAside("pod.match", () =>
+            this.#core.matchWithTheOwed(activity),
+          )
         : undefined;
       return { filed, activity, matched, claimedProfiles };
     });
@@ -1988,9 +2004,13 @@ export async function openPodWith(
 }
 
 /**
- * When the app's tables changed since the pod was last opened, or it never was, the open that gives it them (O1, O2),
- * to run as the pod's first step, and the versions of a kind it was last opened with, which its kept answers are keyed
- * by until that step has run.
+ * The pod's first step, which runs after `openPod` returns: when the app's tables changed since the pod was last
+ * opened, or it never was, the open that gives it them (O1, O2), with the versions of a kind it was last opened with,
+ * which its kept answers are keyed by until that step has run; and, whichever the tables, a matcher run for each
+ * arrival no run is informed by, which a stop between an arrival and its run leaves. With nothing to adopt the step is
+ * one query, asked of the database beside the pod where it holds the pod as it stands; where none does, no build is
+ * made or read back to ask it, and it is asked at the pod's next step or the first time a question needs the build, so
+ * a session that only looks, checks an entry or retitles never pays for it.
  */
 async function tablesChanged(
   tables: Tables,
@@ -1998,24 +2018,41 @@ async function tablesChanged(
   core: CorePod,
   address: string,
   name: string,
-): Promise<Adopting | undefined> {
+): Promise<Adopting> {
   const current = shipped(references);
   const before = await tables.openedWith(address);
-  if (
+  const changed = !(
     before !== undefined &&
     before.length === current.length &&
     before.every((version, index) => version === current[index])
-  ) {
-    await tables.recordName(address, name);
-    return undefined;
-  }
+  );
+  if (!changed) await tables.recordName(address, name);
   return {
-    before: before === undefined ? undefined : ofKinds(references, before),
-    open: async () => {
-      const performed = await core.open(references);
-      if (performed.refused === undefined)
-        await tables.recordOpen(address, current, name);
-      return { ...performed, unheld: performed.unheld ?? [] };
+    changed,
+    before:
+      !changed || before === undefined
+        ? undefined
+        : ofKinds(references, before),
+    open: async (closing) => {
+      let opened: Opened | undefined;
+      if (changed) {
+        const performed = await core.open(references);
+        if (performed.refused === undefined)
+          await tables.recordOpen(address, current, name);
+        opened = { ...performed, unheld: performed.unheld ?? [] };
+      }
+      // A pod closed before its first step ran is not matched at its close: the next open finds the arrivals still owed.
+      if (closing || opened?.refused !== undefined) return opened;
+      const owed = changed
+        ? await core.matchTheOwed()
+        : await core.matchTheOwedWithoutABuild();
+      if (owed.wrote.length === 0 && owed.refused === undefined) return opened;
+      return {
+        unheld: [],
+        ...opened,
+        wrote: [...(opened?.wrote ?? []), ...owed.wrote],
+        ...(owed.refused === undefined ? {} : { refused: owed.refused }),
+      };
     },
   };
 }
@@ -2041,9 +2078,12 @@ interface Waiting {
   readonly start: () => void;
 }
 
-/** The open an `OpenPod` runs as its first step, giving the pod the app's newer tables. */
+/** What an `OpenPod` runs as its first step: the open that gives the pod the app's newer tables, and the matches it is owed. */
 interface Adopting {
-  /** The versions of a kind the pod was last opened with; none for a pod no app's tables record. */
+  /** Whether the app's tables changed since the pod was last opened, so that the step is the open that adopts them. */
+  readonly changed: boolean;
+  /** The versions of a kind the pod was last opened with; none for a pod no app's tables record, or whose tables did not change. */
   readonly before: readonly string[] | undefined;
-  readonly open: () => Promise<Opened>;
+  /** Runs the step, which asks for nothing owed when `closing`; none when the tables had not changed and nothing was owed. */
+  readonly open: (closing: boolean) => Promise<Opened | undefined>;
 }

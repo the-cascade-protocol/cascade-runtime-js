@@ -273,20 +273,21 @@ describe("Timing an import by mechanism · importBench(), syntheticPull(), probi
           claimProfiles: await profileOf("first"),
         });
         await pod.close();
-        pod = await openPod(folder);
-        try {
+        // From the open: its first step reads the pod too, once, and the import after it builds nothing more.
+        const second = await profileOf("second");
+        const { result, seen } = await probing(async () => {
+          pod = await openPod(folder);
           for (let refused = 0; refused < refusals; refused++) {
             const done = await pod.import(
               new Map([["junk.json", new TextEncoder().encode("{not json")]]),
             );
             assert.match(done.refused ?? "", /no importer/);
           }
-          const second = await profileOf("second");
-          const { result, seen } = await probing(() =>
-            pod.import(syntheticPull(40, { hospital: "second" }), {
-              claimProfiles: second,
-            }),
-          );
+          return pod.import(syntheticPull(40, { hospital: "second" }), {
+            claimProfiles: second,
+          });
+        });
+        try {
           return {
             refused: result.refused,
             wrote: result.wrote.length,
@@ -309,7 +310,11 @@ describe("Timing an import by mechanism · importBench(), syntheticPull(), probi
       assert.equal(control.refused, undefined);
       assert.equal(refused.refused, undefined);
       assert.equal(control.built, 1);
-      assert.equal(refused.built, 0, "built by the refused import's read");
+      assert.equal(
+        refused.built,
+        1,
+        "built once for the open, the refused imports and the good one",
+      );
       assert.ok(control.rows.length > 0);
       assert.equal(refused.wrote, control.wrote);
       assert.equal(refused.rows.length, control.rows.length);

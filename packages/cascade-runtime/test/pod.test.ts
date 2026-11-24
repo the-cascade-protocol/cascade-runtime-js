@@ -922,6 +922,172 @@ describe("Importing a health export · pod.import()", () => {
       assert.equal(imported.matched, undefined);
       assert.equal(matched.refused, undefined);
     });
+
+    it("has that run write its act, informed by the import, when the import's records need no judgment", async () => {
+      assert.equal(matched.wrote.length, 1);
+      assert.deepEqual(
+        await select(
+          waiting,
+          `SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy <${imported.activity ?? ""}> }`,
+        ).then((rows) => rows.length),
+        1,
+      );
+    });
+  });
+
+  describe("given an import made with `match: false` and a pod stopped before its match", () => {
+    const SAMES = `SELECT ?judgment WHERE { ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same }`;
+
+    /** Alex's x-e10 imported without its match, its patients claimed, and the pod closed with the match not made. */
+    async function stopped(name: string): Promise<string> {
+      const folder = join(pods, name);
+      const pod = await openPodWith(kept, folder);
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+      } finally {
+        await pod.close();
+      }
+      return folder;
+    }
+
+    /** What the matcher joined of x-e10 in a session that matched it. */
+    async function matchedInSession(name: string): Promise<number> {
+      const pod = await openPodWith(kept, join(pods, name));
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        assert.ok(done.activity);
+        await pod.match(done.activity);
+        return (await select(pod, SAMES)).length;
+      } finally {
+        await pod.close();
+      }
+    }
+
+    it("matches it when the pod is opened again, as it would have been matched", async () => {
+      const wanted = await matchedInSession("matched-in-session");
+      assert.ok(wanted > 0);
+      const pod = await openPodWith(
+        kept,
+        await stopped("stopped-before-match"),
+      );
+      try {
+        const opened = await pod.opened;
+        assert.equal(opened?.refused, undefined);
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes it at `pod.match()` with no activity, in the session that made it", async () => {
+      const wanted = await matchedInSession("matched-in-session-for-recheck");
+      const pod = await openPodWith(kept, join(pods, "rechecked-in-session"));
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        assert.equal((await select(pod, SAMES)).length, 0);
+        await pod.match();
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes it before the next import's own match", async () => {
+      const bothMatched = async (name: string, matching: boolean) => {
+        const pod = await openPodWith(kept, join(pods, name));
+        try {
+          const first = await pod.import(exported("x-e10"), { match: false });
+          for (const profile of first.unclaimedProfiles)
+            await pod.judge(about(pod, profile));
+          if (matching && first.activity) await pod.match(first.activity);
+          const later = await pod.import(exported("x-e4"), {
+            claimProfiles: await Promise.all(
+              ["J1", "J2"].map((judgment) => profileOf(judgment)),
+            ),
+          });
+          assert.equal(later.refused, undefined);
+          return (await select(pod, SAMES)).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      const wanted = await bothMatched("both-matched", true);
+      assert.ok(wanted > 0);
+      assert.equal(await bothMatched("first-owed", false), wanted);
+    });
+
+    it("leaves a pod whose every import was matched opened with no step run", async () => {
+      const at = join(pods, "every-import-matched");
+      await cp((await alexPod()).folder, at, { recursive: true });
+      const { result, seen } = await probing(async () => {
+        const pod = await openPodWith(kept, at);
+        try {
+          return await pod.opened;
+        } finally {
+          await pod.close();
+        }
+      });
+      assert.equal(result, undefined);
+      const spans = [...seen.spans.keys()];
+      assert.deepEqual(
+        spans.filter(
+          (span) => span === "matcher.of" || span.startsWith("core-pod.step."),
+        ),
+        [],
+        spans.join(", "),
+      );
+    });
+
+    it("reads no build back and builds none for a session that opens a pod with no database and asks what it kept an answer to", async () => {
+      const at = join(pods, "kept-answer-only");
+      await cp((await alexPod()).folder, at, { recursive: true });
+      const question = "pod/My active allergies";
+      const first = await openPodWith(kept, at);
+      let wanted: Row[];
+      try {
+        wanted = await first.ask(question);
+      } finally {
+        await first.close();
+      }
+      const { result, seen } = await probing(async () => {
+        const pod = await openPodWith(kept, at);
+        try {
+          await pod.opened;
+          return await pod.ask(question);
+        } finally {
+          await pod.close();
+        }
+      });
+      assert.deepEqual(result, wanted);
+      const spans = [...seen.spans.keys()];
+      assert.deepEqual(
+        spans.filter(
+          (span) =>
+            span === "matcher.of" ||
+            span === "core-pod.matcherSelect" ||
+            span.startsWith("core-pod.step.") ||
+            /^kept\.(readBack|whole)/.test(span),
+        ),
+        [],
+        spans.join(", "),
+      );
+    });
+
+    it("leaves what a stop left owed to the first step or question that needs the build, and `opened` settles with none of it", async () => {
+      const pod = await openPodWith(kept, await stopped("stopped-first-step"));
+      try {
+        assert.equal(await pod.opened, undefined);
+        assert.ok((await select(pod, SAMES)).length > 0);
+      } finally {
+        await pod.close();
+      }
+    });
   });
 
   describe("with `timeBudgetSeconds` or `memoryBudgetMiB`, the limits of a conversion", () => {
@@ -1148,11 +1314,11 @@ describe("Recording a hospital connection · pod.connect()", () => {
     assert.ok(first.wrote.length > 0);
   });
 
-  it("runs the matcher at once, which writes only when the same hospital connects again from a new address", () => {
+  it("runs the matcher at once, which writes its act alone until the same hospital connects again from a new address", () => {
     assert.equal(first.matched?.refused, undefined);
-    assert.deepEqual(first.matched?.wrote, []);
+    assert.equal(first.matched?.wrote.length, 1);
     assert.equal(moved.matched?.refused, undefined);
-    assert.ok(moved.matched?.wrote.length);
+    assert.ok((moved.matched?.wrote.length ?? 0) > 1);
   });
 });
 
@@ -3167,6 +3333,8 @@ describe("Opening a pod again · openPod()", () => {
           first,
           "0b6f3c1e-2d4a-4e8b-9c7f-1a2b3c4d5e6f",
         );
+        // The entry's match is made, so the reopened pod has no match owed to write an act before the next one.
+        await first.match();
         head1 = first.head;
       } finally {
         await first.close();
