@@ -186,10 +186,13 @@ jobs:
       - if: ${{ github.event_name == 'pull_request' }}
         run: python3 -m pip install rdflib==7.6.0
       # Off a pull request: checks the vocabulary and the adapters out beside this repository, and runs the conformance
-      # command on them once, on the WebAssembly build.
+      # command on them once, on the WebAssembly build: compatibility.json's host is on the native build unless told
+      # otherwise, so this step tells it.
       - id: start
         if: ${{ github.event_name != 'pull_request' }}
         uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
+        env:
+          CASCADE_OXIGRAPH: wasm
       - name: The report the conformance command wrote
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         shell: bash

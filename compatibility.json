@@ -3,8 +3,8 @@
   "host": [
     {
       "name": "node",
-      "setup": ["npm", "ci"],
-      "command": ["npm", "run", "--silent", "conformance", "--"]
+      "setup": ["node", "scripts/compatibility-host.mjs", "setup"],
+      "command": ["node", "scripts/compatibility-host.mjs", "conformance"]
     }
   ]
 }
