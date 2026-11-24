@@ -105,6 +105,11 @@ export const EVERY_FINDING = { findings: true, census: true } as const;
 
 export interface Conversion {
   readonly graph: Uint8Array;
+  /**
+   * Whether the adapter accepts the document: what `LoadedAdapter.accepts` answers for it. A document it does not accept
+   * is converted all the same. Absent where the adapter names no detect query.
+   */
+  readonly detected?: boolean;
   /** The findings the convert asked for; absent where it asked for none, or the graph went unvalidated. */
   readonly findings?: Uint8Array;
   /** Set when the adapter names vocabulary files and was loaded with none, so the graph went unvalidated. */
