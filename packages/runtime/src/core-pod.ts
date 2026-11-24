@@ -724,7 +724,7 @@ export class CorePod {
    * the matcher's view.
    */
   async dataset(lens: string): Promise<Union> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
     return this.#datasetAsItStands(lens);
   }
 
@@ -1578,14 +1578,18 @@ export class CorePod {
     return this.#arrivalsNotTaken();
   }
 
-  /** `arrivalsNotTaken`, which does not first ask what is owed: the run of what is owed asks it so. */
-  async #arrivalsNotTaken(): Promise<string[]> {
+  /**
+   * `arrivalsNotTaken`, which does not first ask what is owed: the run of what is owed asks it so. `forRead` is for the
+   * run a read of the pod's dataset triggered, which builds the pod as that read does.
+   */
+  async #arrivalsNotTaken(forRead = false): Promise<string[]> {
     const { query } = await this.#notTakenAsked();
     const answered = await this.#arrivalsFromDatabase();
     if (answered !== undefined) return answered;
     const { build, besidePod } = this.#options;
     // The first read of a pod builds it as a read does, which keeps the build beside the pod as it keeps the database.
     if (
+      forRead &&
       this.#built === undefined &&
       build?.lens === MATCHER_LENS &&
       besidePod !== undefined &&
@@ -1661,12 +1665,12 @@ export class CorePod {
    * asks again. A trigger that comes while the matches are made waits for them. What fails here does not fail the step
    * or read that triggered it, which goes on over the pod as it stands.
    */
-  async #askedWhatIsOwed(): Promise<void> {
+  async #askedWhatIsOwed(forRead = false): Promise<void> {
     if (this.#performing) return;
     if (this.#owedRun === undefined) {
       if (!this.#owedLeft) return;
       this.#owedLeft = false;
-      const run = this.#matchedWhatIsOwed().finally(() => {
+      const run = this.#matchedWhatIsOwed(forRead).finally(() => {
         if (this.#owedRun === run) this.#owedRun = undefined;
       });
       this.#owedRun = run;
@@ -1675,9 +1679,13 @@ export class CorePod {
   }
 
   /** The matches the pod is owed, made without asking again; a failure leaves the check for the next trigger. */
-  async #matchedWhatIsOwed(): Promise<void> {
+  async #matchedWhatIsOwed(forRead: boolean): Promise<void> {
     try {
-      await this.#matchedEach(await this.#arrivalsNotTaken(), undefined, false);
+      await this.#matchedEach(
+        await this.#arrivalsNotTaken(forRead),
+        undefined,
+        false,
+      );
     } catch {
       this.#owedLeft = true;
     }

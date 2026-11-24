@@ -163,11 +163,14 @@ describe("Keeping an open pod's answers current · pod.ask()", () => {
         });
         return rows.map(({ line = "" }) => line).sort();
       };
-      /** What a build of the whole pod holds, read from a copy of its folder opened afresh. */
+      /**
+       * What a build of the whole pod holds, read from a copy of its folder opened afresh, which takes in no tables and
+       * makes no match: the copy has the imports no run was informed by, which a pod opened to be read would match first.
+       */
       const builtWhole = async (step: string): Promise<string[]> => {
         const copy = join(scratch, `whole-${step}`);
         await cp(folder, copy, { recursive: true });
-        const whole = await openPodWith(parts, copy);
+        const whole = await openPodWith(parts, copy, { adopt: false });
         try {
           return await everything(whole);
         } finally {
