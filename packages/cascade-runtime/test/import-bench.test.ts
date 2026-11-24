@@ -251,11 +251,12 @@ describe("Timing an import by mechanism · importBench(), syntheticPull(), probi
       );
     });
 
-    it("reports the time of each close, the pod's database built whole at the first and kept current by the import's two steps after it", () => {
+    it("reports the time of each close, the pod's database built whole by the first import, at neither close, and kept current by the second import's two steps", () => {
       const calls = (spans: Measured["spans"] | undefined, name: string) =>
         spans?.find((span) => span.name === name)?.calls ?? 0;
       const [before, after] = reopened.closes ?? [];
-      assert.equal(calls(before?.spans, "core-pod.keepDatabase.whole"), 1);
+      assert.equal(calls(before?.spans, "core-pod.keepDatabase.whole"), 0);
+      assert.equal(calls(reopened.spans, "core-pod.keepDatabase.whole"), 0);
       assert.equal(calls(reopened.spans, "core-pod.step.database"), 2);
       assert.equal(calls(after?.spans, "core-pod.keepDatabase.whole"), 0);
       assert.match(tableOf(reopened), /close before the import: [\d.]+ ms/);

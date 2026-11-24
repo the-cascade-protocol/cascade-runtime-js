@@ -665,6 +665,8 @@ export class CorePod {
   #databaseOpened: PodDatabase | undefined;
   /** The kept build the database beside the pod holds as it stands, under `#builtHash`; none when it may hold another. */
   #databaseHolds: KeptBuild | undefined;
+  /** The kept build a build of the database was last tried for outside `keepBuild`, so that a question that finds none tries it once per build. */
+  #databaseTriedFor: KeptBuild | undefined;
   /**
    * The database beside the pod when it holds the pod as the last step left it, or as it was opened: its ledger names
    * the hash of what a build of the pod as it stands reads (S10). Found before the first step or question that needs
@@ -990,11 +992,17 @@ export class CorePod {
   async #keepDatabase(
     built: KeptBuild,
     dumped: () => Promise<Uint8Array>,
-  ): Promise<void> {
+  ): Promise<PodDatabase | undefined> {
     const hash = this.#builtHash;
-    if (hash === undefined || this.#built !== built) return;
+    if (hash === undefined || this.#built !== built) return undefined;
     const database = await this.#openDatabase(true);
-    if (database === undefined) return;
+    if (database === undefined) {
+      if (this.keepsDatabase && !this.#databaseClosed)
+        await timedAside("core-pod.keepDatabase.failed", () =>
+          Promise.resolve(),
+        );
+      return undefined;
+    }
     if (database.fingerprint !== hash) {
       this.#databaseHolds = undefined;
       try {
@@ -1003,10 +1011,55 @@ export class CorePod {
           database.builtWhole(dump, built.union.graphs, hash),
         );
       } catch {
-        return;
+        await timedAside("core-pod.keepDatabase.failed", () =>
+          Promise.resolve(),
+        );
+        return undefined;
       }
     }
     this.#databaseHolds = built;
+    return database;
+  }
+
+  /**
+   * Builds the database beside the pod whole from the build as it stands, when its ledger names another hash than the
+   * build's or it was never built, and answers by it from then on: for where the pod's content is settled (the end of
+   * an import that matches, of `match`), so that the questions asked next are answered from it rather than from a store,
+   * and `keepBuild` at close has none to build. A failure leaves it to be built whole at `keepBuild`, and the
+   * questions to the store. Whether the database answers now.
+   */
+  async keptDatabase(): Promise<boolean> {
+    await this.#settle();
+    if (!this.keepsDatabase || this.#databaseClosed) return false;
+    await this.#putBackMatcherView();
+    await this.#withBuilt();
+    const built = this.#built;
+    if (built === undefined) return false;
+    this.#databaseTriedFor = built;
+    const database = await timedAside("core-pod.keepDatabase", () =>
+      this.#keepDatabase(built, () => built.union.store.dump()),
+    );
+    if (database === undefined) return false;
+    this.#databaseAnswers = Promise.resolve(database);
+    return true;
+  }
+
+  /**
+   * `keptDatabase` for the first question that finds no database holding the pod, a pod imported into without
+   * matching and never matched, or opened with none or a stale one: at most once for each kept build, so a build that
+   * failed is not tried at every question. Only where the questions are asked in order with the steps, as the build
+   * is changed by neither. Whether the database answers now.
+   */
+  async keptDatabaseForQuestion(lens: string): Promise<boolean> {
+    if (lens !== this.#options.build?.lens || !this.keepsDatabase) return false;
+    await this.#settle();
+    // A pod opened and not yet stepped holds no build: the kept one is read back, else the pod is built, as the store would.
+    if (this.#built === undefined)
+      await this.#readBack().catch(() => undefined);
+    if (this.#built === undefined) await this.dataset(lens);
+    const built = this.#built;
+    if (built === undefined || this.#databaseTriedFor === built) return false;
+    return this.keptDatabase();
   }
 
   /**
