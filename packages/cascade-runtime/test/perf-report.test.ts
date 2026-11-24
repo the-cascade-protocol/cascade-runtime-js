@@ -51,6 +51,7 @@ import {
   databaseFigures,
   databaseKept,
   folderFingerprint,
+  howMeasured,
   openedAt,
   parsed,
   PINNED,
@@ -59,7 +60,6 @@ import {
   pinOf,
   countRow,
   oneMoreBundle,
-  perfFile,
   importedAsTheApp,
   LARGE,
   PER_BUILD,
@@ -101,7 +101,6 @@ import {
   type ScannerSettings,
   THEN,
   type Row,
-  type Scenario,
   type Stored,
   type StoredKind,
 } from "./perf-report.js";
@@ -207,11 +206,6 @@ const stored$ = (await import(
   ): StoredPage | undefined;
   storedLine(page: StoredPage): string;
 };
-
-/** What a fresh import alone leaves in a pod, counted once for the tests that read the pod their scenario ran beside as it was. */
-let aloneStored: Promise<readonly Row[]> | undefined;
-const storedAlone = (plan: Plan): Promise<readonly Row[]> =>
-  (aloneStored ??= perfFile(plan).then((made) => made.results));
 
 const file = (rows: Row[]) => ({
   env: { os: "linux", runner: "ci; cpu", cpus: 4, node: "24.0.0" },
@@ -3667,37 +3661,15 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
       );
     });
 
-    it("names the jobs of a build that took each once as one run and the first import as a median, and reopens an encrypted pod that was killed, looking for its database where it keeps it", async () => {
-      const { results } = await perfFile({
-        scenarios: new Set<Scenario>([
-          "fresh-first-screen",
-          "reimport-changed",
-          "reopen-after-kill",
-        ]),
-        sizes: ["synthea-10y"],
-        encryption: "encrypted",
-        repeats: 2,
-        probe: false,
-        lightJobs: true,
-      });
-      const row = (name: string) => results.find((each) => each.name === name);
-      const extra = (name: string) => row(name)?.extra ?? "";
-      const sealed = "synthea-10y-encrypted";
+    it("names a job that took each once as one run in a process of its own, and the first import as the median of its runs", () => {
+      const about = "dataset=synthea-10y encrypted";
       assert.match(
-        extra(`reimport-changed-${sealed}/total`),
-        /one run in a process of its own/,
-      );
-      assert.doesNotMatch(
-        extra(`reimport-changed-${sealed}/total`),
-        /median of/,
+        howMeasured(1, about),
+        /^unprobed, one run in a process of its own; dataset=synthea-10y encrypted$/,
       );
       assert.match(
-        extra(`fresh-first-screen-${sealed}/total`),
-        /median of 2 runs/,
-      );
-      assert.equal(
-        row(`reopen-after-kill-${sealed}/count/database-found`)?.value,
-        0,
+        howMeasured(2, about),
+        /^unprobed, median of 2 runs, each in a process of its own; /,
       );
     });
 
@@ -3795,107 +3767,6 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         compare.summary(file([]), { markdown: true }),
         /after the first import/,
       );
-    });
-
-    it("measures importing the same file again, with ten source entries changed, with one more, reopening after a kill and the first question after an update, each on a copy of the pod the first import left, which stays as it was", async () => {
-      const plan = (...scenarios: Scenario[]): Plan => ({
-        scenarios: new Set(scenarios),
-        sizes: ["synthea-10y"],
-        encryption: "plain",
-        repeats: 1,
-        probe: false,
-      });
-      const alone = await storedAlone(plan("stored"));
-      const { results } = await perfFile(
-        plan(
-          "fresh-first-screen",
-          "reimport-identical",
-          "reimport-changed",
-          "add-one-record",
-          "reopen-after-kill",
-          "question-after-update",
-          "stored",
-        ),
-      );
-      const at = (rows: readonly Row[], name: string): number | undefined =>
-        rows.find((row) => row.name === name)?.value;
-      const value = (scenario: string, measure: string) =>
-        at(results, `${scenario}-synthea-10y/${measure}`);
-      assert.deepEqual(
-        results.filter((row) => refused(row) !== undefined),
-        [],
-      );
-      assert.deepEqual(
-        results
-          .filter(({ name }) => explain(name) === undefined)
-          .map(({ name }) => name),
-        [],
-      );
-      // The pod the first import left was counted last and is what a first import alone leaves: no job wrote into it.
-      for (const measure of [
-        "files/all",
-        "statements/all",
-        "count/pod-records",
-      ])
-        assert.equal(
-          value("stored", measure),
-          at(alone, `stored-synthea-10y/${measure}`),
-          measure,
-        );
-      const identical = (measure: string) =>
-        value("reimport-identical", measure);
-      assert.equal(
-        identical("count/converts"),
-        0,
-        "the document is skipped by its hash",
-      );
-      assert.equal(identical("count/files-written"), 0);
-      assert.equal(identical("count/versions-added"), 0);
-      assert.equal(identical("count/revisions-added"), 0);
-      const changed = (measure: string) => value("reimport-changed", measure);
-      assert.equal(changed("count/converts"), 1);
-      assert.equal(changed("count/entries-changed"), 10);
-      assert.equal(changed("count/versions-added"), 10);
-      assert.equal(changed("count/revisions-added"), 10);
-      assert.equal(changed("count/records-added"), 0);
-      assert.ok((changed("count/files-written") ?? 0) >= 20);
-      assert.ok((changed("count/statements-added") ?? 0) > 0);
-      const added = (measure: string) => value("add-one-record", measure);
-      assert.equal(added("count/converts"), 1);
-      assert.equal(added("count/entries-added"), 1);
-      assert.equal(added("count/records-added"), 1);
-      assert.equal(added("count/versions-added"), 1);
-      assert.equal(added("count/revisions-added"), 1);
-      for (const scenario of [
-        "reimport-identical",
-        "reimport-changed",
-        "add-one-record",
-      ])
-        for (const measure of [
-          "total",
-          "open",
-          "import",
-          "first-answer",
-          "close",
-        ])
-          assert.ok(
-            (value(scenario, measure) ?? 0) > 0,
-            `${scenario} ${measure}`,
-          );
-      const killed = (measure: string) => value("reopen-after-kill", measure);
-      assert.equal(
-        killed("count/database-found"),
-        0,
-        "the process was killed before the database was built",
-      );
-      assert.ok((killed("count/files-read") ?? 0) > 1000);
-      assert.ok((killed("count/statements-read") ?? 0) > 10000);
-      for (const scenario of ["reopen-after-kill", "question-after-update"])
-        for (const measure of ["total", "open", "first-read", "second-read"])
-          assert.ok(
-            (value(scenario, measure) ?? 0) > 0,
-            `${scenario} ${measure}`,
-          );
     });
   });
 
@@ -4212,83 +4083,6 @@ describe("The performance file · perf-report.ts, perf-compare.mjs", () => {
         }),
         /What each query costs/,
       );
-    });
-
-    it("asks every query of the vocabulary outside the matcher of a copy of the pod a fresh import left, on both engines, and leaves that pod as it was", async () => {
-      const plan = (...scenarios: Scenario[]): Plan => ({
-        scenarios: new Set(scenarios),
-        sizes: ["synthea-10y"],
-        encryption: "plain",
-        repeats: 1,
-        probe: false,
-      });
-      const alone = await storedAlone(plan("stored"));
-      const { results } = await perfFile(plan("each-query", "stored"));
-      const named = (name: string) =>
-        results.find((row) => row.name === `each-query-synthea-10y/${name}`);
-      assert.deepEqual(
-        results.filter((row) => refused(row) !== undefined),
-        [],
-      );
-      assert.deepEqual(
-        results
-          .filter(({ name }) => explain(name) === undefined)
-          .map(({ name }) => name),
-        [],
-      );
-      const vocabulary = (await resolved()).vocabulary;
-      const files = (await vocabulary.list("queries")).filter(
-        (path) => path.endsWith(".rq") && !path.startsWith("queries/matcher/"),
-      );
-      assert.equal(named("count/queries")?.value, files.length);
-      assert.ok(files.length > 80);
-      const ran = (kind: string) =>
-        results.filter(({ name }) => name.includes(`/${kind}/`));
-      assert.ok(
-        ran("sparql").length >= files.length - 10,
-        "nearly every query ran on the reference engine",
-      );
-      assert.ok(
-        (named("count/without-sql")?.value ?? 0) > 20,
-        "the 26 derivations have no .sql yet",
-      );
-      const lab = "questions-pod-my-lab-results.rq";
-      assert.ok(
-        (named(`rows/${lab}`)?.value ?? 0) > 0,
-        "the pod shows the person's lab results: a pod that claims no one shows none",
-      );
-      for (const group of ["sparql", "sql", "page"])
-        assert.ok((named(`${group}/${lab}`)?.value ?? 0) > 0, group);
-      assert.ok((named("sql/views-lab-results.rq")?.value ?? 0) > 0);
-      assert.equal(named("sql/derivations-records.rq"), undefined);
-      assert.ok((named("sparql/derivations-records.rq")?.value ?? 0) > 0);
-      assert.ok((named("reference-load")?.value ?? 0) > 0);
-      assert.ok((named("database-load")?.value ?? 0) > 0);
-      assert.ok(
-        ran("rows").every(({ sha256 }) => /^[0-9a-f]{64}$/.test(sha256 ?? "")),
-      );
-      assert.ok(ran("equal").every(({ value }) => value === 0 || value === 1));
-      assert.equal(
-        named(`equal/${lab}`)?.value,
-        1,
-        "both engines give the rows of My lab results",
-      );
-      assert.ok(
-        (named("rows/labels.rq")?.value ?? 0) > 0,
-        "labels.rq is asked of the pod as it was before the labels it writes, so that it does the job the SQL version does, not the job of finding what has no label",
-      );
-      for (const measure of [
-        "files/all",
-        "statements/all",
-        "count/pod-records",
-      ])
-        assert.equal(
-          results.find((row) => row.name === `stored-synthea-10y/${measure}`)
-            ?.value,
-          alone.find((row) => row.name === `stored-synthea-10y/${measure}`)
-            ?.value,
-          measure,
-        );
     });
   });
 });

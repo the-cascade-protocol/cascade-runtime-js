@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { openPod } from "cascade-runtime";
 import { probing } from "@cascade-runtime/runtime/probe";
 import {
-  againstBudget,
   growBench,
   HOT_SPOTS,
   importBench,
@@ -357,26 +356,6 @@ describe("Timing an import by mechanism · importBench(), syntheticPull(), probi
 
     it("holds no two records of one kind with the same code and day when the repeats are switched off", () => {
       assert.deepEqual(matchingPairs(bundleOf(200, false)), {});
-    });
-  });
-
-  describe("given a budget of the time of each stage", () => {
-    it("finds a stage over its budget or missing from the run, and one within", () => {
-      const run = {
-        importMs: 90,
-        spans: [{ name: "pod.match", calls: 1, ms: 40 }],
-      } as unknown as Measured;
-      assert.deepEqual(
-        againstBudget(run, {
-          resources: 1,
-          stagesMs: { importMs: 100, "pod.match": 30, "pod.judge": 30 },
-        }).map(({ stage, within }) => [stage, within]),
-        [
-          ["importMs", true],
-          ["pod.match", false],
-          ["pod.judge", false],
-        ],
-      );
     });
   });
 

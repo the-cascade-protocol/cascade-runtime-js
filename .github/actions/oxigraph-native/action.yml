@@ -1,0 +1,72 @@
+name: oxigraph-native
+description: >
+  Oxigraph's native build for this Linux runner, and CASCADE_OXIGRAPH_NATIVE naming it for the steps after. It is the
+  published build of the release the runtime names (OXIGRAPH_NATIVE_RELEASE), fetched with the runtime's own fetch
+  command, which checks its sha256 against the one committed. It is built from native/oxigraph instead on a pull request
+  that changes a file there, which the published build cannot show. Run it after `npm ci` and `npm run bridge`: the fetch
+  command is the runtime's, built by the second.
+
+runs:
+  using: composite
+  steps:
+    - id: changed
+      shell: bash
+      working-directory: cascade-runtime-js
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PULL: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        build=false
+        if [ -n "$PULL" ]; then
+          files=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PULL}/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          if grep -Eq '^native/oxigraph/' <<< "$files"; then build=true; fi
+        fi
+        echo "build=${build}" >> "$GITHUB_OUTPUT"
+        echo "Native build from source: ${build}"
+    # The release the runtime fetches is named in its source, the crate's version in Cargo.toml: a crate bumped past the
+    # release has no published build yet, and the fetch would hand over the old one.
+    - if: ${{ steps.changed.outputs.build != 'true' }}
+      shell: bash
+      working-directory: cascade-runtime-js
+      run: |
+        set -euo pipefail
+        crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' native/oxigraph/Cargo.toml | head -n 1)
+        release=$(sed -n 's/^export const OXIGRAPH_NATIVE_RELEASE = "\(.*\)";$/\1/p' packages/runtime/src/node/oxigraph-native.ts)
+        if [ -z "$crate" ] || [ -z "$release" ]; then
+          echo "::error::Could not read the crate version (native/oxigraph/Cargo.toml: '${crate}') or the published release (OXIGRAPH_NATIVE_RELEASE in packages/runtime/src/node/oxigraph-native.ts: '${release}')"
+          exit 1
+        fi
+        if [ "$release" != "oxigraph-native-v${crate}" ]; then
+          echo "::error::native/oxigraph is version ${crate}, but the runtime fetches the published build ${release}. Tag oxigraph-native-v${crate} (the oxigraph-native workflow builds and publishes it), then commit its release name and sha256s in packages/runtime/src/node/oxigraph-native.ts."
+          exit 1
+        fi
+    - if: ${{ steps.changed.outputs.build != 'true' }}
+      shell: bash
+      working-directory: cascade-runtime-js
+      env:
+        CASCADE_OXIGRAPH_NATIVE: ${{ runner.temp }}/oxigraph-native.linux-x64.node
+      run: |
+        set -euo pipefail
+        npm run --silent oxigraph:fetch
+        echo "CASCADE_OXIGRAPH_NATIVE=${CASCADE_OXIGRAPH_NATIVE}" >> "$GITHUB_ENV"
+    # The runner images preinstall different toolchains, and rust-cache hashes every one it finds into its key.
+    - if: ${{ steps.changed.outputs.build == 'true' }}
+      shell: bash
+      working-directory: cascade-runtime-js/native/oxigraph
+      run: |
+        rustup toolchain install --profile minimal
+        channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+        rustup default "$channel"
+    - if: ${{ steps.changed.outputs.build == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: oxigraph-native-source
+        workspaces: cascade-runtime-js/native/oxigraph
+    - if: ${{ steps.changed.outputs.build == 'true' }}
+      shell: bash
+      working-directory: cascade-runtime-js/native/oxigraph
+      run: |
+        cargo build --release --locked
+        cp target/release/liboxigraph_native.so "$RUNNER_TEMP/oxigraph-native.linux-x64.node"
+        echo "CASCADE_OXIGRAPH_NATIVE=$RUNNER_TEMP/oxigraph-native.linux-x64.node" >> "$GITHUB_ENV"

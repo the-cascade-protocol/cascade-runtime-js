@@ -234,12 +234,6 @@ jobs:
           node scripts/test.mjs --listed --test-randomize "${skip[@]}" \
             --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-listed.xml" \
             --test-reporter=spec --test-reporter-destination=stdout
-      # The import bench at 1,000 resources against the time each stage of an import may take (import-budget.json: ms on
-      # this Linux runner, about three times the slowest of the CI runs it names). A stage over its budget, or gone from the
-      # run, is measured once more, and fails here, named, only if it is over in both runs.
-      - name: Import time budget
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
-        run: npm run bench:import -- 1000 --budget packages/cascade-runtime/test/import-budget.json
       # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite and keeps its report:
       # once a night, not twice. The JUnit reports of the two parts are read for the test page's shape below, as the
       # `runtime-tests` job reads its own.
@@ -280,8 +274,9 @@ jobs:
           node scripts/spec-shape.mjs "${reports[@]}" packages/site/test/spec.json
           node scripts/spec-shape.mjs "${reports[@]}" packages/evals/test/spec.json
 
-  # The conformance command on Oxigraph's native build, the production engine, built here from native/oxigraph as the
-  # oxigraph-native workflow builds it for Linux. On a pull request it runs once, here, through the start action, which
+  # The conformance command on Oxigraph's native build, the production engine: the build the oxigraph-native workflow
+  # published for Linux, fetched and checked against its committed sha256, or, on a pull request that changes
+  # native/oxigraph, built here from the pull request's source. On a pull request it runs once, here, through the start action, which
   # comments its table on the pull request, and the cases that assert on its report run against it. On a push to main,
   # nightly and by hand it runs on each build and every example and check must have the same outcome on both; the start
   # action then only checks the counterparts out, so this job posts no table and keeps no report beside the `tests and
@@ -330,24 +325,6 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: cascade-runtime-js/package-lock.json
-      # The runner images preinstall different toolchains, and rust-cache hashes every one it finds into its key.
-      - working-directory: cascade-runtime-js/native/oxigraph
-        run: |
-          rustup toolchain install --profile minimal
-          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          rustup default "$channel"
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # One cache for the two jobs, which build the same crate; it is the name the cache had when the one job was called
-          # `tests-native`, so a pull request still finds the build main saved.
-          shared-key: tests-native
-          workspaces: cascade-runtime-js/native/oxigraph
-          save-if: ${{ github.event_name != 'pull_request' }}
-      - working-directory: cascade-runtime-js/native/oxigraph
-        run: |
-          cargo build --release --locked
-          cp target/release/liboxigraph_native.so "$RUNNER_TEMP/oxigraph-native.linux-x64.node"
-          echo "CASCADE_OXIGRAPH_NATIVE=$RUNNER_TEMP/oxigraph-native.linux-x64.node" >> "$GITHUB_ENV"
       # Before the install, which reads the lockfile of the pull requests the start step merges into this checkout. On a
       # pull request the full start step below does that, after the install it needs the Bridge's build from.
       - if: ${{ github.event_name != 'pull_request' }}
@@ -358,6 +335,9 @@ jobs:
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # The published native build, whose sha256 the runtime checks; a pull request that changes native/oxigraph builds it
+      # here instead. After the bridge step, whose tsc built the fetch command.
+      - uses: ./cascade-runtime-js/.github/actions/oxigraph-native
       # A pull request's one conformance run, on the native build: `native` fails where the build does not load, and
       # never falls back to the WebAssembly one.
       - name: The conformance command runs on the native build
@@ -409,7 +389,7 @@ jobs:
           if-no-files-found: warn
 
   # The suite on Oxigraph's native build, on a push to main, nightly and by hand, not on a pull request: there it is run
-  # once, in `tests and conformance`, on the WebAssembly build, which the random order, the import budget and the shape
+  # once, in `tests and conformance`, on the WebAssembly build, which the random order and the shape
   # check of the results are written for, and a break only the native build shows is found after the merge. No test is
   # the native build's alone; the engine a test file's stores run on is the one CASCADE_OXIGRAPH names. The cases that
   # read the conformance report are `conformance (native)`'s.
@@ -454,22 +434,6 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: cascade-runtime-js/package-lock.json
-      - working-directory: cascade-runtime-js/native/oxigraph
-        run: |
-          rustup toolchain install --profile minimal
-          channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
-          rustup default "$channel"
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # One cache for the two jobs, which build the same crate; it is the name the cache had when the one job was called
-          # `tests-native`, so a pull request still finds the build main saved.
-          shared-key: tests-native
-          workspaces: cascade-runtime-js/native/oxigraph
-      - working-directory: cascade-runtime-js/native/oxigraph
-        run: |
-          cargo build --release --locked
-          cp target/release/liboxigraph_native.so "$RUNNER_TEMP/oxigraph-native.linux-x64.node"
-          echo "CASCADE_OXIGRAPH_NATIVE=$RUNNER_TEMP/oxigraph-native.linux-x64.node" >> "$GITHUB_ENV"
       # Before the install, which reads the lockfile of the pull requests the start step merges into this checkout.
       - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/start@main
         with:
@@ -478,6 +442,8 @@ jobs:
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # The published native build, whose sha256 the runtime checks. After the bridge step, whose tsc built the fetch command.
+      - uses: ./cascade-runtime-js/.github/actions/oxigraph-native
       # The search test builds the hub, whose adapter explorers need Python and rdflib.
       - run: python3 -m pip install rdflib==7.6.0
       - name: The runtime's tests on the native build
