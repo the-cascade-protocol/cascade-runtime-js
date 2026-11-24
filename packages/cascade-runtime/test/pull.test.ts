@@ -190,7 +190,7 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
       for (const name of [
         "arrivals.revisionsOf",
         "core-pod.import.adapters",
-        "arrivals.accepting",
+        "arrivals.convert",
         "matcher.of",
         "core-pod.step.rebuild:import",
       ])
@@ -198,7 +198,7 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
       for (const name of [
         "arrivals.revisionsOf",
         "core-pod.import.adapters",
-        "arrivals.accepting",
+        "arrivals.convert",
         "kept.readBack",
         "kept.whole",
         "pod.match",
@@ -211,6 +211,10 @@ describe("Bringing a pull into a pod · pullFiles(), pod.look(), pod.import()", 
         ),
         [],
       );
+    });
+
+    it("converts the pull on its first import without asking the one adapter of its media type whether it accepts it", () => {
+      assert.equal(first.spans.get("arrivals.accepting")?.calls ?? 0, 0);
     });
 
     it("leaves every file of the pod as it was, and the same rows for a later question", () => {

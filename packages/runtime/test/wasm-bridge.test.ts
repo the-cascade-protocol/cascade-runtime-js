@@ -278,6 +278,26 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       );
     });
 
+    it("says in its conversion that the adapter accepts a document it does, as asking does", async () => {
+      assert.equal(await inWorkerAdapter.accepts(expected.document), true);
+      assert.equal(
+        (await inWorkerAdapter.convert(expected.document)).detected,
+        true,
+      );
+    });
+
+    it("says in its conversion that the adapter does not accept a document it does not, as asking does", async () => {
+      const [ccda] = adaptersOf("application/cda+xml");
+      assert.ok(ccda !== undefined);
+      const note = await standIn(
+        expected.document,
+        '<?xml version="1.0"?><note><to>Alex</to></note>',
+      );
+      const other = { ...note, envelope: undefined };
+      assert.equal(await ccda.accepts(other), false);
+      assert.equal((await ccda.convert(other)).detected, false);
+    });
+
     it("converts the next document with the same loaded adapter", async () => {
       await inWorkerAdapter
         .convert(await standIn(expected.document, "{ not json"))
