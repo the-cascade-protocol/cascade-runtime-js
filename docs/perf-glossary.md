@@ -102,8 +102,8 @@ Each is a row named `<scenario>-<dataset>[-encrypted]/<measurement>`. `total` is
 | `rss` | Memory the process was holding when the scenario's work was done, in bytes: after the first screen and before closing for a new pod, after the first answer and before closing for a pod given a document again, after the second read for a reopened one, after a first read and before the pages for the question pages. |
 | `peak-rss` | The most memory the process held at any moment, in bytes. |
 | `probed-total` | The scenario's time in one run with the probe on, which slows some work; its stages are from this run and are for finding where time goes, never for adding up to the headline. |
-| `phase-loading-the-adapter` | Import part: loading the adapter that knows this kind of record, and the adapter's accepting of the document. On a pod that already holds records, the read of the revisions the pod holds starts alongside it. An import whose every document the pod already holds loads none and reads none, and has no such part. |
-| `phase-converting` | Import part: converting the source record into the pod's own format. On a pod that already holds records, the read of the revisions the pod holds, started in the part before, runs on into this one only where it outlasts the adapter's accepting of the document, as on a large pod. |
+| `phase-loading-the-adapter` | Import part: loading the adapter that knows this kind of record, and, where more than one adapter takes the document's kind, the adapters' accepting of the document. On a pod that already holds records, the read of the revisions the pod holds starts once the adapter is loaded. An import whose every document the pod already holds loads none and reads none, and has no such part. |
+| `phase-converting` | Import part: converting the source record into the pod's own format. On a pod that already holds records, the read of the revisions the pod holds begins as this part does, or in the part before where an adapter's accepting of the document came first, and runs on into this one. |
 | `phase-saving` | Import part: writing the converted records into the pod. |
 | `phase-judging` | Import part: claiming, as the pod's owner, the profiles the person confirmed are theirs, and then the matcher's run on the import. An import whose every document the pod already holds makes no activity to run it on, and has no such part. |
 | `files/all` | Every file the pod holds, counted by the pod's layout: the kinds' counts add up to it. |
@@ -175,7 +175,7 @@ Rows named `<scenario>-<dataset>/stage/<stage>`: where time goes inside one run 
 | `core-pod.compact` | Tidying the pod's files into fewer, larger ones. |
 | `arrivals.fileexport` | Taking in every document of the record: converting each, working out its records and writing them to the pod. Sits inside `core-pod.step.perform`. |
 | `arrivals.convert` | Converting the source record into the pod's own format with the adapter. Sits inside `scenario.import`. |
-| `arrivals.accepting` | Finding which adapter accepts this document. Sits inside `scenario.import`. |
+| `arrivals.accepting` | Finding which adapter accepts this document, where more than one adapter takes its kind of document: the only adapter of a kind is not asked, and its conversion says whether it accepts the document. Sits inside `scenario.import`. |
 | `arrivals.parsegraph` | Reading the converted records as facts. Sits inside `scenario.import`. |
 | `arrivals.refuseunaccounted` | Checking that nothing in the converted records was left unexplained. Sits inside `scenario.import`. |
 | `arrivals.arrivals` | Working out what each arriving record is and where it belongs. Sits inside `scenario.import`. |
