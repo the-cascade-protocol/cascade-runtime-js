@@ -427,6 +427,42 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
         spans.join(", "),
       );
     });
+
+    for (const [by, read] of [
+      [
+        "a named question the database answers",
+        (pod: Awaited<ReturnType<typeof openPodWith>>) =>
+          pod.ask("pod/My active allergies"),
+      ],
+      [
+        "a query of its own, which the store answers",
+        (pod: Awaited<ReturnType<typeof openPodWith>>) =>
+          pod.ask({ query: "SELECT ?s WHERE { ?s ?p ?o } LIMIT 1" }),
+      ],
+    ] as const)
+      it(`has \`opened\` settled by the time the first read returns, and no step run: ${by}`, async () => {
+        const at = await copied(
+          first,
+          `opened-before-read-${by.split(" ")[1] ?? ""}`,
+        );
+        const { result, spans } = await session(at, async (pod) => {
+          let settled = false;
+          void pod.opened.then(() => {
+            settled = true;
+          });
+          await read(pod);
+          return settled;
+        });
+        assert.equal(result, true, spans.join(", "));
+        assert.deepEqual(
+          spans.filter(
+            (span) =>
+              span === "matcher.of" || span.startsWith("core-pod.step."),
+          ),
+          [],
+          spans.join(", "),
+        );
+      });
   });
 
   describe("given a pod closed with an import never matched, and opened again", () => {
