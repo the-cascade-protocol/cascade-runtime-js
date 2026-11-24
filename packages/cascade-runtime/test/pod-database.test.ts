@@ -180,6 +180,65 @@ function counted(): {
   return { given, opened: () => opened, closed: () => closed, prepared };
 }
 
+/** How long a call that must not wait for a build of the database is given before the test says it did. */
+const WAITED_MS = 15_000;
+
+/** What `run` gives, or a failure saying `what` when it does not come in `WAITED_MS`: a call that waits on a held build fails, not hangs. */
+async function within<T>(what: string, run: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<never>((_, refuse) => {
+        timer = setTimeout(() => refuse(new Error(what)), WAITED_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The parts, each whole build of a database held at a gate until `release`, with `begun` and `ended` for when it came to the gate and when it was done. */
+function buildHeld(given: Parts): {
+  parts: Parts;
+  release: () => void;
+  begun: Promise<void>;
+  ended: Promise<void>;
+} {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((open) => (release = open));
+  let began = (): void => undefined;
+  const begun = new Promise<void>((came) => (began = came));
+  let finish = (): void => undefined;
+  const ended = new Promise<void>((done) => (finish = done));
+  return {
+    parts: {
+      ...given,
+      databaseBeside: async (path, name) => {
+        const beside = await given.databaseBeside!(path, name);
+        return {
+          ...beside,
+          exists: () => beside.exists(),
+          remove: () => beside.remove(),
+          open: (options) => beside.open(options),
+          builtWhole: async (whole) => {
+            began();
+            await gate;
+            try {
+              await beside.builtWhole(whole);
+            } finally {
+              finish();
+            }
+          },
+        };
+      },
+    },
+    release: () => release(),
+    begun,
+    ended,
+  };
+}
+
 /** Each statement the database holds, as Oxigraph's N-Triples writes it and then its graph, sorted. */
 const statementsIn = (db: ReturnType<typeof openDatabase>): string[] =>
   db
@@ -456,12 +515,17 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
       assert.deepEqual(found, stored);
     });
 
-    it("tries the build once at the questions of a pod imported into without matching, not at each question", async () => {
+    it("tries the build once after the first answer of a pod imported into without matching, not at each question", async () => {
+      let tried = (): void => undefined;
+      const attempted = new Promise<void>((came) => (tried = came));
       const failing: Parts = {
         ...parts,
         databaseBeside: async (path, name) => ({
           ...(await parts.databaseBeside!(path, name)),
-          builtWhole: () => Promise.reject(new Error("the build failed")),
+          builtWhole: () => {
+            tried();
+            return Promise.reject(new Error("the build failed"));
+          },
         }),
       };
       const pod = await openPodWith(failing, join(pods, "build-fails-asked"));
@@ -474,6 +538,8 @@ describe("Keeping a pod's database beside it · openPod(), pod.close()", () => {
         asked = await callsOf(async () => {
           for (const question of [THEN, ...FIRST_SCREEN, ...FIRST_SCREEN])
             await pod.ask(question);
+          await attempted;
+          await new Promise((later) => setImmediate(later));
         });
       } finally {
         await pod.close();
@@ -1188,26 +1254,40 @@ describe("Answering a pod's questions from its database, a page at a time · pod
   });
 
   describe("given a pod opened with no database beside it", () => {
-    it("builds pod.db once at the first question, answers it and the first screen from it reading no dataset, with the rows the store gives", async () => {
+    it("answers the first question from the store without waiting for pod.db, builds it once after that answer while the next question is answered from the store, then answers the rest from it reading no dataset, with the rows the store gives", async () => {
       const folder = await copied(first, "asked-no-database");
       await rm(join(besideOf(folder), DATABASE), { force: true });
       const asked = [THEN, ...FIRST_SCREEN];
-      const watched = counting(parts);
+      const held = buildHeld(parts);
+      const watched = counting(held.parts);
       const found: Record<string, unknown> = {};
       let built: Map<string, number> | undefined;
       let datasets: number | undefined;
       try {
-        const pod = await openPodWith(watched.parts, folder);
-        try {
-          const before = watched.loads.datasets;
-          built = await callsOf(async () => {
-            for (const question of asked)
+        built = await callsOf(async () => {
+          const pod = await openPodWith(watched.parts, folder);
+          try {
+            found[asked[0]!] = await within(
+              "the first answer waited for the build of pod.db",
+              pod.ask(asked[0]!),
+            );
+            await within("the build of pod.db did not start", held.begun);
+            found[asked[1]!] = await within(
+              "a question waited for the build of pod.db under way",
+              pod.ask(asked[1]!),
+            );
+            held.release();
+            await held.ended;
+            await new Promise((later) => setImmediate(later));
+            const before = watched.loads.datasets;
+            for (const question of asked.slice(2))
               found[question] = await pod.ask(question);
-          });
-          datasets = watched.loads.datasets - before;
-        } finally {
-          await pod.close();
-        }
+            datasets = watched.loads.datasets - before;
+          } finally {
+            held.release();
+            await pod.close();
+          }
+        });
       } finally {
         watched.restore();
       }
@@ -1228,6 +1308,137 @@ describe("Answering a pod's questions from its database, a page at a time · pod
         storeOnly(parts),
       );
       assert.deepEqual(found, stored);
+    });
+
+    it("holds a step and a retitle that come as pod.db is being built until it is built, and keeps pod.db equal to the build kept beside the pod", async () => {
+      const folder = await copied(first, "asked-no-database-stepping");
+      await rm(join(besideOf(folder), DATABASE), { force: true });
+      const held = buildHeld(parts);
+      const title = "Retitled as pod.db was built";
+      const built = await callsOf(async () => {
+        const pod = await openPodWith(held.parts, folder);
+        try {
+          await within(
+            "the first answer waited for the build of pod.db",
+            pod.ask(THEN),
+          );
+          await within("the build of pod.db did not start", held.begun);
+          const stepping = pod.import(laterPull()[0]!, {
+            claimProfiles: claiming,
+          });
+          const retitling = pod.retitle(title);
+          setTimeout(held.release, 50);
+          await stepping;
+          await retitling;
+        } finally {
+          held.release();
+          await pod.close();
+        }
+      });
+      assert.equal(built.get(WHOLE), 1, "pod.db built whole more than once");
+      assert.ok(
+        (built.get(STEP) ?? 0) > 0,
+        "the step did not keep pod.db current",
+      );
+      const kept = await canonicalGraphs(readDatabase(folder, statementsIn));
+      assert.deepEqual(
+        kept,
+        await canonicalGraphs(await builtStatements(folder)),
+      );
+    });
+
+    it("builds pod.db to its end when the pod is closed as it is being built after the first answer, with no rejection left unhandled and nothing built again at close", async () => {
+      const folder = await copied(first, "asked-no-database-closing");
+      await rm(join(besideOf(folder), DATABASE), { force: true });
+      const held = buildHeld(parts);
+      const unhandled: unknown[] = [];
+      const note = (reason: unknown) => unhandled.push(reason);
+      process.on("unhandledRejection", note);
+      let built: Map<string, number> | undefined;
+      try {
+        built = await callsOf(async () => {
+          const pod = await openPodWith(held.parts, folder);
+          try {
+            await within(
+              "the first answer waited for the build of pod.db",
+              pod.ask(THEN),
+            );
+            await within("the build of pod.db did not start", held.begun);
+          } finally {
+            const closing = pod.close();
+            setTimeout(held.release, 50);
+            await closing;
+          }
+        });
+        await new Promise((later) => setImmediate(later));
+      } finally {
+        process.off("unhandledRejection", note);
+        held.release();
+      }
+      assert.equal(built?.get(WHOLE), 1, "pod.db built once");
+      assert.deepEqual(unhandled, []);
+      assert.ok(
+        readDatabase(folder, ledgerOf) !== undefined,
+        "pod.db was left with no ledger",
+      );
+      assert.deepEqual(
+        await canonicalGraphs(readDatabase(folder, statementsIn)),
+        await canonicalGraphs(await builtStatements(folder)),
+      );
+    });
+
+    it("builds pod.db from the kept build as the first answer left it, though a queued call adds a graph to the kept build and drops it later while pod.db is built", async () => {
+      const folder = await copied(first, "asked-no-database-mutated");
+      await rm(join(besideOf(folder), DATABASE), { force: true });
+      const held = buildHeld(parts);
+      const marker = "urn:test:added-while-pod-db-is-built";
+      const afterAnswer = CorePod.prototype.keepDatabaseAfterAnswer;
+      const unheld = CorePod.prototype.unheldTableVersions;
+      let lens = "";
+      CorePod.prototype.keepDatabaseAfterAnswer = async function (
+        this: CorePod,
+        given,
+      ) {
+        lens = given;
+        await afterAnswer.call(this, given);
+      };
+      CorePod.prototype.unheldTableVersions = async function (this: CorePod) {
+        const union = await this.dataset(lens);
+        await union.add(
+          [[iri("urn:test:s"), iri("urn:test:p"), literal("x")]],
+          marker,
+        );
+        await within("the build of pod.db did not start", held.begun);
+        await union.drop(marker);
+        return [];
+      };
+      try {
+        const pod = await openPodWith(held.parts, folder);
+        try {
+          await within(
+            "the first answer waited for the build of pod.db",
+            pod.ask(THEN),
+          );
+          const mutating = pod.unheldTableVersions();
+          setTimeout(held.release, 50);
+          await mutating;
+        } finally {
+          held.release();
+          await pod.close();
+        }
+      } finally {
+        CorePod.prototype.keepDatabaseAfterAnswer = afterAnswer;
+        CorePod.prototype.unheldTableVersions = unheld;
+      }
+      const kept = readDatabase(folder, statementsIn);
+      assert.deepEqual(
+        kept.filter((line) => line.includes("urn:test:")),
+        [],
+      );
+      assert.deepEqual(
+        await canonicalGraphs(kept),
+        await canonicalGraphs(await builtStatements(folder)),
+      );
     });
   });
 
