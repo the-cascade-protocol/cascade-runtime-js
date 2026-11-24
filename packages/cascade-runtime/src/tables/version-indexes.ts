@@ -127,6 +127,14 @@ export class VersionIndexes {
       if (key.split(" ").includes(version)) this.#merges.delete(key);
   }
 
+  /** Drops what was made of every version, which a next read makes again; a listing being kept finishes. */
+  forgetAll(): void {
+    this.#listings.clear();
+    this.#merges.clear();
+    this.#notations.clear();
+    this.#inverses.clear();
+  }
+
   /**
    * In a version, the row subjects each code finds, as the index `rowsByCode` wrote beside it; when that is missing or
    * was built for other properties, made from its lines and kept beside it, as a listing is. Read once, by `References`.
