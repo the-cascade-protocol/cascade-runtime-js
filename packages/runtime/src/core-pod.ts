@@ -667,6 +667,8 @@ export class CorePod {
   #databaseHolds: KeptBuild | undefined;
   /** The kept build a build of the database was last tried for outside `keepBuild`, so that a question that finds none tries it once per build. */
   #databaseTriedFor: KeptBuild | undefined;
+  /** The build of the database that `keepDatabaseAfterAnswer` started and has not ended; it never rejects. */
+  #databaseBuilding: Promise<void> | undefined;
   /**
    * The database beside the pod when it holds the pod as the last step left it, or as it was opened: its ledger names
    * the hash of what a build of the pod as it stands reads (S10). Found before the first step or question that needs
@@ -801,6 +803,7 @@ export class CorePod {
    * after a step, so it answers as it did.
    */
   async retitle(title: string): Promise<void> {
+    await this.#databaseBuilding;
     await this.#settle();
     this.#options = { ...this.#options, title };
     const { pod, layout, address, build, time } = this.#options;
@@ -875,6 +878,7 @@ export class CorePod {
    * opened.
    */
   async keepBuild(): Promise<void> {
+    await this.#databaseBuilding;
     await this.#settle();
     await this.#putBackMatcherView();
     await this.#withBuilt();
@@ -992,6 +996,7 @@ export class CorePod {
   async #keepDatabase(
     built: KeptBuild,
     dumped: () => Promise<Uint8Array>,
+    graphs: ReadonlySet<string> = built.union.graphs,
   ): Promise<PodDatabase | undefined> {
     const hash = this.#builtHash;
     if (hash === undefined || this.#built !== built) return undefined;
@@ -1008,7 +1013,7 @@ export class CorePod {
       try {
         const dump = await dumped();
         await timedAside("core-pod.keepDatabase.whole", () =>
-          database.builtWhole(dump, built.union.graphs, hash),
+          database.builtWhole(dump, graphs, hash),
         );
       } catch {
         await timedAside("core-pod.keepDatabase.failed", () =>
@@ -1029,6 +1034,7 @@ export class CorePod {
    * questions to the store. Whether the database answers now.
    */
   async keptDatabase(): Promise<boolean> {
+    await this.#databaseBuilding;
     await this.#settle();
     if (!this.keepsDatabase || this.#databaseClosed) return false;
     await this.#putBackMatcherView();
@@ -1045,21 +1051,70 @@ export class CorePod {
   }
 
   /**
-   * `keptDatabase` for the first question that finds no database holding the pod, a pod imported into without
-   * matching and never matched, or opened with none or a stale one: at most once for each kept build, so a build that
-   * failed is not tried at every question. Only where the questions are asked in order with the steps, as the build
-   * is changed by neither. Whether the database answers now.
+   * Whether `keepDatabaseAfterAnswer` has a database to build for a question asked under the lens: one is kept beside
+   * the pod, none is being built, and none was tried for the build as it stands.
    */
-  async keptDatabaseForQuestion(lens: string): Promise<boolean> {
-    if (lens !== this.#options.build?.lens || !this.keepsDatabase) return false;
+  wantsDatabaseAfterAnswer(lens: string): boolean {
+    return (
+      lens === this.#options.build?.lens &&
+      this.keepsDatabase &&
+      !this.#databaseClosed &&
+      this.#databaseBuilding === undefined &&
+      (this.#built === undefined || this.#databaseTriedFor !== this.#built)
+    );
+  }
+
+  /**
+   * For the first question that found no database holding the pod, a pod imported into without matching and never
+   * matched, or opened with none or a stale one, and was answered from the store: starts the build of the database from
+   * the kept build and returns without waiting for it, so the questions asked meanwhile are answered from the store
+   * and, once it has built, from the database. At most once for each kept build, so a build that failed is not tried at
+   * every question. Only where the questions are asked in order with the steps, as the build is changed by neither: a
+   * step, `retitle`, `keptDatabase` and `keepBuild` wait for the build under way, and `keepBuild` builds none again.
+   */
+  async keepDatabaseAfterAnswer(lens: string): Promise<void> {
+    if (!this.wantsDatabaseAfterAnswer(lens)) return;
     await this.#settle();
     // A pod opened and not yet stepped holds no build: the kept one is read back, else the pod is built, as the store would.
     if (this.#built === undefined)
       await this.#readBack().catch(() => undefined);
     if (this.#built === undefined) await this.dataset(lens);
     const built = this.#built;
-    if (built === undefined || this.#databaseTriedFor === built) return false;
-    return this.keptDatabase();
+    if (
+      built === undefined ||
+      this.#databaseTriedFor === built ||
+      this.#databaseBuilding !== undefined
+    )
+      return;
+    await this.#putBackMatcherView();
+    await this.#withBuilt();
+    if (this.#built !== built || this.#databaseClosed) return;
+    this.#databaseTriedFor = built;
+    // The build is read here, inside the queued call, before any await: `dump` runs to its end without one, and `graphs`
+    // is copied. The detached part reads only these, so a read that changes the kept build in place while the database
+    // is being opened and built (`unheldTableVersions`) cannot reach the database.
+    const dump = built.union.store.dump();
+    dump.catch(() => undefined);
+    const graphs = new Set(built.union.graphs);
+    const building: Promise<void> = timedAside("core-pod.keepDatabase", () =>
+      this.#keepDatabase(built, () => dump, graphs),
+    )
+      .then(
+        (database) => {
+          if (
+            database !== undefined &&
+            this.#built === built &&
+            !this.#databaseClosed
+          )
+            this.#databaseAnswers = Promise.resolve(database);
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        if (this.#databaseBuilding === building)
+          this.#databaseBuilding = undefined;
+      });
+    this.#databaseBuilding = building;
   }
 
   /**
@@ -1194,6 +1249,7 @@ export class CorePod {
   ): Promise<void> {
     const { build } = this.#options;
     if (build === undefined) return;
+    await this.#databaseBuilding;
     if (this.#built === undefined && change.written.length === 0)
       await timedAside("core-pod.step.readBack", () =>
         this.#readBack().catch(() => undefined),
@@ -2000,8 +2056,9 @@ export class CorePod {
     if (kept === undefined) {
       const dataset = await this.#keptDataset();
       if (dataset !== undefined) {
-        // KeptMatcherJudgments adds a version's rows to the union it reads and drops them after: safe on the kept dataset only
-        // because a pod's reads and steps run one at a time.
+        // KeptMatcherJudgments adds a version's rows to the union it reads and drops them after, in place on the kept
+        // dataset. The steps, `retitle` and `close` wait for the database build; the build itself reads a dump and a copy
+        // of the graphs taken in `keepDatabaseAfterAnswer`, before it awaits, so this change cannot reach the database.
         kept = this.#held(KEPT, () =>
           this.#keptMatcherJudgments.of(dataset, () => this.#tables()),
         );
@@ -2045,6 +2102,7 @@ export class CorePod {
   ): Promise<Performed> {
     const options = this.#options;
     const deferred = this.#deferring > 0 && DEFERRABLE.has(kind);
+    await this.#databaseBuilding;
     if (!deferred) await this.#settle();
     if (this.keepsDatabase) await this.#answering();
     const at = options.build === undefined ? undefined : options.time.now();
