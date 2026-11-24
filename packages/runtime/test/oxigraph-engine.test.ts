@@ -128,6 +128,62 @@ describe("Choosing and fetching Oxigraph's native or WebAssembly build · choose
     assert.equal(new OxigraphStore().engine.name, asked);
   });
 
+  /** The compatibility host's two steps, `npm ci` and the conformance command, for a platform and an environment. */
+  const host = async () =>
+    (await import(
+      new URL("../../../../scripts/compatibility-host.mjs", import.meta.url)
+        .href
+    )) as {
+      setupSteps: (
+        env: Record<string, string>,
+        platform: string,
+        arch: string,
+      ) => string[][];
+      conformanceEnv: (
+        env: Record<string, string>,
+        platform: string,
+        arch: string,
+      ) => Record<string, string>;
+    };
+  const install = ["npm", "ci"];
+  const fetching = ["npm", "run", "--silent", "oxigraph:fetch"];
+
+  it("sets up a compatibility run on Linux x64 by fetching the published native build, and has its conformance command use it", async () => {
+    const { setupSteps, conformanceEnv } = await host();
+    assert.deepEqual(setupSteps({}, "linux", "x64"), [install, fetching]);
+    assert.equal(conformanceEnv({}, "linux", "x64").CASCADE_OXIGRAPH, "native");
+  });
+
+  it("leaves a compatibility run on the engine it was told to use, and fetches nothing it will not read", async () => {
+    const { setupSteps, conformanceEnv } = await host();
+    const wasm = { CASCADE_OXIGRAPH: "wasm" };
+    assert.deepEqual(setupSteps(wasm, "linux", "x64"), [install]);
+    assert.equal(conformanceEnv(wasm, "linux", "x64").CASCADE_OXIGRAPH, "wasm");
+    const built = { CASCADE_OXIGRAPH_NATIVE: "/tmp/built.node" };
+    assert.deepEqual(setupSteps(built, "linux", "x64"), [install]);
+    assert.equal(
+      conformanceEnv(built, "linux", "x64").CASCADE_OXIGRAPH_NATIVE,
+      "/tmp/built.node",
+    );
+  });
+
+  it("changes nothing of a compatibility run where no published build is relied on, which is every platform but Linux x64", async () => {
+    const { setupSteps, conformanceEnv } = await host();
+    for (const [platform, arch] of [
+      ["win32", "x64"],
+      ["darwin", "arm64"],
+      ["linux", "arm64"],
+    ] as const) {
+      assert.deepEqual(setupSteps({}, platform, arch), [install]);
+      assert.equal(
+        "CASCADE_OXIGRAPH" in conformanceEnv({}, platform, arch),
+        false,
+      );
+    }
+    const asked = { CASCADE_OXIGRAPH: "native" };
+    assert.deepEqual(setupSteps(asked, "win32", "x64"), [install, fetching]);
+  });
+
   const folder = mkdtempSync(join(tmpdir(), "oxigraph-fetch-"));
   after(() => rmSync(folder, { recursive: true, force: true }));
   /** A release that answers every request with `bytes`, counting them. */
