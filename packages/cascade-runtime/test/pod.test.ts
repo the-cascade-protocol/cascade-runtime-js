@@ -1671,6 +1671,58 @@ describe("Importing a health export · pod.import()", () => {
       assert.equal(await matched("claimed-at-later-import", false), wanted);
     });
 
+    it("takes the records of a patient claimed after a match that took the rest, when a later download's version of one of them names another patient", async () => {
+      // J1's patient is Meridian's, J2's Larkspur's; four Sames each join a record of one to a record of the other.
+      const [j1, j2] = await Promise.all(
+        ["J1", "J2"].map((judgment) => profileOf(judgment)),
+      );
+      assert.ok(j1 && j2);
+      const moved = join(pods, "x-e10-one-record-moved", "apple_health_export");
+      await cp(exported("x-e10"), moved, { recursive: true });
+      const file = join(moved, "clinical-records", "Immunization-im-5501.json");
+      const immunization = JSON.parse(await readFile(file, "utf8"));
+      immunization.patient.reference = "Patient/448813";
+      immunization.meta = {
+        versionId: "2",
+        lastUpdated: "2026-09-20T08:00:00Z",
+      };
+      await writeFile(file, JSON.stringify(immunization, null, 2));
+      const matched = async (name: string, claimingFirst: string[]) => {
+        const pod = await openPodWith(kept, join(pods, name));
+        try {
+          const first = await pod.import(exported("x-e10"), {
+            claimProfiles: claimingFirst,
+          });
+          const before = new Set([
+            ...first.unclaimedProfiles,
+            ...first.claimedProfiles.map(({ profile }) => profile),
+          ]);
+          const later = await pod.import(moved);
+          const [other] = later.unclaimedProfiles.filter(
+            (profile) => !before.has(profile),
+          );
+          assert.ok(other, "the moved record names a patient of its own");
+          for (const profile of [other, j1, j2])
+            if (!claimingFirst.includes(profile)) {
+              await pod.judge(about(pod, profile));
+              assert.equal((await pod.match()).refused, undefined);
+            }
+          return (await select(pod, SAMES)).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      const wanted = await matched("both-claimed-before-the-moved-record", [
+        j1,
+        j2,
+      ]);
+      assert.ok(wanted > 0);
+      assert.equal(
+        await matched("claimed-one-at-a-time-after-the-moved-record", [j1]),
+        wanted,
+      );
+    });
+
     it("owes nothing once taken: the next open has `opened` settled with no step run", async () => {
       const at = join(pods, "claimed-after-run-healed");
       const pod = await claimedAfterItsRun(at);
