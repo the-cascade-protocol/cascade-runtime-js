@@ -1333,6 +1333,69 @@ describe("Importing a health export · pod.import()", () => {
       }
     });
 
+    for (const first of ["agreement", "question"] as const)
+      it(`makes no heal again for \`pod.agreement()\` after a heal that failed, with ${first === "agreement" ? "`agreement()` as the first read" : "a question as the first read"}`, async () => {
+        const armed: { error?: Error; always?: boolean } = {};
+        const pod = await openPodWith(
+          writesThrowing(armed),
+          await stopped(`stopped-agreement-${first}`),
+        );
+        try {
+          await pod.opened;
+          armed.error = new Error("the disk is full");
+          armed.always = true;
+          const reads: (() => Promise<unknown>)[] =
+            first === "agreement"
+              ? [
+                  () => pod.agreement(),
+                  () => pod.agreement(),
+                  () => select(pod, SAMES),
+                ]
+              : [
+                  () => select(pod, SAMES),
+                  () => select(pod, SAMES),
+                  () => pod.agreement(),
+                  () => pod.agreement(),
+                ];
+          await reads[0]!();
+          for (const read of reads.slice(1)) {
+            const { seen } = await probing(read);
+            assert.ok(
+              !seen.spans.has("matcher.of") &&
+                !seen.spans.has("core-pod.step.perform"),
+              [...seen.spans.keys()].join(", "),
+            );
+          }
+        } finally {
+          await pod.close();
+        }
+      });
+
+    it("matches an activity's own run when an arrival owed before it is refused, and tells the refusal", async () => {
+      const folder = await stopped("stopped-owed-then-match");
+      const armed: { error?: Error } = {};
+      const pod = await openPodWith(writesThrowing(armed), folder);
+      try {
+        await pod.opened;
+        armed.error = new Refusal("the rules refuse the run");
+        await select(pod, SAMES);
+        const done = await pod.import(exported("x-e12"), { match: false });
+        assert.ok(done.activity);
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        const owed = "pod/Which arrivals has the matcher not taken";
+        assert.equal((await pod.ask(owed)).length, 2);
+        armed.error = new Refusal("the rules refuse the run");
+        assert.equal(
+          (await pod.match(done.activity)).refused,
+          "the rules refuse the run",
+        );
+        assert.equal((await pod.ask(owed)).length, 1);
+      } finally {
+        await pod.close();
+      }
+    });
+
     it("answers the question that triggered a heal the rules refused, and makes it no more for a read", async () => {
       const armed: { error?: Error } = {};
       const pod = await openPodWith(

@@ -1576,7 +1576,7 @@ export class CorePod {
    * Nothing is written, and no matcher is made.
    */
   async arrivalsNotTaken(): Promise<string[]> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
     return this.#arrivalsNotTaken();
   }
 
@@ -1719,15 +1719,18 @@ export class CorePod {
   /**
    * `match`, after the matcher runs of the arrivals it has not taken but the activity given: as a pod's app has its
    * runs, which are made as a call of its own after each import, entry session and connect, so a stop between the two
-   * is made good by the next run. The files written by all of them, the refusal of the first that is refused.
+   * is made good by the next run. The activity's own run is made though an owed one is refused. The files written by
+   * all of them, the refusal of the first that is refused.
    */
   async matchWithTheOwed(activity?: string): Promise<Performed> {
     const owed = await this.matchTheOwed(activity);
-    if (owed.refused !== undefined) return owed;
     const performed = await this.match(activity);
-    return owed.wrote.length === 0
-      ? performed
-      : { ...performed, wrote: [...owed.wrote, ...performed.wrote] };
+    const refused = owed.refused ?? performed.refused;
+    const wrote =
+      owed.wrote.length === 0
+        ? performed.wrote
+        : [...owed.wrote, ...performed.wrote];
+    return refused === undefined ? { wrote } : { wrote, refused };
   }
 
   /**
@@ -1905,7 +1908,7 @@ export class CorePod {
 
   /** The query's rows over the pod as the matcher reads it: its RDF files but those the build writes, and the everyday lens's derived state. */
   async select(query: string): Promise<Rows> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
     return this.selectWithoutTheOwed(query);
   }
 
@@ -1929,7 +1932,7 @@ export class CorePod {
    * is not kept across steps this is `select`.
    */
   async selectKept(query: string): Promise<Rows> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
     return this.#selectedKept(query);
   }
 
@@ -1975,7 +1978,7 @@ export class CorePod {
    * dataset or an answer.
    */
   async selectWithRows(query: string, kind: string): Promise<Rows> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
     await this.#settle();
     const { vocabulary, newStore, build } = this.#options;
     const [union, references, terms] = await Promise.all([

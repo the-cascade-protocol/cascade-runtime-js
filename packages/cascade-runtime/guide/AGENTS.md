@@ -831,7 +831,7 @@ answered from kept answers never pays for them. A match that fails there is made
 by the next write or `await pod.match()`, never by a read, and the call that triggered it
 and the reads after it are answered over the pod as it stands; one the rules refuse is
 made no more by a read and does not stop the other arrivals owed. A later `await pod.match()`
-(or the next import that matches, connect or entry) tells of it as its `refused` only if
+(or the next import, connect or entry that matches; `match: false` tells nothing) tells of it as its `refused` only if
 the rules refuse it again, so a session that only reads is not told. A pod closed before
 the step started is left as it was, and the next open takes them. A pod in memory gets the package's starter copies.
 
