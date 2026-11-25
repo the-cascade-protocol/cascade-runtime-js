@@ -415,8 +415,9 @@ a column is a list, read it as its array. `ask` with a query of your own has no 
 - `pod/What everything is called`: every label.
 - `pod/What was seen more than once`: entries with more than one record, by place.
 - `pod/Which arrivals has the matcher not taken`: each import, entry session, connect and sync that brought a record
-  the matcher takes and that no matcher run is informed by, or a record of a profile claimed after its run, which that
-  run could not take (`?arrival`, `?started`, `?arrivalLabel`). The pod runs a match for each at its next open and
+  the matcher takes and that no matcher run is informed by, or each import, entry session or connect that began a
+  record of the person's whose current version names a patient its runs did not name, as an About filed after them
+  leaves (`?arrival`, `?started`, `?arrivalLabel`). The pod runs a match for each at its next open and
   before its next import, connect, entry or `match()`, so an app has no need to ask.
 - `pod/Which file states each thing`: where each thing is stated.
 - `pod/Which files are out of place`: files the layout puts elsewhere.
@@ -817,7 +818,8 @@ answers settles `opened` once a call opens it with the engine, or at `close()`.
 It waits on a timer, so under `mock.timers` it never settles until the timers
 are ticked. Whatever the tables, that step also matches each arrival no matcher run
 was informed by, which a stop between an import and its `match` leaves, and each
-whose profile an About claimed after its run (an import whose profiles no About
+that began a record of the person's whose current version names a patient its runs
+did not name, as an About filed after them leaves (an import whose profiles no About
 claims has none to take, and waits for the claim, which `pod.match()` then makes good): `opened`
 then settles with the files it wrote. With the tables unchanged and nothing owed
 it is settled undefined before the first call returns, the one question of what is

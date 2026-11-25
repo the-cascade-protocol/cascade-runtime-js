@@ -1588,6 +1588,10 @@ describe("Importing a health export · pod.import()", () => {
 
   describe("given an import matched while its patients were unclaimed, and their Abouts filed after its run", () => {
     const SAMES = `SELECT ?judgment WHERE { ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same }`;
+    const SAME_PAIRS = `SELECT DISTINCT ?one ?other WHERE {
+      ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same ; prov:hadMember ?one, ?other .
+      FILTER (STR(?one) < STR(?other))
+    } ORDER BY ?one ?other`;
 
     /** Alex's x-e10 imported and matched with its patients unclaimed, then each claimed; the pod left open. */
     async function claimedAfterItsRun(at: string): Promise<Pod> {
@@ -1708,17 +1712,20 @@ describe("Importing a health export · pod.import()", () => {
               await pod.judge(about(pod, profile));
               assert.equal((await pod.match()).refused, undefined);
             }
-          return (await select(pod, SAMES)).length;
+          return (await select(pod, SAME_PAIRS)).map(
+            ({ one, other }) => `${one} ${other}`,
+          );
         } finally {
           await pod.close();
         }
       };
+      // The moved record's new version gets a Same of its own where its old one had one, so pairs are compared.
       const wanted = await matched("both-claimed-before-the-moved-record", [
         j1,
         j2,
       ]);
-      assert.ok(wanted > 0);
-      assert.equal(
+      assert.ok(wanted.length > 0);
+      assert.deepEqual(
         await matched("claimed-one-at-a-time-after-the-moved-record", [j1]),
         wanted,
       );
