@@ -1343,7 +1343,10 @@ const pinnedRow = (pairs: Iterable<readonly [string, string]>): string =>
     .sort()
     .join(" ");
 
-async function pinned(vocabulary: Files, result: string): Promise<Pinned> {
+export async function pinned(
+  vocabulary: Files,
+  result: string,
+): Promise<Pinned> {
   const answer = JSON.parse(await readText(vocabulary, result)) as {
     boolean?: boolean;
     results?: { bindings: Record<string, Parameters<typeof srjTerm>[0]>[] };

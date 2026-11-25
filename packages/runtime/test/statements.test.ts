@@ -10,6 +10,7 @@ import {
   finalOrder,
   keyedFillFailures,
   madeScreens,
+  pinned,
   sqlCheckAssertions,
   sqlFailures,
   sqlFunctionAssertions,
@@ -887,6 +888,42 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
         "everyday",
       ).endsWith("#queries/questions/pod/My%20lab%20results.sql/f/everyday"),
     );
+  });
+  it("reads a fixture's expected answer from its SPARQL TSV file as the vocabulary's reader does: a row to a line, an unbound field empty, and refuses a term no comparison can match exactly", async () => {
+    const files = new MemoryFiles("https://example.org/v/");
+    const read = async (text: string): Promise<string[]> => {
+      await files.write("answer.tsv", new TextEncoder().encode(text));
+      return pinned(files, "answer.tsv");
+    };
+    const whole = `<${XSD}integer>`;
+    const terms: [field: string, found: string][] = [
+      [`"007"^^${whole}`, `"007"^^${whole}`],
+      ['"a b"', '"a b"'],
+      [`"a"^^<${XSD}string>`, '"a"'],
+      ['"hi"@en-GB', '"hi"@en-GB'],
+      ["<urn:x:a>", "<urn:x:a>"],
+      ['"\\u0041\\u001F\\t\\n\\"\\\\·"', '"A\\u001F\\t\\n\\"\\\\·"'],
+    ];
+    for (const [field, found] of terms)
+      assert.deepEqual(await read(`?x\n${field}\n`), [`?x=${found}`], field);
+    assert.deepEqual(await read("?x\n\n"), [""]);
+    assert.deepEqual(await read("?x\n"), []);
+    assert.deepEqual(
+      await read('?a\t?b\n<urn:x:1>\t\n\t"y"\n<urn:x:2>\t"z"\n'),
+      ["?a=<urn:x:1>", '?b="y"', '?a=<urn:x:2> ?b="z"'],
+    );
+    const refused: [text: string, why: RegExp][] = [
+      ["?x\n_:b0\n", /_:b0, which no comparison can match exactly/],
+      ["?x\n1\n", /1, which no comparison can match exactly/],
+      ['?x\n"""a"""\n', /which no comparison can match exactly/],
+      ['?x\n"a\\qb"\n', /whose backslash is no escape of Turtle/],
+      ["?x\n<urn:x:a>", /does not end in a newline/],
+      ["x\n<urn:x:a>\n", /leading \?/],
+      ["?a\t?b\n<urn:x:a>\n", /a row has 1 fields, the header 2/],
+      ['{"boolean": true}\n', /leading \?/],
+    ];
+    for (const [text, why] of refused)
+      await assert.rejects(read(text), why, text);
   });
   it("judges an ORDER BY's ties on a STR or a SUBSTR of it by that text, and on a term by SPARQL's <", () => {
     const at = (value: string): string => `"${value}"^^<${XSD}dateTime>`;
