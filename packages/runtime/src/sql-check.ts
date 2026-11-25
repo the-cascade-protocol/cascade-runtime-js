@@ -1305,35 +1305,47 @@ export function recordsInEntries(db: Database): string[] {
 /** A record no pod holds, which a question bound to records is also asked of: it gives no rows. */
 const NO_SUCH_RECORD = "urn:cascade:no-such-record";
 
-interface Pinned {
-  readonly boolean?: boolean;
-  readonly rows?: readonly string[];
-}
+/** An answer file's field: an IRI in angle brackets, or a double-quoted string with a `^^<datatype>` or an `@language`. */
+const TSV_TERM =
+  // eslint-disable-next-line no-control-regex
+  /^(?:<([^\x00-\x20<>"{}|^`\\]*)>|"((?:[^"\\\n\r]|\\[^\n])*)"(?:@([A-Za-z]+(?:-[A-Za-z0-9]+)*)|\^\^<([^\x00-\x20<>"{}|^`\\]*)>)?)$/;
+const TURTLE_ESCAPES: Readonly<Record<string, string>> = {
+  t: "\t",
+  b: "\b",
+  n: "\n",
+  r: "\r",
+  f: "\f",
+  '"': '"',
+  "'": "'",
+  "\\": "\\",
+};
 
-function srjTerm(value: {
-  type: string;
-  value: string;
-  datatype?: string;
-  "xml:lang"?: string;
-}): string {
-  if (value.type === "uri") return `<${value.value}>`;
-  if (value.type === "literal" || value.type === "typed-literal") {
-    const lang = value["xml:lang"];
-    if (lang !== undefined)
-      return sqlNt({
-        kind: LITERAL,
-        value: value.value,
-        datatype: `${RDF}langString`,
-        lang,
-      });
-    return sqlNt({
-      kind: LITERAL,
-      value: value.value,
-      datatype: value.datatype ?? XSD_STRING,
-    });
-  }
-  throw new Error(
-    `an expected row holds a ${value.type}, which no comparison can match exactly`,
+/** The term a field of an answer file writes, as the SQL check writes the term a row holds. */
+function pinnedTerm(field: string): string {
+  const found = TSV_TERM.exec(field);
+  if (found === null)
+    throw new Error(
+      `an expected row holds ${field}, which no comparison can match exactly`,
+    );
+  const [, address, text, lang, datatype] = found;
+  if (address !== undefined) return `<${address}>`;
+  const value = (text ?? "").replace(
+    /\\(?:u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|([^]))/g,
+    (_, short?: string, long?: string, other = "") => {
+      const hex = short ?? long;
+      if (hex !== undefined) return String.fromCodePoint(parseInt(hex, 16));
+      const escaped = TURTLE_ESCAPES[other];
+      if (escaped === undefined)
+        throw new Error(
+          `an expected row holds ${field}, whose backslash is no escape of Turtle`,
+        );
+      return escaped;
+    },
+  );
+  return sqlNt(
+    lang === undefined
+      ? { kind: LITERAL, value, datatype: datatype ?? XSD_STRING }
+      : { kind: LITERAL, value, datatype: `${RDF}langString`, lang },
   );
 }
 
@@ -1343,21 +1355,40 @@ const pinnedRow = (pairs: Iterable<readonly [string, string]>): string =>
     .sort()
     .join(" ");
 
-async function pinned(vocabulary: Files, result: string): Promise<Pinned> {
-  const answer = JSON.parse(await readText(vocabulary, result)) as {
-    boolean?: boolean;
-    results?: { bindings: Record<string, Parameters<typeof srjTerm>[0]>[] };
-  };
-  if (typeof answer.boolean === "boolean") return { boolean: answer.boolean };
-  return {
-    rows: (answer.results?.bindings ?? []).map((binding) =>
-      pinnedRow(
-        Object.entries(binding).map(
-          ([name, value]) => [name, srjTerm(value)] as const,
-        ),
-      ),
-    ),
-  };
+/**
+ * The rows a fixture's answer file holds, a SPARQL 1.1 Query Results TSV file: a header of `?variable`s, then a line
+ * for each row with a field for each variable, an empty field for one the row leaves unbound.
+ */
+async function pinned(
+  vocabulary: Files,
+  result: string,
+): Promise<{ names: string[]; rows: string[] }> {
+  const lines = (await readText(vocabulary, result)).split("\n");
+  if (lines.pop() !== "")
+    throw new Error(`${result} does not end in a newline`);
+  const header = (lines.shift() ?? "").split("\t");
+  const names = header.map((field) => field.slice(1));
+  if (
+    !header.every((field) => field.startsWith("?")) ||
+    new Set(names).size !== names.length
+  )
+    throw new Error(
+      `${result}: the first line must name each variable once, with a leading ?`,
+    );
+  const rows = lines.map((line) => {
+    const fields = line.split("\t");
+    if (fields.length !== names.length)
+      throw new Error(
+        `${result}: a row has ${fields.length} fields, the header ${names.length}`,
+      );
+    return pinnedRow(
+      names.flatMap((name, at) => {
+        const field = fields[at] ?? "";
+        return field === "" ? [] : [[name, pinnedTerm(field)] as const];
+      }),
+    );
+  });
+  return { names, rows };
 }
 
 const lensOf = (path: string | undefined): string | undefined =>
@@ -1482,15 +1513,16 @@ export async function sqlFailures(
     }
     if (entryLens !== lens) continue;
     const pins = await pinned(vocabulary, entry.result);
-    const given =
-      entry.records.length > 0 ? askedRows(db, sql, entry.records) : found.rows;
-    if (pins.boolean !== undefined) {
-      if (given.length > 0 !== pins.boolean)
-        lines.push(
-          `${fixture}, ${entry.name}: expected ${pins.boolean}, found ${given.length > 0}`,
-        );
+    const expected = [...names].sort().join(", ");
+    const header = [...pins.names].sort().join(", ");
+    if (expected !== header) {
+      lines.push(
+        `${fixture}, ${entry.name}: expected the variables [${expected}], found [${header}]`,
+      );
       continue;
     }
+    const given =
+      entry.records.length > 0 ? askedRows(db, sql, entry.records) : found.rows;
     const rows = given.map((row) =>
       pinnedRow(
         names.flatMap((name, at) =>
@@ -1498,7 +1530,7 @@ export async function sqlFailures(
         ),
       ),
     );
-    const want = (pins.rows ?? []).map((row) => [row]);
+    const want = pins.rows.map((row) => [row]);
     const got = rows.map((row) => [row]);
     for (const [kind, side] of [
       ["missing", lacking(want, got)],
