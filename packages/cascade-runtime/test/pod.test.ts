@@ -1585,6 +1585,119 @@ describe("Importing a health export · pod.import()", () => {
     });
   });
 
+  describe("given an import matched while its patients were unclaimed, and their Abouts filed after its run", () => {
+    const SAMES = `SELECT ?judgment WHERE { ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same }`;
+
+    /** Alex's x-e10 imported and matched with its patients unclaimed, then each claimed; the pod left open. */
+    async function claimedAfterItsRun(at: string): Promise<Pod> {
+      const pod = await openPodWith(kept, at);
+      const done = await pod.import(exported("x-e10"));
+      assert.equal(done.matched?.refused, undefined);
+      assert.ok(done.unclaimedProfiles.length > 0);
+      for (const profile of done.unclaimedProfiles)
+        await pod.judge(about(pod, profile));
+      return pod;
+    }
+
+    /** What the matcher joined of x-e10 when its patients were claimed before its run. */
+    async function claimedBeforeItsRun(name: string): Promise<number> {
+      const pod = await openPodWith(kept, join(pods, name));
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        assert.ok(done.activity);
+        await pod.match(done.activity);
+        return (await select(pod, SAMES)).length;
+      } finally {
+        await pod.close();
+      }
+    }
+
+    it("takes its records at `pod.match()`, as a run after the claim would have", async () => {
+      const wanted = await claimedBeforeItsRun("claimed-before-run");
+      assert.ok(wanted > 0);
+      const pod = await claimedAfterItsRun(join(pods, "claimed-after-run"));
+      try {
+        assert.equal((await select(pod, SAMES)).length, 0);
+        assert.equal((await pod.match()).refused, undefined);
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes its records when the pod is opened again", async () => {
+      const wanted = await claimedBeforeItsRun("claimed-before-run-reopened");
+      const at = join(pods, "claimed-after-run-reopened");
+      await (await claimedAfterItsRun(at)).close();
+      const pod = await openPodWith(kept, at);
+      try {
+        assert.equal((await pod.opened)?.refused, undefined);
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes its records before a later import's own run, when that import claims its patients through `claimProfiles`", async () => {
+      const claims = await Promise.all(
+        ["J1", "J2"].map((judgment) => profileOf(judgment)),
+      );
+      const matched = async (name: string, claimingFirst: boolean) => {
+        const pod = await openPodWith(kept, join(pods, name));
+        try {
+          const first = await pod.import(
+            exported("x-e2"),
+            claimingFirst ? { claimProfiles: claims } : {},
+          );
+          assert.equal(first.claimedProfiles.length > 0, claimingFirst);
+          const later = await pod.import(exported("x-e6"), {
+            claimProfiles: claims,
+          });
+          assert.equal(later.refused, undefined);
+          return (await select(pod, SAMES)).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      const wanted = await matched("claimed-at-first-import", true);
+      assert.ok(wanted > 0);
+      assert.equal(await matched("claimed-at-later-import", false), wanted);
+    });
+
+    it("owes nothing once taken: the next open has `opened` settled with no step run", async () => {
+      const at = join(pods, "claimed-after-run-healed");
+      const pod = await claimedAfterItsRun(at);
+      try {
+        await pod.match();
+        assert.deepEqual(
+          await pod.ask("pod/Which arrivals has the matcher not taken"),
+          [],
+        );
+      } finally {
+        await pod.close();
+      }
+      const { result, seen } = await probing(async () => {
+        const again = await openPodWith(kept, at);
+        try {
+          return await again.opened;
+        } finally {
+          await again.close();
+        }
+      });
+      assert.equal(result, undefined);
+      const spans = [...seen.spans.keys()];
+      assert.deepEqual(
+        spans.filter(
+          (span) => span === "matcher.of" || span.startsWith("core-pod.step."),
+        ),
+        [],
+        spans.join(", "),
+      );
+    });
+  });
+
   describe("with `timeBudgetSeconds` or `memoryBudgetMiB`, the limits of a conversion", () => {
     it("rejects with the Bridge's budget error when a budget is smaller than the conversion needs, writing nothing, and then converts with the Bridge's own defaults", async () => {
       const at = join(pods, "budget");
