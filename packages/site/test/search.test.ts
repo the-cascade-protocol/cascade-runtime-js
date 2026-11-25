@@ -52,10 +52,6 @@ const RULES = page(
 <section class="rule" id="y2"><h2>Y2. A tool &quot;never&quot; offered</h2></section>`,
 );
 
-const NOTE = page(
-  "What a model may do with a person&#39;s pods · Cascade decision notes",
-);
-
 const section = (files: Record<string, Uint8Array>): Section<object> => ({
   path: Object.keys(files)[0] ?? "",
   title: "A section",
@@ -80,7 +76,6 @@ const SITE: Record<string, Uint8Array> = {
     "was derived from",
   ),
   "spec/consent.html": RULES,
-  "decisions/consent-tiers.html": NOTE,
   "guide/attachments.html": page("Attaching a file"),
   "data/pod.ttl": text("@prefix : <#> ."),
   "style.css": text("body {}"),
@@ -119,7 +114,7 @@ const rank: Rank = (rows, query) => {
  * the ranking is the script `search.js`, which a page loads, and the box is the form `shell()` writes under the header.
  */
 describe("Searching the hub · search.json, search.js, the search box of shell()", () => {
-  describe("given a tree with a term page, a rule page, a decision note and a guide", () => {
+  describe("given a tree with a term page, a rule page and a guide", () => {
     let rows: SearchRow[];
     let tree: ReadonlyMap<string, Uint8Array>;
 
@@ -214,19 +209,6 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
       );
     });
 
-    it("lists a decision note by its title, without the site's name after it", () => {
-      assert.deepEqual(
-        rows.filter(({ kind }) => kind === "decision"),
-        [
-          {
-            path: "decisions/consent-tiers.html",
-            title: "What a model may do with a person's pods",
-            kind: "decision",
-          },
-        ],
-      );
-    });
-
     it("lists no stylesheet and no data file as a row, and no row twice", () => {
       assert.ok(!rows.some(({ path }) => /\.(?:css|ttl)$/.test(path)));
       const paths = rows.map(({ path }) => path);
@@ -256,12 +238,8 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
         );
     });
 
-    it("lands a rule's number on the rule, and a decision's title words on the note", () => {
+    it("lands a rule's number on the rule", () => {
       assert.equal(rank(rows, "Y2")[0]?.path, "spec/consent.html#y2");
-      assert.equal(
-        rank(rows, "what a model may do")[0]?.path,
-        "decisions/consent-tiers.html",
-      );
     });
 
     it("ranks a name before a name that begins with it, and that before a title that holds it", () => {
@@ -308,7 +286,7 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
     it("lists the pages alone", async () => {
       const { rows } = await rowsOf({ "a/index.html": page("A") });
       assert.deepEqual(
-        rows.filter(({ kind }) => kind !== "page" && kind !== "decision"),
+        rows.filter(({ kind }) => kind !== "page"),
         [],
       );
       assert.ok(rows.some(({ path }) => path === "a/index.html"));
@@ -332,11 +310,11 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
           "Naming · Cascade runtime rules",
           rule("n1", "N1. A pod holds files"),
         ),
-        "decisions/currency.html": page(
-          "Which revision of a record is current · Cascade decision notes",
+        "guide/currency.html": page(
+          "Which revision of a record is current · Cascade guide",
         ),
-        "decisions/naming.html": page(
-          "How everything in a pod is named · Cascade decision notes",
+        "guide/naming.html": page(
+          "How everything in a pod is named · Cascade guide",
         ),
         "evals/runs/a/doctor.html": page(
           "The doctor's cards, printed — Cascade evals",
@@ -350,13 +328,13 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
     it("puts a page whose file is named by the query before the terms and rules that hold it in their titles", () => {
       const places = rank(rows, "currency").map(({ path }) => path);
       assert.ok(
-        [0, 1].includes(places.indexOf("decisions/currency.html")),
+        [0, 1].includes(places.indexOf("guide/currency.html")),
         places.join(", "),
       );
       assert.ok(
         rank(rows, "naming")
           .slice(0, 8)
-          .some(({ path }) => path === "decisions/naming.html"),
+          .some(({ path }) => path === "guide/naming.html"),
       );
     });
 
@@ -499,13 +477,13 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
       rmSync(out, { recursive: true, force: true });
     });
 
-    it("answers the words a reader tries as the notes and terms they mean", () => {
+    it("answers the words a reader tries as the pages and terms they mean", () => {
       const first = (query: string, at: number) =>
         rank(rows, query)
           .slice(0, at)
           .map(({ path }) => path);
-      assert.ok(first("currency", 3).includes("decisions/currency.html"));
-      assert.ok(first("naming", 8).includes("decisions/naming.html"));
+      assert.ok(first("currency", 3).includes("spec/currency.html"));
+      assert.ok(first("naming", 8).includes("spec/naming.html"));
       assert.deepEqual(rank(rows, "html"), []);
       for (const query of ["wasDerivedFrom", "prov:wasDerivedFrom"])
         assert.equal(
@@ -598,7 +576,6 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
         assert.ok(pages.get(file)?.includes(`id="${id}"`), path);
       }
       assert.ok(rows.some(({ kind }) => kind === "rule"));
-      assert.ok(rows.some(({ kind }) => kind === "decision"));
     });
 
     it("stays under 300 KB", () => {

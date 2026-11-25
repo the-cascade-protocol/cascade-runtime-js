@@ -57,7 +57,6 @@ const FEATURE = `Feature: Vaccines
     Example: a code
       Then the pod holds <https://ns.cascadeprotocol.org/cascade#Vaccination>
 `;
-const NOTE = `# Vaccines are coded\n\nThe view queries/views/vaccines.rq shows them.\n`;
 
 async function vocabulary(): Promise<Files> {
   const files = new MemoryFiles(TREE);
@@ -70,7 +69,6 @@ async function vocabulary(): Promise<Files> {
   await put("queries/derivations/no comment here.rq", BARE);
   await put("queries/labels.rq", BARE);
   await put("runtime/vaccines.feature", FEATURE);
-  await put("decisions/vaccines.md", NOTE);
   return files;
 }
 
@@ -216,13 +214,7 @@ describe("Every query of the vocabulary has a page · queryPages(), queriesSecti
       assert.match(page.said, /cascade:vaccineCode/);
     });
 
-    it("names the rules and decision notes whose text gives its path, one that wraps a line included", () => {
-      const view = readPage(
-        read(tree, "queries/views/vaccines.html"),
-        "queries/views/vaccines.html",
-      );
-      assert.ok(view.hrefs.includes("decisions/vaccines.html"));
-      assert.match(view.said, /Vaccines are coded/);
+    it("names the rules whose text gives its path, one that wraps a line included", () => {
       const named = [...tree.keys()].find((page) =>
         read(tree, page).includes("V1. A vaccine is coded"),
       );

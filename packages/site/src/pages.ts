@@ -9,7 +9,7 @@ import { foldScript } from "./fold-script.js";
 import { type Content, Html, markup, shell } from "./html.js";
 import { namedInQuery } from "./term-reference.js";
 import {
-  noteHref,
+  fileHref,
   QUERIES_FOLDER,
   ruleHref,
   sharedPageOf,
@@ -98,7 +98,7 @@ function block(
   const question = answer.question;
   const source =
     site.options.blob !== undefined &&
-    markup` <a href="${noteHref(answer.query.path.split("/").map(encodeURIComponent).join("/"), site.options.blob)}">on GitHub</a>`;
+    markup` <a href="${fileHref(answer.query.path.split("/").map(encodeURIComponent).join("/"), site.options.blob)}">on GitHub</a>`;
   const about =
     answer.about !== undefined &&
     markup`<p>It prints the rows for every ${answer.about}; this block keeps those whose <code>?${answer.about}</code> is

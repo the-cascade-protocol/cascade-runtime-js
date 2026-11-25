@@ -300,8 +300,8 @@ describe("Files for an agent · agentFiles(), llms.txt, index.json, AGENTS.md", 
             rows: async () => [
               { href: "d/", label: "Open D" },
               {
-                href: "d/#the-bar",
-                label: "The bar",
+                href: "d/#checks",
+                label: "Checks",
                 about: "what a change must meet",
                 want: "contribute",
               },
@@ -316,7 +316,7 @@ describe("Files for an agent · agentFiles(), llms.txt, index.json, AGENTS.md", 
       assert.ok(llms.includes("- [Open D](d/)"));
       assert.ok(group, "llms.txt has a Contribute group");
       assert.ok(
-        group.includes("- [The bar](d/#the-bar): what a change must meet"),
+        group.includes("- [Checks](d/#checks): what a change must meet"),
       );
     });
 
