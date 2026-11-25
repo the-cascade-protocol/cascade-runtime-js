@@ -11,7 +11,6 @@
     "The MCP page · mcpPage(), mcpSection",
     "Every query of the vocabulary has a page · queryPages(), queriesSection",
     "The specification's pages · specPages()",
-    "The hub publishes no decision notes · specSection",
     "A rule's number · numberOf()",
     "Conformance results on the specification · readSpecReport(), specSection",
     "The hub publishes each adapter's explorer as it is · adaptersSection",
