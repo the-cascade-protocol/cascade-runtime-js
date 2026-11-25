@@ -83,7 +83,7 @@ function idOf(tag: SaxesTagNS): CdaId | undefined {
 }
 
 /**
- * An organization's `id` as the identifier cascade-vocabulary's decisions/naming.md maps it to, keyed as the
+ * An organization's `id` as the identifier the vocabulary maps it to, keyed as the
  * organization's name picks one: the NPI first, then the least type and value. Written back as a root and an extension,
  * a UUID root in lower case. Undefined for an `id` that maps to no identifier.
  */

@@ -106,11 +106,11 @@ const subnavLinks = (chrome: Chrome) =>
       : markup`<a href="${path === null ? `${HUB}/` : chrome.website + path}"${path === null ? new Html(' aria-current="page"') : ""}>${label}</a>`,
   );
 
-/** The box that searches the hub's terms, rules, decisions and pages: shown by `search.js` once it has loaded. */
+/** The box that searches the hub's terms, rules and pages: shown by `search.js` once it has loaded. */
 const searchBox = (hubRoot: string) => markup`<div class="sx-find-wrap">
 <form class="sx-find" role="search" data-rows="${hubRoot}search.json" hidden>
 <label class="sx-find-label" for="sx-find-q">Search this reference</label>
-<input id="sx-find-q" type="search" placeholder="Search terms, rules, decisions and pages" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sx-find-list" aria-autocomplete="list">
+<input id="sx-find-q" type="search" placeholder="Search terms, rules and pages" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sx-find-list" aria-autocomplete="list">
 <ul id="sx-find-list" role="listbox" aria-label="Results" hidden></ul>
 </form>
 </div>

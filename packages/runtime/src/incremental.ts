@@ -153,7 +153,7 @@ export type BuildChange =
   | { readonly graph: string; readonly loaded: true };
 
 /**
- * The build of a pod kept across its steps (currency.md, row "view"): the pod's files, the lens's derived state and
+ * The build of a pod kept across its steps: the pod's files, the lens's derived state and
  * the files the build writes, in one union. A step rebuilds only the records it wrote revisions for and those its
  * judgments reach, closed over each one's entry, by deriving them again over the files every record's state reads
  * (the scope) and theirs, and putting what that gives in place of what the union held of them. A step that writes

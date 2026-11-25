@@ -37,7 +37,6 @@ const ONTOLOGY = "ontologies/cascade.ttl";
 const SHAPES = "ontologies/cascade.shapes.ttl";
 const LAYOUT = "runtime/pod-layout.ttl";
 const QUERIES = "queries";
-const NOTES = "decisions";
 /** A list of queries or rules longer than this is folded behind a summary. */
 const FOLD_AFTER = 10;
 /** The spec's pages, from this page. */
@@ -158,21 +157,14 @@ export interface RuleNaming {
   readonly name: string;
 }
 
-/** A decision note whose text writes a query's path. */
-export interface NoteNaming {
-  readonly path: string;
-  readonly title: string;
-}
-
 export interface QueryNaming {
   readonly rules: RuleNaming[];
-  readonly notes: NoteNaming[];
 }
 
 interface UsedBy {
   readonly queries: Map<string, string[]>;
   readonly rules: Map<string, { path: string; number: string; name: string }[]>;
-  /** For each query's path, the rules and decision notes that write it. */
+  /** For each query's path, the rules that write it. */
   readonly naming: Map<string, QueryNaming>;
 }
 
@@ -245,7 +237,7 @@ async function usedBy(
     { path: string; number: string; name: string }[]
   >();
   const naming = new Map<string, QueryNaming>(
-    paths.map((path) => [path, { rules: [], notes: [] }]),
+    paths.map((path) => [path, { rules: [] }]),
   );
   const writing = (text: string): string[] => {
     const flat = text.replace(/\s+/g, " ");
@@ -271,14 +263,6 @@ async function usedBy(
       for (const written of writing(text))
         naming.get(written)?.rules.push({ path, number, name: rule.name });
     }
-  }
-  for (const path of (await vocabulary.list(NOTES))
-    .filter((note) => note.endsWith(".md"))
-    .sort()) {
-    const text = await readText(vocabulary, path);
-    const title = /^# +(.+)$/m.exec(text)?.[1]?.trim() ?? path;
-    for (const written of writing(text))
-      naming.get(written)?.notes.push({ path, title });
   }
   return { queries, rules, naming };
 }
@@ -1248,7 +1232,7 @@ function entriesOf(ontology: Graph, own: string): Map<string, Entry> {
 
 /**
  * What the query pages read of the vocabulary beside the queries themselves: the IRIs of the terms the term reference
- * has an entry for, and each query's path with the rules and decision notes that write it. Read once, shared with
+ * has an entry for, and each query's path with the rules that write it. Read once, shared with
  * `termReference()`.
  */
 export async function queryFacts(vocabulary: Files): Promise<{

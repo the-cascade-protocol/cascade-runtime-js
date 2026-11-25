@@ -49,7 +49,7 @@ export interface LabChange {
   rows: { before: Row[]; after: Row[]; left: Row[] };
 }
 
-/** The medication date a lab change is placed on (decision row 9 of one-meaning-per-term). */
+/** The medication date a lab change is placed on. */
 export type DateIs = "start of use" | "prescription written" | "end of use";
 
 export type CompactLabChange = Omit<LabChange, "rows" | "medication"> & {

@@ -11,9 +11,8 @@
     "The MCP page · mcpPage(), mcpSection",
     "Every query of the vocabulary has a page · queryPages(), queriesSection",
     "The specification's pages · specPages()",
-    "Decision notes as pages · specSection",
     "The hub publishes no decision notes · specSection",
-    "Warnings about rules and decision notes · specPages().warnings, numberOf(), rulesNamedIn(), filesNamed()",
+    "A rule's number · numberOf()",
     "Conformance results on the specification · readSpecReport(), specSection",
     "The hub publishes each adapter's explorer as it is · adaptersSection",
     "The adapters page says what an adapter is on one screen · adaptersIndex()",
@@ -25,7 +24,7 @@
     "Files for an agent · agentFiles(), llms.txt, index.json, AGENTS.md",
     "Searching the hub · search.json, search.js, the search box of shell()",
     "Searching the hub in a browser · a click, the arrows, Enter, Escape, no script",
-    "Linking a vocabulary term, a rule or a decision note · termHref(), ruleHref(), noteHref(), noteLinkOf()",
+    "Linking a vocabulary term, a rule or a file · termHref(), ruleHref(), fileHref()",
     "An address for each page of a pod's site · addressesOf(), sharedPageOf()",
     "Rendering Markdown as a page · renderMarkdown()",
     "Checking a site's links · scripts/link-check.mjs",
@@ -84,11 +83,6 @@
       "aliases": ["cases", "leaf"]
     },
     {
-      "term": "Choice row",
-      "definition": "one line of the Choice table of a decision note: a thing that was decided, the prior art, and what the vocabulary does, which names the rule the decision led to.",
-      "aliases": ["Choice rows"]
-    },
-    {
       "term": "code system",
       "aliases": ["code systems"],
       "definition": "a published list of codes for one kind of thing, such as RxNorm for medicines, LOINC for lab tests and SNOMED CT for clinical findings."
@@ -105,11 +99,6 @@
     {
       "term": "CTRF",
       "definition": "Common Test Report Format, an open JSON format for test results (ctrf.io); the site writes each suite's results in it beside the page, for an agent, and reads it from a suite no test runner runs."
-    },
-    {
-      "term": "decision note",
-      "definition": "a Markdown file in the vocabulary's `decisions/` folder that settles one design question: a Choice table of what was decided, and a Why section whose paragraphs each give the reason for a Choice row. A rule names the note and the Choice row that ruled it.",
-      "aliases": ["decision notes"]
     },
     {
       "term": "digest",
@@ -377,7 +366,6 @@
     "api-page.test.ts",
     "term-reference.test.ts",
     "spec-pages.test.ts",
-    "decision-notes.test.ts",
     "conformance.test.ts",
     "adapters.test.ts",
     "pod-site.test.ts",

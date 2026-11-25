@@ -1,4 +1,3 @@
-import { decisionPages } from "../decisions.js";
 import { markup, shell } from "../html.js";
 import { frontPageLink } from "../links.js";
 import type { Section } from "../sections.js";
@@ -14,7 +13,9 @@ import { nameOf, TESTS_FOLDER } from "./tests.js";
 
 export const SPEC_FOLDER = "spec/";
 export const CONFORMANCE_FOLDER = "conformance/";
-export const DECISIONS_FOLDER = "decisions/";
+/** The vocabulary's principles, which every term, rule and shape is judged by. */
+const PRINCIPLES =
+  "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/main/PRINCIPLES.md";
 const EARL_FILE = "earl.ttl";
 const TABLE_FILE = "table.md";
 const RESULTS_FILE = "results.json";
@@ -36,9 +37,8 @@ const total = (
 ): number => listed.reduce((sum, result) => sum + result[which], 0);
 
 /**
- * The rules of the vocabulary's `runtime/` features beside their notes and results under `spec/`, the notes as pages under
- * `decisions/`, each Choice row listing the rules that cite it, and under `conformance/` the same results by feature with
- * the run's own files: the EARL report, its table, and a JSON copy of the results by feature for a tool. Without a report
+ * The rules of the vocabulary's `runtime/` features beside their results under `spec/`, and under `conformance/` the same
+ * results by feature with the run's own files: the EARL report, its table, and a JSON copy of the results by feature for a tool. Without a report
  * every result reads "not run", and nothing of the run is linked.
  */
 export const specSection: Section<SpecContext> = {
@@ -46,7 +46,7 @@ export const specSection: Section<SpecContext> = {
   title: "The runtime's rules and their results",
   want: "rules",
   source:
-    "cascade-vocabulary's features and decision notes, and the latest conformance run on main",
+    "cascade-vocabulary's features, and the latest conformance run on main",
   async build(ctx) {
     const { files: vocabulary, builtFrom, at } = await ctx.vocabulary();
     const { report, earl, table } = await ctx.report();
@@ -55,22 +55,11 @@ export const specSection: Section<SpecContext> = {
       report,
       builtFrom,
       at,
-      notes: "../",
       chrome: ctx.chrome,
     });
     const files = new Map<string, Uint8Array>();
     for (const [path, bytes] of pages.files)
       files.set(`${SPEC_FOLDER}${path}`, bytes);
-    const readme =
-      (await vocabulary.read("decisions/README.md")) ??
-      encoder.encode("# Decision notes\n");
-    for (const [path, bytes] of decisionPages({
-      decisions: pages.decisions,
-      readme: new TextDecoder().decode(readme),
-      spec: `../${SPEC_FOLDER}`,
-      chrome: ctx.chrome,
-    }))
-      files.set(`${DECISIONS_FOLDER}${path}`, bytes);
 
     const features = pages.features.map((result) => ({
       ...result,
@@ -168,8 +157,7 @@ ${ranWithList("The results are of the run with:", report.ranWith)}</footer>
       {
         href: SPEC_FOLDER,
         label: "The runtime's rules",
-        about:
-          "every rule beside the note that ruled it, its examples and their latest result.",
+        about: "every rule, its examples and their latest result.",
       },
       {
         href: CONFORMANCE_FOLDER,
@@ -179,17 +167,11 @@ ${ranWithList("The results are of the run with:", report.ranWith)}</footer>
           "the reference runtime's pass and fail for each feature, from the latest run on main.",
       },
       {
-        href: DECISIONS_FOLDER,
-        label: "Decision notes",
+        href: PRINCIPLES,
+        label: "The principles",
         want: "why",
         about:
-          "why each term, rule and shape is as it is, each Choice row beside the rules that apply it.",
-      },
-      {
-        href: `${DECISIONS_FOLDER}#the-bar`,
-        label: "How decisions are made",
-        want: "contribute",
-        about: "what a note must show, and who reads it before it is accepted.",
+          "what a term, a rule or a shape has to serve to be in the vocabulary, and the order they win in when two disagree.",
       },
     ];
   },

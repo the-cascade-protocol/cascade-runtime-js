@@ -136,8 +136,7 @@ export interface CorePodOptions {
   readonly keepHead?: (head: Head) => Promise<void>;
   /**
    * When given, the files the build writes are rebuilt under the lens after every step and written to the pod: with
-   * `incremental`, the build `derive` makes, kept across steps and rebuilt only where a step reached (currency.md,
-   * row "view").
+   * `incremental`, the build `derive` makes, kept across steps and rebuilt only where a step reached.
    */
   readonly build?: PodBuildOption;
   /**

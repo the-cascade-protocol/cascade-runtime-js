@@ -6,6 +6,9 @@ const CLICKS = 2;
 
 export const FRONT_TITLE = "Cascade Protocol reference";
 
+const PRINCIPLES =
+  "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/main/PRINCIPLES.md";
+
 /** A link of a row of the front page's "Find your way" table, and what it must reach. */
 export interface Target {
   readonly href: string;
@@ -48,7 +51,13 @@ export const ROWS: ReadonlyMap<string, readonly Target[]> = new Map([
   ["want-model", [{ href: "terms/", title: "Cascade terms" }]],
   [
     "want-why",
-    [{ href: "decisions/", title: "Decision notes · Cascade decision notes" }],
+    [
+      {
+        href: PRINCIPLES,
+        title:
+          "cascade-vocabulary/PRINCIPLES.md at main · the-cascade-protocol/cascade-vocabulary",
+      },
+    ],
   ],
   [
     "want-rules",
@@ -94,16 +103,7 @@ export const ROWS: ReadonlyMap<string, readonly Target[]> = new Map([
       { href: "index.json", text: "{" },
     ],
   ],
-  [
-    "want-contribute",
-    [
-      {
-        href: "decisions/#the-bar",
-        title: "Decision notes · Cascade decision notes",
-      },
-      { href: "#repositories", title: FRONT_TITLE },
-    ],
-  ],
+  ["want-contribute", [{ href: "#repositories", title: FRONT_TITLE }]],
 ]);
 
 /** The repositories the front page lists and whose README opens with a Docs block. */

@@ -10,7 +10,7 @@ const idsOf = (html: string): (string | undefined)[] =>
   [...html.matchAll(/ id="([^"]*)"/g)].map((match) => match[1]);
 
 /**
- * The decision notes, the guide and the format notes are Markdown written elsewhere; this is the one place the site
+ * The guide and the format notes are Markdown written elsewhere; this is the one place the site
  * turns Markdown into HTML. Only what the Markdown itself makes is a tag: raw HTML and script links are shown as text.
  */
 describe("Rendering Markdown as a page · renderMarkdown()", () => {

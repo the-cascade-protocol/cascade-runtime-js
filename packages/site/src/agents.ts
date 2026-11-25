@@ -97,19 +97,12 @@ export interface Listed {
 export const SEARCH_FILE = "search.json";
 export const SEARCH_SCRIPT_FILE = "search.js";
 
-/** One place the search box can go: a page, or an anchor of a page that is a term, a rule or a decision note. */
+/** One place the search box can go: a page, or an anchor of a page that is a term or a rule. */
 export interface SearchRow {
   readonly path: string;
   readonly title: string;
   readonly kind:
-    | "page"
-    | "call"
-    | "term"
-    | "rule"
-    | "decision"
-    | "eval"
-    | "query"
-    | "mcp-tool";
+    "page" | "call" | "term" | "rule" | "eval" | "query" | "mcp-tool";
   /** What a term is called in words, beside its name. */
   readonly label?: string;
 }
@@ -149,7 +142,6 @@ export function callsNamed(
     ]),
   ].filter((name) => calls.has(name));
 }
-const NOTE_FOLDER = "decisions/";
 const RULES_FOLDER = "spec/";
 const EVALS_FOLDER = "evals/";
 const QUERIES_FOLDER = "queries/";
@@ -171,7 +163,7 @@ const words = (html: string): string =>
  * The rows of `search.json`: every page of `listed`, and the anchors the reader looks for by name inside pages that are
  * not one page each: the term reference's terms of every namespace, and the rules of the spec's pages. The API page's
  * calls, each at the place the page first names it, are anchors of it too. A page is titled without the site's name
- * after it, a decision note and an evals page are told by their kind, and a page that only redirects is no row.
+ * after it, an evals page is told by its kind, and a page that only redirects is no row.
  */
 function searchRows(
   listed: readonly Listed[],
@@ -194,19 +186,15 @@ function searchRows(
       });
       continue;
     }
-    const note =
-      path.startsWith(NOTE_FOLDER) && path !== `${NOTE_FOLDER}index.html`;
     rows.push({
       path,
       title: title.replace(SITE_NAME, ""),
-      kind: note
-        ? "decision"
-        : path.startsWith(EVALS_FOLDER)
-          ? "eval"
-          : path.startsWith(QUERIES_FOLDER) &&
-              path !== `${QUERIES_FOLDER}index.html`
-            ? "query"
-            : "page",
+      kind: path.startsWith(EVALS_FOLDER)
+        ? "eval"
+        : path.startsWith(QUERIES_FOLDER) &&
+            path !== `${QUERIES_FOLDER}index.html`
+          ? "query"
+          : "page",
     });
     if (path === MCP_PAGE)
       for (const [, id = "", name = ""] of html().matchAll(TOOL_ANCHOR))

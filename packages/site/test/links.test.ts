@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { noteHref, noteLinkOf, ruleHref, termHref } from "../src/links.js";
+import { fileHref, ruleHref, termHref } from "../src/links.js";
 
 const FOAF_NAME = "http://xmlns.com/foaf/0.1/name";
 const HOST = "https://ns.cascadeprotocol.org/";
@@ -19,10 +19,10 @@ function refusesHost(call: (base: string) => unknown): void {
 }
 
 /**
- * Every page of the site links what it names through these four, so a vocabulary term, a rule and a decision note each
+ * Every page of the site links what it names through these, so a vocabulary term, a rule and a file each
  * have one address. None of them links `ns.cascadeprotocol.org`, the host of the vocabulary's names, which serves no page.
  */
-describe("Linking a vocabulary term, a rule or a decision note · termHref(), ruleHref(), noteHref(), noteLinkOf()", () => {
+describe("Linking a vocabulary term, a rule or a file · termHref(), ruleHref(), fileHref()", () => {
   describe("`termHref()`", () => {
     it("keeps the namespace's prefix in the folder of a term's page, as in `terms/foaf/name.html`", () => {
       const known: [string, string][] = [
@@ -149,79 +149,19 @@ describe("Linking a vocabulary term, a rule or a decision note · termHref(), ru
     });
   });
 
-  describe("`noteHref()`", () => {
-    it("links a note's file on GitHub when the base is GitHub's address, with or without slashes", () => {
-      const file = `${BLOB}/decisions/identity.md`;
-      assert.equal(noteHref("decisions/identity.md", BLOB), file);
-      assert.equal(noteHref("decisions/identity.md", `${BLOB}/`), file);
-      assert.equal(noteHref("/decisions/identity.md", BLOB), file);
-    });
-
-    it("links a note's page when the base is the folder that holds `decisions/`", () => {
-      assert.equal(
-        noteHref("decisions/identity.md", "../"),
-        "../decisions/identity.html",
-      );
-    });
-
-    it("links `decisions/README.md` as the folder's index page", () => {
-      assert.equal(noteHref("decisions/README.md", ""), "decisions/index.html");
-    });
-
-    it("refuses a path that is no decision note, when asked for a page", () => {
-      assert.throws(() => noteHref("queries/a.rq", "../"), /no decision note/);
-      assert.throws(
-        () => noteHref("decisions/a/b.md", "../"),
-        /no decision note/,
-      );
+  describe("`fileHref()`", () => {
+    it("links a file on GitHub from GitHub's address, with or without slashes", () => {
+      const file = `${BLOB}/queries/a.rq`;
+      assert.equal(fileHref("queries/a.rq", BLOB), file);
+      assert.equal(fileHref("queries/a.rq", `${BLOB}/`), file);
+      assert.equal(fileHref("/queries/a.rq", BLOB), file);
     });
 
     it("refuses `ns.cascadeprotocol.org` as a base", () => {
       assert.throws(
-        () => noteHref("decisions/identity.md", HOST),
+        () => fileHref("queries/a.rq", HOST),
         /ns\.cascadeprotocol\.org/,
       );
-    });
-  });
-
-  describe("`noteLinkOf()`", () => {
-    const links = {
-      blob: "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/abc/",
-      tree: "https://github.com/the-cascade-protocol/cascade-vocabulary/tree/abc/",
-    };
-    /** A link written in `decisions/currency.md`, as the note's page or, with no `notes`, as GitHub's. */
-    const at = (href: string, notes?: string) =>
-      noteLinkOf(
-        href,
-        "decisions/currency.md",
-        notes === undefined ? links : { ...links, notes },
-      );
-
-    it("sends a link to another note to that note's page, keeping its anchor", () => {
-      assert.equal(at("naming.md#why", "../"), "../decisions/naming.html#why");
-      assert.equal(at("README.md", "../"), "../decisions/index.html");
-    });
-
-    it("keeps a link to another note on GitHub when the notes have no pages", () => {
-      assert.equal(at("naming.md"), `${links.blob}decisions/naming.md`);
-    });
-
-    it("sends a link to another file of the vocabulary to GitHub, and one to a folder to its listing there", () => {
-      assert.equal(
-        at("../queries/a.rq?x=1", "../"),
-        `${links.blob}queries/a.rq?x=1`,
-      );
-      assert.equal(at("../queries/", "../"), `${links.tree}queries/`);
-    });
-
-    it("leaves an `https:` link as written", () => {
-      assert.equal(at("https://example.org/a"), "https://example.org/a");
-    });
-
-    it("gives no address for a `javascript:` or `data:` link, however it is spaced", () => {
-      assert.equal(at("javascript:alert(1)"), undefined);
-      assert.equal(at(" jav\tascript:alert(1)"), undefined);
-      assert.equal(at("data:text/html,x", "../"), undefined);
     });
   });
 });
