@@ -205,7 +205,7 @@ jobs:
             exit 1
           fi
           echo "CASCADE_CONFORMANCE_REPORT=$REPORT" >> "$GITHUB_ENV"
-      # Every rule beside the note that ruled it and this run's result; its warnings fail nothing yet. Kept as an
+      # Every rule beside its examples and this run's result; its warnings fail nothing yet. Kept as an
       # artifact; the pages on main show the `conformance` job's run, not this one. On a pull request `conformance (native)`
       # has the report, and makes these pages.
       - name: The spec's pages
@@ -374,7 +374,7 @@ jobs:
           # A pattern that matches nothing exits 0 (the file itself counts as one test), so a renamed describe must fail
           # this step by the describe's name being absent from the output.
           grep -q "Reporting a conformance run" "$RUNNER_TEMP/report-cases.log"
-      # Every rule beside the note that ruled it and this run's result, kept as an artifact, as the `tests and conformance`
+      # Every rule beside its examples and this run's result, kept as an artifact, as the `tests and conformance`
       # job keeps its own off a pull request.
       - name: The spec's pages
         if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.start.outputs.report != '' }}

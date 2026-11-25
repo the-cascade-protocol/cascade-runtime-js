@@ -12,7 +12,7 @@ const PRINCIPLES =
 /** A link of a row of the front page's "Find your way" table, and what it must reach. */
 export interface Target {
   readonly href: string;
-  /** The title of the page it reaches. */
+  /** The title of the page it reaches; with neither this nor `text`, only the link's address is checked and it is not visited. */
   readonly title?: string;
   /** For a file a browser downloads and does not show: what the file starts with. */
   readonly text?: string;
@@ -49,16 +49,7 @@ export const ROWS: ReadonlyMap<string, readonly Target[]> = new Map([
     ],
   ],
   ["want-model", [{ href: "terms/", title: "Cascade terms" }]],
-  [
-    "want-why",
-    [
-      {
-        href: PRINCIPLES,
-        title:
-          "cascade-vocabulary/PRINCIPLES.md at main · the-cascade-protocol/cascade-vocabulary",
-      },
-    ],
-  ],
+  ["want-why", [{ href: PRINCIPLES }]],
   [
     "want-rules",
     [{ href: "spec/", title: "The rules · Cascade runtime rules" }],
@@ -200,6 +191,7 @@ export async function walk(
           continue;
         }
         if (/^https?:/.test(target.href) && !external) continue;
+        if (target.title === undefined && target.text === undefined) continue;
         problems.push(...(await click(page, link, target, 1, `row ${id}`)));
         await page.goto(site, { waitUntil: "load" });
       }

@@ -171,7 +171,7 @@ ${ranWithList("The results are of the run with:", report.ranWith)}</footer>
         label: "The principles",
         want: "why",
         about:
-          "what a term, a rule or a shape has to serve to be in the vocabulary, and the order they win in when two disagree.",
+          "which principles a term, a rule or a shape has to serve to be in the vocabulary, and which wins when two disagree.",
       },
     ];
   },
