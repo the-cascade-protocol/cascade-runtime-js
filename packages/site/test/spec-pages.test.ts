@@ -613,3 +613,27 @@ describe("Warnings about rules and decision notes · specPages().warnings, numbe
     });
   });
 });
+
+/**
+ * The vocabulary keeps a `decisions/` folder for its records, and the hub publishes none of it: a page of it would be
+ * the vocabulary's reasoning under the hub's name, unchecked.
+ */
+describe("The hub publishes no decision notes · specSection", () => {
+  it("writes no page under `decisions/` and no page links to one, though the vocabulary has the folder", async () => {
+    const vocabulary = await kimVocabulary();
+    await vocabulary.write("decisions/a-record.md", text("# A record\n"));
+    const tree = await hubWith(vocabulary, ASSERTIONS);
+    assert.deepEqual(
+      [...tree.keys()].filter((path) => path.startsWith("decisions/")),
+      [],
+    );
+    assert.deepEqual(
+      [...tree.keys()].filter(
+        (path) =>
+          path.endsWith(".html") &&
+          /href="[^"]*decisions\//.test(treeText(tree, path)),
+      ),
+      [],
+    );
+  });
+});
