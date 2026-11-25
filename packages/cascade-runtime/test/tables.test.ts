@@ -825,6 +825,29 @@ async function checkedStore(
   return store;
 }
 
+/** A table kind the test makes up: `declaring` declares it, and no rule list or page names it. */
+const UNREAD_KIND = `${CASCADE}TableKindTheTestMadeUp`;
+
+/** The vocabulary given, with `UNREAD_KIND` declared in its ontology as a table kind and nothing else changed. */
+function declaring(vocabulary: Files): Files {
+  return {
+    iri: vocabulary.iri,
+    read: async (path) => {
+      const bytes = await vocabulary.read(path);
+      return bytes === undefined || !path.endsWith("ontologies/cascade.ttl")
+        ? bytes
+        : new TextEncoder().encode(
+            `${new TextDecoder().decode(bytes)}\n<${UNREAD_KIND}> a <${CASCADE}TableKind> .\n`,
+          );
+    },
+    write: (path, bytes) => vocabulary.write(path, bytes),
+    list: (folder) => vocabulary.list(folder),
+  };
+}
+
+/** The vocabulary under test, declaring a table kind that nothing reads. */
+const declaringUnread: Files = declaring(parts.vocabulary);
+
 /** The feed with the vaccine groups series of the kind given. */
 function retyped(kind: string): Served {
   return {
@@ -1596,18 +1619,22 @@ describe("Keeping reference tables up to date · tablesBeside(), tables.check()"
   });
 
   describe("given a feed whose series are of several table kinds", () => {
-    const UNREAD = `${CASCADE}ValueSetExpansions`;
+    const UNREAD = UNREAD_KIND;
     const MARKED = `${CASCADE}CodeNames`;
     const PUBLISHED = `${CASCADE}NdcDrugs`;
 
     before(async () => {
-      const { readByPages } = await tableTerms(
-        parts.vocabulary,
+      const { declared, readByPages } = await tableTerms(
+        declaringUnread,
         parts.newStore,
       );
       assert.ok(
         readByPages.has(MARKED) && !readByPages.has(PUBLISHED),
         "the vocabulary marks CodeNames and not NdcDrugs as read by pages",
+      );
+      assert.ok(
+        declared.has(UNREAD) && !readByPages.has(UNREAD),
+        "the test's own kind is declared and marked as read by no page",
       );
       for (const path of await parts.vocabulary.list(RULE_LIST)) {
         const bytes = path.endsWith(".ttl")
@@ -1637,10 +1664,7 @@ describe("Keeping reference tables up to date · tablesBeside(), tables.check()"
             : new TextEncoder().encode(
                 new TextDecoder()
                   .decode(bytes)
-                  .replace(
-                    "cascade:VaccineGroups",
-                    "cascade:ValueSetExpansions",
-                  ),
+                  .replace("cascade:VaccineGroups", `<${UNREAD}>`),
               );
         },
         write: (path, bytes) => vocabulary.write(path, bytes),
@@ -1649,7 +1673,7 @@ describe("Keeping reference tables up to date · tablesBeside(), tables.check()"
       const [kept] = await tablesOver(
         retyped(UNREAD),
         new MemoryFiles("urn:test:tables/"),
-        naming,
+        declaring(naming),
       ).check();
       assert.ok(kept?.kept.includes(groups.first));
     });
@@ -1661,7 +1685,11 @@ describe("Keeping reference tables up to date · tablesBeside(), tables.check()"
 
     it("keeps no series of a kind that neither reads", async () => {
       for (const kind of [UNREAD, PUBLISHED]) {
-        const [unkept] = await tablesOver(retyped(kind)).check();
+        const [unkept] = await tablesOver(
+          retyped(kind),
+          new MemoryFiles("urn:test:tables/"),
+          declaringUnread,
+        ).check();
         assert.ok(!unkept?.kept.includes(groups.first), kind);
       }
     });
@@ -4051,9 +4079,9 @@ describe("Starter copies of the reference tables, as the package is built with t
       await writeStarterCopies(
         {
           feeds: [FEED],
-          vocabulary: parts.vocabulary,
+          vocabulary: declaringUnread,
           newStore: parts.newStore,
-          fetch: fetchOf(retyped(`${CASCADE}ValueSetExpansions`)),
+          fetch: fetchOf(retyped(UNREAD_KIND)),
         },
         (path, bytes) => written.write(path, bytes),
       );
