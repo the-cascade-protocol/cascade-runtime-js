@@ -1830,14 +1830,16 @@ async function read(
 }
 
 /**
- * The run as an act, a new random ID (N7), informed by the act whose records it took: written when the run writes
- * something else, and, for a run given an activity no run was informed by before, whatever it writes, so the pod says
- * the arrival was taken (M1). A recheck, an open's run and a run repeated that finds nothing new write nothing.
+ * The run as an act, a new random ID (N7), informed by the act whose records it took and naming the profiles whose
+ * records it took as the subject's: written when the run writes something else, and, for a run given an activity no
+ * run was informed by before, or none naming one of those profiles, whatever it writes, so the pod says the arrival was
+ * taken (M1). A recheck, an open's run and a run repeated that finds nothing new write nothing.
  */
 function actOfRun(
   context: StepContext,
   informedBy?: string,
   taken = false,
+  profiles: readonly string[] = [],
 ): string | undefined {
   const { writes, time, layout } = context;
   if (writes.size === 0 && (informedBy === undefined || taken))
@@ -1854,9 +1856,38 @@ function actOfRun(
       ...(informedBy === undefined
         ? []
         : [[run, iri(`${PROV}wasInformedBy`), iri(informedBy)] as Triple]),
+      ...profiles.map((profile): Triple => [
+        run,
+        iri(`${CASCADE}tookRecordsOfProfile`),
+        iri(profile),
+      ]),
     ],
   });
   return name;
+}
+
+/**
+ * The patient profiles, other than the subject, that the versions of the revisions the acts generated name and whose
+ * records are the subject's: those whose records a run given the acts takes (M1).
+ */
+async function profilesTaken(
+  context: StepContext,
+  takes: Takes,
+): Promise<string[]> {
+  if (takes.acts.size === 0) return [];
+  const acts = [...takes.acts].map((act) => `<${act}>`).join(" ");
+  return (
+    await column(
+      await context.matcherView(),
+      `SELECT ?profile WHERE {
+        { SELECT DISTINCT ?profile WHERE {
+            VALUES ?act { ${acts} } ?revision prov:wasGeneratedBy ?act ; cascade:version/cascade:patient ?profile } }
+        FILTER NOT EXISTS { ?profile a cascade:Subject }
+        FILTER EXISTS { ?claimed cascade:patient ?profile ; prov:specializationOf/cascade:subject ?owner }
+      } ORDER BY ?profile`,
+      "profile",
+    )
+  ).flatMap(([profile]) => profile ?? []);
 }
 
 /**
@@ -1878,17 +1909,25 @@ async function actsTaken(
     : { acts: new Set(named.flatMap(([act]) => act ?? [])), all: true };
 }
 
-/** Whether the pod already holds a matcher run informed by the activity (M1). */
+/**
+ * Whether the pod already holds a matcher run informed by the activity, and, of the profiles given, each named by such
+ * a run as one whose records it took (M1).
+ */
 async function runInformedBy(
   context: StepContext,
   activity: string,
+  profiles: readonly string[],
 ): Promise<boolean> {
-  const [run] = await column(
+  const rows = await column(
     await context.matcherView(),
-    `SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy <${activity}> } LIMIT 1`,
+    `SELECT ?run ?profile WHERE {
+      ?run a cascade:MatcherRun ; prov:wasInformedBy <${activity}> OPTIONAL { ?run cascade:tookRecordsOfProfile ?profile }
+    }`,
     "run",
+    "profile",
   );
-  return run !== undefined;
+  const named = new Set(rows.flatMap(([, profile]) => profile ?? []));
+  return rows.length > 0 && profiles.every((profile) => named.has(profile));
 }
 
 /**
@@ -1906,8 +1945,11 @@ export async function runMatcher(
       : await timedAside("matcher.actsTaken", () =>
           actsTaken(context, activity),
         );
+  const profiles =
+    takes === undefined ? [] : await profilesTaken(context, takes);
   const taken =
-    activity !== undefined && (await runInformedBy(context, activity));
+    activity !== undefined &&
+    (await runInformedBy(context, activity, profiles));
   const matcher = await timedAside("matcher.of", () =>
     Matcher.of(context, references, undefined, takes),
   );
@@ -1919,7 +1961,7 @@ export async function runMatcher(
   } else await timedAside("matcher.take", () => matcher.take(takes));
   await timedAside("matcher.fileFindings", () => matcher.fileFindings());
   matcher.finish();
-  return actOfRun(context, activity, taken);
+  return actOfRun(context, activity, taken, profiles);
 }
 
 /** The versions after `from` on the line that ends at `to`, oldest first: none when `to` does not descend from it. */

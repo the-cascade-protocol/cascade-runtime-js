@@ -181,7 +181,7 @@ export interface Pod {
   /**
    * What the open gives the pod: the app's newer tables (O1, O2), and a matcher run for each arrival no run is informed
    * by (`pod/Which arrivals has the matcher not taken`), an import, entry session, connect or sync a stop left
-   * unmatched. Settled to undefined, by the time the first call made on the pod returns, when the tables had not changed
+   * unmatched, and each whose patient profile an About claimed after its run, whose records that run could not take. Settled to undefined, by the time the first call made on the pod returns, when the tables had not changed
    * and the pod's database, where it holds the pod, names no arrival owed: that is one query of it, asked before any
    * call is answered, which `ask` and `askPage` wait for as they wait for the database. Where no database holds the pod
    * (a browser's, or a folder pod whose `pod.db` is missing or stale) nothing is asked at the open, and the arrivals are
