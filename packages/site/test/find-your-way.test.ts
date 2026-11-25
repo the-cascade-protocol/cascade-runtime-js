@@ -112,7 +112,12 @@ describe("The front page · hubFiles()", () => {
           ["want-see", ["examples.html", STARTER_TRY]],
           ["want-build", ["api/", "start.html"]],
           ["want-model", ["queries/", "terms/"]],
-          ["want-why", ["decisions/"]],
+          [
+            "want-why",
+            [
+              "https://github.com/the-cascade-protocol/cascade-vocabulary/blob/main/PRINCIPLES.md",
+            ],
+          ],
           ["want-rules", ["spec/"]],
           [
             "want-conformance",
@@ -133,7 +138,7 @@ describe("The front page · hubFiles()", () => {
           ],
           ["want-evals", ["evals/"]],
           ["want-agent", ["AGENTS.md", "index.json", "llms.txt", "mcp/"]],
-          ["want-contribute", ["#repositories", "decisions/#the-bar"]],
+          ["want-contribute", ["#repositories"]],
         ].map(([id, links]) => [id, [...(links as string[])].sort()]),
       );
     });

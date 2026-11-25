@@ -10,7 +10,6 @@ import {
 import { withoutComment } from "./answer.js";
 import {
   frontPageLink,
-  noteHref,
   QUERIES_FOLDER,
   queryAddresses,
   queryPlace,
@@ -421,7 +420,6 @@ function queryPage(
     .map((iri) => [phrase(iri), iri] as const)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const rules = facts.naming?.rules ?? [];
-  const notes = facts.naming?.notes ?? [];
   const kind =
     query.subject === undefined
       ? group.one
@@ -439,20 +437,16 @@ function queryPage(
 ${purpose ?? markup`<p class="about">The file states no purpose.</p>\n`}<h2>The query</h2>
 <pre class="code"><code>${highlighted(withoutComment(query.text))}</code></pre>
 <h2>Terms it reads</h2>
-${read.length === 0 ? markup`<p class="about">It names no term of the vocabulary.</p>\n` : markup`<p class="terms">${read.map(([name, iri], at) => markup`${at === 0 ? "" : " · "}<a href="${termHref(iri, `${up}${TERMS_FOLDER}`, facts.properties.has(iri))}"><code>${name}</code></a>`)}</p>\n`}<h2>Rules and decision notes that name it</h2>
+${read.length === 0 ? markup`<p class="about">It names no term of the vocabulary.</p>\n` : markup`<p class="terms">${read.map(([name, iri], at) => markup`${at === 0 ? "" : " · "}<a href="${termHref(iri, `${up}${TERMS_FOLDER}`, facts.properties.has(iri))}"><code>${name}</code></a>`)}</p>\n`}<h2>Rules that name it</h2>
 ${
-  rules.length + notes.length === 0
-    ? markup`<p class="about">No rule or decision note writes its path.</p>\n`
-    : list([
-        ...rules.map(
+  rules.length === 0
+    ? markup`<p class="about">No rule writes its path.</p>\n`
+    : list(
+        rules.map(
           ({ path, number, name }) =>
             markup`<a href="${ruleHref(path, number, `${up}spec/`)}">${name}</a> <span class="about">${path}</span>`,
         ),
-        ...notes.map(
-          ({ path, title }) =>
-            markup`<a href="${noteHref(path, up)}">${title}</a> <span class="about">${path}</span>`,
-        ),
-      ])
+      )
 }${rowsSection(query, rows, up) ?? ""}<p class="also"><a href="${blob}${encodeURI(query.path)}">${query.path} on GitHub ↗</a></p>
 `,
   }).text;

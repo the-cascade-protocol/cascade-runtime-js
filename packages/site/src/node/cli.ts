@@ -643,7 +643,7 @@ async function buildPages(args: string[]): Promise<number> {
 
 /**
  * Builds the spec's pages into build/spec from the vocabulary beside this checkout and the conformance run's EARL
- * report, and prints each place a rule and a note's Choice row do not name each other, which fails nothing yet.
+ * report, and prints each place the pages and the report do not agree, which fails nothing yet.
  */
 async function buildSpec(args: string[]): Promise<number> {
   const started = performance.now();
@@ -665,7 +665,7 @@ async function buildSpec(args: string[]): Promise<number> {
     reportFileOf(values.report),
     resolved.iri,
   );
-  const { files, warnings, unnoted, waiting } = await specPages({
+  const { files, warnings } = await specPages({
     vocabulary: new FolderFiles(resolved.folder, resolved.iri),
     report,
     builtFrom: await builtFromRuntime(resolved),
@@ -682,7 +682,7 @@ async function buildSpec(args: string[]): Promise<number> {
     kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
   }
   console.error(
-    `${warnings.length} warnings${kinds.size === 0 ? "" : ` (${[...kinds].map(([kind, count]) => `${count} ${kind}`).join(", ")})`}; ${unnoted.length} rules say no note rules them, ${waiting.length} Choice rows wait on an issue; ${files.size} files written to ${out} in ${Math.round(performance.now() - started)} ms`,
+    `${warnings.length} warnings${kinds.size === 0 ? "" : ` (${[...kinds].map(([kind, count]) => `${count} ${kind}`).join(", ")})`}; ${files.size} files written to ${out} in ${Math.round(performance.now() - started)} ms`,
   );
   return 0;
 }
