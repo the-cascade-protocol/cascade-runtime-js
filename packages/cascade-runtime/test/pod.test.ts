@@ -565,6 +565,7 @@ describe("Opening a pod · openPod()", () => {
       const parent = join(pods, "released-held");
       const pod = await openPod(join(parent, "pod"));
       const held = await tablesBeside(parent);
+      await held.idle();
       const before = await held.held();
       await pod.close();
       await releasedTables(parent);
