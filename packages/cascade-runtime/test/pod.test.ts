@@ -1640,22 +1640,27 @@ describe("Importing a health export · pod.import()", () => {
       }
     });
 
-    it("takes its records before a later import's own run, when that import claims its patients through `claimProfiles`", async () => {
-      const claims = await Promise.all(
+    it("takes its records before a later import's own run, when that import's versions name a patient it claims through `claimProfiles`", async () => {
+      // x-e10 names J1's and J2's patients; x-e15, a later export from the same account, writes versions naming J1's.
+      const [j1, j2] = await Promise.all(
         ["J1", "J2"].map((judgment) => profileOf(judgment)),
       );
+      assert.ok(j1 && j2);
       const matched = async (name: string, claimingFirst: boolean) => {
         const pod = await openPodWith(kept, join(pods, name));
         try {
-          const first = await pod.import(
-            exported("x-e2"),
-            claimingFirst ? { claimProfiles: claims } : {},
-          );
-          assert.equal(first.claimedProfiles.length > 0, claimingFirst);
-          const later = await pod.import(exported("x-e6"), {
-            claimProfiles: claims,
+          const first = await pod.import(exported("x-e10"), {
+            claimProfiles: claimingFirst ? [j1, j2] : [j2],
+          });
+          const later = await pod.import(exported("x-e15"), {
+            claimProfiles: [j1],
           });
           assert.equal(later.refused, undefined);
+          assert.deepEqual(
+            later.claimedProfiles.map(({ profile }) => profile),
+            claimingFirst ? [] : [j1],
+          );
+          assert.equal(first.claimedProfiles.length, claimingFirst ? 2 : 1);
           return (await select(pod, SAMES)).length;
         } finally {
           await pod.close();
