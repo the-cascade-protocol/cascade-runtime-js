@@ -10,7 +10,6 @@ import {
   finalOrder,
   keyedFillFailures,
   madeScreens,
-  pinned,
   sqlCheckAssertions,
   sqlFailures,
   sqlFunctionAssertions,
@@ -889,41 +888,84 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
       ).endsWith("#queries/questions/pod/My%20lab%20results.sql/f/everyday"),
     );
   });
-  it("reads a fixture's expected answer from its SPARQL TSV file as the vocabulary's reader does: a row to a line, an unbound field empty, and refuses a term no comparison can match exactly", async () => {
+  it("reads a fixture's expected answer from its SPARQL TSV file: a row to a line, an unbound field empty, the header checked against the query's variables, and refuses a term no comparison can match exactly", async () => {
     const files = new MemoryFiles("https://example.org/v/");
-    const read = async (text: string): Promise<string[]> => {
+    const pod = await twoEntries();
+    const store = new OxigraphStore();
+    // The query has no rows, so each row the file pins is reported missing, as the runtime read it.
+    const read = async (text: string, variables = ["x"]): Promise<string[]> => {
       await files.write("answer.tsv", new TextEncoder().encode(text));
-      return pinned(files, "answer.tsv");
+      const prefix = "f, e, under everyday, queries/q.rq: missing: ";
+      const found = await sqlFailures(
+        files,
+        {
+          name: "f",
+          lens: "everyday",
+          union: new Union(store),
+          db: pod,
+          entries: [
+            {
+              name: "e",
+              query: "queries/q.rq",
+              lens: "queries/lenses/everyday.rq",
+              records: [],
+              result: "answer.tsv",
+            },
+          ],
+          screens: new Map(),
+          close: () => undefined,
+        },
+        {
+          rq: "queries/q.rq",
+          rqText: `SELECT ${variables.map((name) => `?${name}`).join(" ")} WHERE { ?x ?p ?o }`,
+          sql: `SELECT ${variables.map((name) => `NULL AS ${name}`).join(", ")} WHERE 0`,
+        },
+      );
+      return found.map((line) =>
+        line.startsWith(prefix) ? line.slice(prefix.length) : line,
+      );
     };
-    const whole = `<${XSD}integer>`;
-    const terms: [field: string, found: string][] = [
-      [`"007"^^${whole}`, `"007"^^${whole}`],
-      ['"a b"', '"a b"'],
-      [`"a"^^<${XSD}string>`, '"a"'],
-      ['"hi"@en-GB', '"hi"@en-GB'],
-      ["<urn:x:a>", "<urn:x:a>"],
-      ['"\\u0041\\u001F\\t\\n\\"\\\\·"', '"A\\u001F\\t\\n\\"\\\\·"'],
-    ];
-    for (const [field, found] of terms)
-      assert.deepEqual(await read(`?x\n${field}\n`), [`?x=${found}`], field);
-    assert.deepEqual(await read("?x\n\n"), [""]);
-    assert.deepEqual(await read("?x\n"), []);
-    assert.deepEqual(
-      await read('?a\t?b\n<urn:x:1>\t\n\t"y"\n<urn:x:2>\t"z"\n'),
-      ["?a=<urn:x:1>", '?b="y"', '?a=<urn:x:2> ?b="z"'],
-    );
-    const refused: [text: string, why: RegExp][] = [
-      ["?x\n_:b0\n", /_:b0, which no comparison can match exactly/],
-      ["?x\n1\n", /1, which no comparison can match exactly/],
-      ['?x\n"""a"""\n', /which no comparison can match exactly/],
-      ['?x\n"a\\qb"\n', /whose backslash is no escape of Turtle/],
-      ["?x\n<urn:x:a>", /does not end in a newline/],
-      ["x\n<urn:x:a>\n", /leading \?/],
-      ["?a\t?b\n<urn:x:a>\n", /a row has 1 fields, the header 2/],
-      ['{"boolean": true}\n', /leading \?/],
-    ];
-    for (const [text, why] of refused)
-      await assert.rejects(read(text), why, text);
+    try {
+      const whole = `<${XSD}integer>`;
+      const terms: [field: string, found: string][] = [
+        [`"007"^^${whole}`, `"007"^^${whole}`],
+        ['"a b"', '"a b"'],
+        [`"a"^^<${XSD}string>`, '"a"'],
+        ['"hi"@en-GB', '"hi"@en-GB'],
+        ["<urn:x:a>", "<urn:x:a>"],
+        ['"\\u0041\\u001F\\t\\n\\"\\\\·"', '"A\\u001F\\t\\n\\"\\\\·"'],
+      ];
+      for (const [field, found] of terms)
+        assert.deepEqual(await read(`?x\n${field}\n`), [`?x=${found}`], field);
+      assert.deepEqual(await read("?x\n\n"), [""]);
+      assert.deepEqual(await read("?x\n"), []);
+      assert.deepEqual(
+        await read('?a\t?b\n<urn:x:1>\t\n\t"y"\n<urn:x:2>\t"z"\n', ["a", "b"]),
+        ["?a=<urn:x:1>", '?a=<urn:x:2> ?b="z"', '?b="y"'],
+      );
+      assert.deepEqual(await read("?x\t?ghost\n<urn:x:a>\t\n"), [
+        "f, e: expected the variables [x], found [ghost, x]",
+      ]);
+      assert.deepEqual(await read("?x\n", ["x", "y"]), [
+        "f, e: expected the variables [x, y], found [x]",
+      ]);
+      const refused: [text: string, why: RegExp][] = [
+        ["?x\n_:b0\n", /_:b0, which no comparison can match exactly/],
+        ["?x\n1\n", /1, which no comparison can match exactly/],
+        ['?x\n"""a"""\n', /which no comparison can match exactly/],
+        ['?x\n"a\\qb"\n', /whose backslash is no escape of Turtle/],
+        ["?x\n<urn:x:a>", /does not end in a newline/],
+        ["x\n<urn:x:a>\n", /each variable once, with a leading \?/],
+        ["?x\t?x\n", /each variable once, with a leading \?/],
+        ["?a\t?b\n<urn:x:a>\n", /a row has 1 fields, the header 2/],
+        ["?a\n<urn:x:a>\t<urn:x:b>\n", /a row has 2 fields, the header 1/],
+      ];
+      for (const [text, why] of refused)
+        await assert.rejects(read(text), why, text);
+    } finally {
+      pod.close();
+      store.free?.();
+    }
   });
   it("judges an ORDER BY's ties on a STR or a SUBSTR of it by that text, and on a term by SPARQL's <", () => {
     const at = (value: string): string => `"${value}"^^<${XSD}dateTime>`;

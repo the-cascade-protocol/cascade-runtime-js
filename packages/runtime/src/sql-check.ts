@@ -1359,21 +1359,23 @@ const pinnedRow = (pairs: Iterable<readonly [string, string]>): string =>
  * The rows a fixture's answer file holds, a SPARQL 1.1 Query Results TSV file: a header of `?variable`s, then a line
  * for each row with a field for each variable, an empty field for one the row leaves unbound.
  */
-export async function pinned(
+async function pinned(
   vocabulary: Files,
   result: string,
-): Promise<string[]> {
+): Promise<{ names: string[]; rows: string[] }> {
   const lines = (await readText(vocabulary, result)).split("\n");
   if (lines.pop() !== "")
     throw new Error(`${result} does not end in a newline`);
-  const names = (lines.shift() ?? "").split("\t").map((field) => {
-    if (!field.startsWith("?"))
-      throw new Error(
-        `${result}: the first line must name each variable with a leading ?`,
-      );
-    return field.slice(1);
-  });
-  return lines.map((line) => {
+  const header = (lines.shift() ?? "").split("\t");
+  const names = header.map((field) => field.slice(1));
+  if (
+    !header.every((field) => field.startsWith("?")) ||
+    new Set(names).size !== names.length
+  )
+    throw new Error(
+      `${result}: the first line must name each variable once, with a leading ?`,
+    );
+  const rows = lines.map((line) => {
     const fields = line.split("\t");
     if (fields.length !== names.length)
       throw new Error(
@@ -1386,6 +1388,7 @@ export async function pinned(
       }),
     );
   });
+  return { names, rows };
 }
 
 const lensOf = (path: string | undefined): string | undefined =>
@@ -1510,6 +1513,14 @@ export async function sqlFailures(
     }
     if (entryLens !== lens) continue;
     const pins = await pinned(vocabulary, entry.result);
+    const expected = [...names].sort().join(", ");
+    const header = [...pins.names].sort().join(", ");
+    if (expected !== header) {
+      lines.push(
+        `${fixture}, ${entry.name}: expected the variables [${expected}], found [${header}]`,
+      );
+      continue;
+    }
     const given =
       entry.records.length > 0 ? askedRows(db, sql, entry.records) : found.rows;
     const rows = given.map((row) =>
@@ -1519,7 +1530,7 @@ export async function sqlFailures(
         ),
       ),
     );
-    const want = pins.map((row) => [row]);
+    const want = pins.rows.map((row) => [row]);
     const got = rows.map((row) => [row]);
     for (const [kind, side] of [
       ["missing", lacking(want, got)],
