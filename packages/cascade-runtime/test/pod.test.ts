@@ -565,6 +565,7 @@ describe("Opening a pod · openPod()", () => {
       const parent = join(pods, "released-held");
       const pod = await openPod(join(parent, "pod"));
       const held = await tablesBeside(parent);
+      await held.idle();
       const before = await held.held();
       await pod.close();
       await releasedTables(parent);
@@ -1582,6 +1583,183 @@ describe("Importing a health export · pod.import()", () => {
       } finally {
         await pod.close();
       }
+    });
+  });
+
+  describe("given an import matched while its patients were unclaimed, and their Abouts filed after its run", () => {
+    const SAMES = `SELECT ?judgment WHERE { ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same }`;
+    const SAME_PAIRS = `SELECT DISTINCT ?one ?other WHERE {
+      ?judgment prov:wasAttributedTo <${MATCHER}> ; cascade:verdict cascade:Same ; prov:hadMember ?one, ?other .
+      FILTER (STR(?one) < STR(?other))
+    } ORDER BY ?one ?other`;
+
+    /** Alex's x-e10 imported and matched with its patients unclaimed, then each claimed; the pod left open. */
+    async function claimedAfterItsRun(at: string): Promise<Pod> {
+      const pod = await openPodWith(kept, at);
+      const done = await pod.import(exported("x-e10"));
+      assert.equal(done.matched?.refused, undefined);
+      assert.ok(done.unclaimedProfiles.length > 0);
+      for (const profile of done.unclaimedProfiles)
+        await pod.judge(about(pod, profile));
+      return pod;
+    }
+
+    /** What the matcher joined of x-e10 when its patients were claimed before its run. */
+    async function claimedBeforeItsRun(name: string): Promise<number> {
+      const pod = await openPodWith(kept, join(pods, name));
+      try {
+        const done = await pod.import(exported("x-e10"), { match: false });
+        for (const profile of done.unclaimedProfiles)
+          await pod.judge(about(pod, profile));
+        assert.ok(done.activity);
+        await pod.match(done.activity);
+        return (await select(pod, SAMES)).length;
+      } finally {
+        await pod.close();
+      }
+    }
+
+    it("takes its records at `pod.match()`, as a run after the claim would have", async () => {
+      const wanted = await claimedBeforeItsRun("claimed-before-run");
+      assert.ok(wanted > 0);
+      const pod = await claimedAfterItsRun(join(pods, "claimed-after-run"));
+      try {
+        assert.equal((await select(pod, SAMES)).length, 0);
+        assert.equal((await pod.match()).refused, undefined);
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes its records when the pod is opened again", async () => {
+      const wanted = await claimedBeforeItsRun("claimed-before-run-reopened");
+      const at = join(pods, "claimed-after-run-reopened");
+      await (await claimedAfterItsRun(at)).close();
+      const pod = await openPodWith(kept, at);
+      try {
+        assert.equal((await pod.opened)?.refused, undefined);
+        assert.equal((await select(pod, SAMES)).length, wanted);
+      } finally {
+        await pod.close();
+      }
+    });
+
+    it("takes its records before a later import's own run, when that import's versions name a patient it claims through `claimProfiles`", async () => {
+      // x-e10 names J1's and J2's patients; x-e15, a later export from the same account, writes versions naming J1's.
+      const [j1, j2] = await Promise.all(
+        ["J1", "J2"].map((judgment) => profileOf(judgment)),
+      );
+      assert.ok(j1 && j2);
+      const matched = async (name: string, claimingFirst: boolean) => {
+        const pod = await openPodWith(kept, join(pods, name));
+        try {
+          const first = await pod.import(exported("x-e10"), {
+            claimProfiles: claimingFirst ? [j1, j2] : [j2],
+          });
+          const later = await pod.import(exported("x-e15"), {
+            claimProfiles: [j1],
+          });
+          assert.equal(later.refused, undefined);
+          assert.deepEqual(
+            later.claimedProfiles.map(({ profile }) => profile),
+            claimingFirst ? [] : [j1],
+          );
+          assert.equal(first.claimedProfiles.length, claimingFirst ? 2 : 1);
+          return (await select(pod, SAMES)).length;
+        } finally {
+          await pod.close();
+        }
+      };
+      const wanted = await matched("claimed-at-first-import", true);
+      assert.ok(wanted > 0);
+      assert.equal(await matched("claimed-at-later-import", false), wanted);
+    });
+
+    it("takes the records of a patient claimed after a match that took the rest, when a later download's version of one of them names another patient", async () => {
+      // J1's patient is Meridian's, J2's Larkspur's; four Sames each join a record of one to a record of the other.
+      const [j1, j2] = await Promise.all(
+        ["J1", "J2"].map((judgment) => profileOf(judgment)),
+      );
+      assert.ok(j1 && j2);
+      const moved = join(pods, "x-e10-one-record-moved", "apple_health_export");
+      await cp(exported("x-e10"), moved, { recursive: true });
+      const file = join(moved, "clinical-records", "Immunization-im-5501.json");
+      const immunization = JSON.parse(await readFile(file, "utf8"));
+      immunization.patient.reference = "Patient/448813";
+      immunization.meta = {
+        versionId: "2",
+        lastUpdated: "2026-09-20T08:00:00Z",
+      };
+      await writeFile(file, JSON.stringify(immunization, null, 2));
+      const matched = async (name: string, claimingFirst: string[]) => {
+        const pod = await openPodWith(kept, join(pods, name));
+        try {
+          const first = await pod.import(exported("x-e10"), {
+            claimProfiles: claimingFirst,
+          });
+          const before = new Set([
+            ...first.unclaimedProfiles,
+            ...first.claimedProfiles.map(({ profile }) => profile),
+          ]);
+          const later = await pod.import(moved);
+          const [other] = later.unclaimedProfiles.filter(
+            (profile) => !before.has(profile),
+          );
+          assert.ok(other, "the moved record names a patient of its own");
+          for (const profile of [other, j1, j2])
+            if (!claimingFirst.includes(profile)) {
+              await pod.judge(about(pod, profile));
+              assert.equal((await pod.match()).refused, undefined);
+            }
+          return (await select(pod, SAME_PAIRS)).map(
+            ({ one, other }) => `${one} ${other}`,
+          );
+        } finally {
+          await pod.close();
+        }
+      };
+      // The moved record's new version gets a Same of its own where its old one had one, so pairs are compared.
+      const wanted = await matched("both-claimed-before-the-moved-record", [
+        j1,
+        j2,
+      ]);
+      assert.ok(wanted.length > 0);
+      assert.deepEqual(
+        await matched("claimed-one-at-a-time-after-the-moved-record", [j1]),
+        wanted,
+      );
+    });
+
+    it("owes nothing once taken: the next open has `opened` settled with no step run", async () => {
+      const at = join(pods, "claimed-after-run-healed");
+      const pod = await claimedAfterItsRun(at);
+      try {
+        await pod.match();
+        assert.deepEqual(
+          await pod.ask("pod/Which arrivals has the matcher not taken"),
+          [],
+        );
+      } finally {
+        await pod.close();
+      }
+      const { result, seen } = await probing(async () => {
+        const again = await openPodWith(kept, at);
+        try {
+          return await again.opened;
+        } finally {
+          await again.close();
+        }
+      });
+      assert.equal(result, undefined);
+      const spans = [...seen.spans.keys()];
+      assert.deepEqual(
+        spans.filter(
+          (span) => span === "matcher.of" || span.startsWith("core-pod.step."),
+        ),
+        [],
+        spans.join(", "),
+      );
     });
   });
 

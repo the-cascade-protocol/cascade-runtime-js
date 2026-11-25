@@ -129,6 +129,7 @@ describe("Reading entries as of a record's arrival · arrivalOrder(), ArrivedEnt
               draw() < 0.2 ? "5" : "",
             ],
             activities: [],
+            patients: [],
             revisedBy: [],
           });
         const taken = [...records.values()];

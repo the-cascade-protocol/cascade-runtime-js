@@ -54,6 +54,8 @@ export interface TakenRecord {
   readonly name: string;
   readonly classes: ReadonlySet<string>;
   readonly version: string;
+  /** Each patient its current version names, a profile or the subject; none for a server. */
+  readonly patients: readonly string[];
   readonly arrived: readonly [string, string];
   /** The act that generated each of its first revisions. */
   readonly activities: readonly string[];
@@ -235,6 +237,7 @@ function takenRecord(
   name: string,
   classes: Iterable<string>,
   version: string | undefined,
+  patients: readonly string[],
   firsts: readonly FirstRevision[],
   revisedBy: readonly string[],
 ): TakenRecord {
@@ -251,6 +254,7 @@ function takenRecord(
     name,
     classes: new Set(classes),
     version,
+    patients,
     arrived: later.reduce(
       (soonest, at) =>
         at[0] < soonest[0] || (at[0] === soonest[0] && at[1] < soonest[1])
@@ -300,13 +304,18 @@ async function subjectRecordsIn(
       "class",
     ),
   );
+  const current = await column(
+    dataset,
+    `SELECT DISTINCT ?record ?version ?patient WHERE { ${theirs} ?record pav:hasCurrentVersion ?version OPTIONAL { ?version cascade:patient ?patient } }`,
+    "record",
+    "version",
+    "patient",
+  );
   const versions = grouped(
-    await column(
-      dataset,
-      `SELECT DISTINCT ?record ?version WHERE { ${theirs} ?record pav:hasCurrentVersion ?version }`,
-      "record",
-      "version",
-    ),
+    current.map(([record, version]) => [record, version]),
+  );
+  const patients = grouped(
+    current.map(([record, , patient]) => [record, patient]),
   );
   const firsts = grouped(
     await column(
@@ -340,6 +349,7 @@ async function subjectRecordsIn(
             name,
             classes.get(name) ?? [],
             versions.get(name)?.[0],
+            patients.get(name) ?? [],
             (firsts.get(name) ?? []).map((revision) => ({
               at: times.get(revision)?.[0],
               activities: activities.get(revision) ?? [],
@@ -406,6 +416,7 @@ async function serverRecords(dataset: Dataset): Promise<TakenRecord[]> {
       name,
       classes,
       version,
+      [],
       all
         .filter(({ first }) => first)
         .map(({ at, activities }) => ({ at, activities: [...activities] })),
@@ -1095,6 +1106,17 @@ ${query}`;
       [...this.pod.records.values()].filter((record) => taken(record, takes)),
       this.matched,
     );
+  }
+
+  /** The patients the current versions of the records the takes give name, in order (M1). */
+  patientsTaken(takes: Takes): string[] {
+    return [
+      ...new Set(
+        [...this.pod.records.values()].flatMap((record) =>
+          taken(record, takes) ? record.patients : [],
+        ),
+      ),
+    ].sort();
   }
 
   /** Files a Same for each pair the tables newly join, taking the records of those pairs (M1, O1). */
@@ -1830,14 +1852,16 @@ async function read(
 }
 
 /**
- * The run as an act, a new random ID (N7), informed by the act whose records it took: written when the run writes
- * something else, and, for a run given an activity no run was informed by before, whatever it writes, so the pod says
- * the arrival was taken (M1). A recheck, an open's run and a run repeated that finds nothing new write nothing.
+ * The run as an act, a new random ID (N7), informed by the act whose records it took and naming the patient each of
+ * those records' current version names: written when the run writes something else, and, for a run given an activity
+ * no run was informed by before, or none naming one of those patients, whatever it writes, so the pod says the arrival
+ * was taken (M1). A recheck, an open's run and a run repeated that finds nothing new write nothing.
  */
 function actOfRun(
   context: StepContext,
   informedBy?: string,
   taken = false,
+  patients: readonly string[] = [],
 ): string | undefined {
   const { writes, time, layout } = context;
   if (writes.size === 0 && (informedBy === undefined || taken))
@@ -1854,6 +1878,11 @@ function actOfRun(
       ...(informedBy === undefined
         ? []
         : [[run, iri(`${PROV}wasInformedBy`), iri(informedBy)] as Triple]),
+      ...patients.map((patient): Triple => [
+        run,
+        iri(`${CASCADE}tookRecordsWhoseCurrentVersionNamesPatient`),
+        iri(patient),
+      ]),
     ],
   });
   return name;
@@ -1878,17 +1907,26 @@ async function actsTaken(
     : { acts: new Set(named.flatMap(([act]) => act ?? [])), all: true };
 }
 
-/** Whether the pod already holds a matcher run informed by the activity (M1). */
-async function runInformedBy(
+/**
+ * The patients the matcher runs informed by the activity name as those of the records they took, or nothing when no
+ * run is informed by it (M1).
+ */
+async function namedByRunsInformedBy(
   context: StepContext,
   activity: string,
-): Promise<boolean> {
-  const [run] = await column(
+): Promise<ReadonlySet<string> | undefined> {
+  const rows = await column(
     await context.matcherView(),
-    `SELECT ?run WHERE { ?run a cascade:MatcherRun ; prov:wasInformedBy <${activity}> } LIMIT 1`,
+    `SELECT ?run ?patient WHERE {
+      ?run a cascade:MatcherRun ; prov:wasInformedBy <${activity}>
+      OPTIONAL { ?run cascade:tookRecordsWhoseCurrentVersionNamesPatient ?patient }
+    }`,
     "run",
+    "patient",
   );
-  return run !== undefined;
+  return rows.length === 0
+    ? undefined
+    : new Set(rows.flatMap(([, patient]) => patient ?? []));
 }
 
 /**
@@ -1906,8 +1944,10 @@ export async function runMatcher(
       : await timedAside("matcher.actsTaken", () =>
           actsTaken(context, activity),
         );
-  const taken =
-    activity !== undefined && (await runInformedBy(context, activity));
+  const named =
+    activity === undefined
+      ? undefined
+      : await namedByRunsInformedBy(context, activity);
   const matcher = await timedAside("matcher.of", () =>
     Matcher.of(context, references, undefined, takes),
   );
@@ -1919,7 +1959,10 @@ export async function runMatcher(
   } else await timedAside("matcher.take", () => matcher.take(takes));
   await timedAside("matcher.fileFindings", () => matcher.fileFindings());
   matcher.finish();
-  return actOfRun(context, activity, taken);
+  const patients = takes === undefined ? [] : matcher.patientsTaken(takes);
+  const taken =
+    named !== undefined && patients.every((patient) => named.has(patient));
+  return actOfRun(context, activity, taken, patients);
 }
 
 /** The versions after `from` on the line that ends at `to`, oldest first: none when `to` does not descend from it. */
