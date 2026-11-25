@@ -1334,7 +1334,10 @@ export const POD_FIELDS: Readonly<Record<string, readonly (keyof Fields)[]>> = {
   deceased: ["value"],
 };
 
-/** Pod fields no citation can be checked against: links among records, ranges, interpretations and categories. */
+/**
+ * Pod fields no citation can be checked against: links among records, ranges, interpretations and categories, and a
+ * date that is none of the kinds a citation's date names (`dispenseRequestValidityPeriodEnd` is never the end of use).
+ */
 export const POD_NOT_CHECKABLE: readonly string[] = [
   "type",
   "leadMember",
@@ -1349,6 +1352,9 @@ export const POD_NOT_CHECKABLE: readonly string[] = [
   "allergySeverity",
   "allergyCriticality",
   "allergyCategory",
+  "medicationRequestIntent",
+  "courseOfTherapyType",
+  "dispenseRequestValidityPeriodEnd",
   "wasAttributedTo",
   "authorizingPrescription",
   "reasonCondition",

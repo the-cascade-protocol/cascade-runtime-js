@@ -12,7 +12,12 @@ of `cascade-runtime` below: <https://the-cascade-protocol.github.io/cascade-runt
 - **Conditions**: name, status, onset.
 - **Immunizations**: vaccine, the day given.
 - **Procedures**: name, the day done.
-- **Medications**: drug, RxNorm code, prescribed or on the person's list.
+- **Medications**: drug, RxNorm code, prescribed or on the person's list; for a
+  prescription, whether it is an order or a plan, whether it is for a short course
+  or to go on, and the last day it may be filled (each in `entry/What it shows`);
+  how it is to be taken, in the source's words (`?dosages`) and, where the source
+  gave it in parts, the dose, how often and the route, each dosage a node of the
+  view that no named question lists, so read it with a query of your own.
 - **Medication dispenses**: a pharmacy's fill: drug, RxNorm and NDC codes, when it
   was handed over, the prescription it fills, whether it was picked up.
 - **Lab results**: test, LOINC code, value, unit, the time taken.
