@@ -1882,8 +1882,8 @@ async function profilesTaken(
       `SELECT ?profile WHERE {
         { SELECT DISTINCT ?profile WHERE {
             VALUES ?act { ${acts} } ?revision prov:wasGeneratedBy ?act ; cascade:version/cascade:patient ?profile } }
+        { SELECT DISTINCT ?profile WHERE { ?claimed cascade:patient ?profile ; prov:specializationOf/cascade:subject ?owner } }
         FILTER NOT EXISTS { ?profile a cascade:Subject }
-        FILTER EXISTS { ?claimed cascade:patient ?profile ; prov:specializationOf/cascade:subject ?owner }
       } ORDER BY ?profile`,
       "profile",
     )
