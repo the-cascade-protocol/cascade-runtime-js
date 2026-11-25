@@ -817,14 +817,23 @@ It waits on a timer, so under `mock.timers` it never settles until the timers
 are ticked. Whatever the tables, that step also matches each arrival no matcher run
 was informed by, which a stop between an import and its `match` leaves (an import
 whose profiles no About claims has none to take, and waits for the claim): `opened`
-then settles with the files it wrote, and with nothing to adopt and nothing owed it
-settles undefined, the step one question answered from the pod's database. A pod with
-no database that holds the pod as it stands (a browser's, or a folder's whose `pod.db`
-is missing or stale) builds nothing to ask it when the tables did not change: `opened`
-settles undefined at once, and the arrivals are matched at the pod's next write or the
-first question that needs the build, which waits for them; a session that only looks,
-checks an entry, retitles or is answered from kept answers never pays for them. A pod
-closed before the step started is left as it was, and the next open takes them. A pod in memory gets the package's starter copies.
+then settles with the files it wrote. With the tables unchanged and nothing owed
+it is settled undefined before the first call returns, the one question of what is
+owed having been asked of the pod's database ahead of the calls (a first `ask` waits
+for it as it waits for the database), so a page need not show "taking something in"
+for it. A pod with no database that holds the pod as it stands (a browser's, or a
+folder's whose `pod.db` is missing or stale) builds nothing to ask it when the tables
+did not change: `opened` is settled undefined at once, and the arrivals are matched at
+the pod's next write or the first call that reads the pod's build (a question,
+`agreement`, `medicationClasses`, `panelResults`, `joinedBy`), which waits for them;
+a session that only looks (`look` never makes them), checks an entry, retitles or is
+answered from kept answers never pays for them. A match that fails there is made again
+by the next write or `await pod.match()`, never by a read, and the call that triggered it
+and the reads after it are answered over the pod as it stands; one the rules refuse is
+made no more by a read and does not stop the other arrivals owed. A later `await pod.match()`
+(or the next import, connect or entry that matches; `match: false` tells nothing) tells of it as its `refused` only if
+the rules refuse it again, so a session that only reads is not told. A pod closed before
+the step started is left as it was, and the next open takes them. A pod in memory gets the package's starter copies.
 
 What a page shows of the tables, the same `Tables` answers, in Node and in a
 browser (`appTables()`), as plain values: `held()`, each series with its
@@ -848,7 +857,7 @@ concept's name in the vocabulary. `pod.agreement()` says how each report of a
 variant stands to that row (`report`, `row`, `origin`, `verdict`: `agrees`,
 `differs`, `labs disagree` or `as ClinVar writes it`; no row for a report with
 none), over the app's current version of the series; it writes nothing to the
-pod. A pod's page shows each variant's reports beside what ClinVar says today,
+pod but, as the first read of its build, the matches it is owed. A pod's page shows each variant's reports beside what ClinVar says today,
 from these, and the series' credit. A pod's own page names a record by its code's name, else by the record's own
 text, from its question's code columns in this order: `code` of
 `pod/My active allergies`, `pod/My active medications`, `pod/My lab results`
@@ -893,7 +902,8 @@ page gives its general reason).
 `pod.medicationClasses()` says which of the pod's active medications are in
 which class (`entry`, `medication`, `class`, `relation`, `origin`, `through`,
 `stated`: whether the class is on a code the entry states), by the app's current
-tables. It writes nothing. A combination of ingredients is in no class, since
+tables. It writes nothing but, as the first read of the pod's build, the matches it
+is owed. A combination of ingredients is in no class, since
 MED-RT classes none, and the starter's page says so; it says too which medicine
 is in none because FDA classes a different form of its ingredient. A code's
 ingredients (`about().ingredients`) are its ingredient rows (`obo:RO_0002248`),

@@ -179,20 +179,28 @@ export interface Pod {
   /** The owner's profile's #me. */
   readonly owner: string;
   /**
-   * The open that gives the pod the app's newer tables (O1, O2), which runs after `openPod` returns, as the pod's first
-   * step: it settles once the step and the rebuild after it have run, to undefined when the tables had not changed and no
-   * match was owed, and rejects as a step that fails rejects its call. The step starts once the pod has no call queued or running at a turn
-   * of the timers, so the calls made as `openPod` returns, and those made from their answers, run before it, on the pod
-   * as it was opened; calls that keep the queue busy hold it back for at most 2 s of them, and `close` starts it. The
-   * step also matches each arrival no matcher run is informed by (`pod/Which arrivals has the matcher not taken`): an
-   * import, entry session, connect or sync a stop left unmatched, each as a step of its own, whatever the tables. So with
-   * the tables unchanged `opened` settles to undefined when nothing is owed, the step being one question answered from
-   * the pod's database, and otherwise with the files the matches wrote; a `close` that comes first runs the open for
-   * changed tables and leaves the matches for the next open. Once it runs, a question by name is answered from `pod.db`, as during any step, or else with the rows kept for the pod as it
-   * was opened, where they were kept,
+   * What the open gives the pod: the app's newer tables (O1, O2), and a matcher run for each arrival no run is informed
+   * by (`pod/Which arrivals has the matcher not taken`), an import, entry session, connect or sync a stop left
+   * unmatched. Settled to undefined, by the time the first call made on the pod returns, when the tables had not changed
+   * and the pod's database, where it holds the pod, names no arrival owed: that is one query of it, asked before any
+   * call is answered, which `ask` and `askPage` wait for as they wait for the database. Where no database holds the pod
+   * (a browser's, or a folder pod whose `pod.db` is missing or stale) nothing is asked at the open, and the arrivals are
+   * matched by the pod's next write or the first call that reads its build but `look`, which waits for them: then
+   * `opened` is undefined and their files are not in it. A match that fails there is made again by the next write or
+   * `pod.match()`, never by a read: the reads after it are answered over the pod as it stands. A run the rules refuse is
+   * made no more by a read and does not stop the other arrivals owed; a later run of the matcher (`pod.match()`, or an
+   * import, connect or entry that matches: `match: false` tells nothing) tells of it as its `refused` only if the rules
+   * refuse it again, so a session that only reads is not told.
+   * Otherwise it runs after `openPod` returns, as the pod's first step, and `opened` settles once the step and the
+   * rebuild after it have run, with the files the step wrote, and rejects as a step that fails rejects its call. The
+   * step starts once the pod has no call queued or running at a turn of the timers, so the calls made as `openPod`
+   * returns, and those made from their answers, run before it, on the pod as it was opened; calls that keep the queue
+   * busy hold it back for at most 2 s of them, and `close` starts it. A `close` that comes first runs the open for
+   * changed tables and leaves the matches for the next open. Once it runs, a question by name is answered from `pod.db`,
+   * as during any step, or else with the rows kept for the pod as it was opened, where they were kept,
    * `unheldTableVersions` with the versions read over the pod as it was opened, and any other call, `close` too, waits
-   * for the step. A browser's pod drawn from its kept answers
-   * settles it once a call opens the pod with the engine, as that open's, or at `close`, to undefined.
+   * for the step. A browser's pod drawn from its kept answers settles it once a call opens the pod with the engine, as
+   * that open's, or at `close`, to undefined.
    */
   readonly opened: Promise<Opened | undefined>;
   /** Whether its files and its kept answers are sealed under a key only its secret opens. */
@@ -208,7 +216,11 @@ export interface Pod {
    * as the writer's head at the next open; none until the app performs an act in it, so a first act is a new writer's.
    */
   readonly head: Head | undefined;
-  /** The export or download at the path, or the files the app holds of one. */
+  /**
+   * The export or download at the path, or the files the app holds of one. It reads the pod's records of the servers and
+   * authors it holds and writes nothing: the matches the pod is owed (`opened`) cannot change its answer, so they are
+   * not made for it.
+   */
   look(exported: string | Exported): Promise<readonly ExportSource[]>;
   import(
     exported: string | Exported,
@@ -235,7 +247,10 @@ export interface Pod {
   /**
    * A matcher run taking the import, entry session or connect `activity` made, or, with none, a recheck of the pod's
    * joins (M7), which takes no record an arrival brought by itself. Before either, the pod matches each arrival no run
-   * took, as a step of its own, so a stop between an arrival and its run is made good here, as at the next open.
+   * took, as a step of its own, so a stop between an arrival and its run is made good here, as at the next open; an
+   * older run the rules refuse is the call's refusal. A refusal of the match a read of the pod's build made for it
+   * (`opened`) is kept nowhere: this call asks again, and tells it only if the rules refuse the run again; a session that
+   * only reads is not told.
    */
   match(activity?: string): Promise<Done>;
   /**
@@ -271,7 +286,10 @@ export interface Pod {
   /**
    * How each report of a variant stands to the row of the variant classifications table the app holds that the variant
    * finds (`tables/agreement.rq`): the report's entry (`report`), the row (`row`), the version (`origin`) and the
-   * `verdict`. It is answered over the app's current version of the table, kept as an answer is, and writes nothing.
+   * `verdict`. It is answered over the app's current version of the table, kept as an answer is. It writes nothing but,
+   * where it is the first read of the build of a pod with no database, the matches the pod is owed (`opened`). Where a
+   * database holds the pod and an arrival is owed, a call made before the open's step starts (at the next timer turn)
+   * runs before it, over the pod as it was.
    */
   agreement(): Promise<TextRow[]>;
   /**
@@ -279,7 +297,10 @@ export interface Pod {
    * (`tables/medication-classes-through-precise-ingredients.rq`): the entry
    * (`entry`), its `medication`, the `class`, the `relation` the class row gives it, the version of the drug classes
    * table that holds the row (`origin`) and the code the row is on (`through`). It is answered over the current
-   * versions of the tables, reads the pod and writes nothing. A combination product is in no class: MED-RT classes none.
+   * versions of the tables, and reads the pod. It writes nothing but, where it is the first read of the build of a pod
+   * with no database, the matches the pod is owed (`opened`), which can join the records it reads. Where a database
+   * holds the pod and an arrival is owed, a call made before the open's step starts (at the next timer turn) runs
+   * before it, over the pod as it was. A combination product is in no class: MED-RT classes none.
    */
   medicationClasses(): Promise<TextRow[]>;
   /**
@@ -288,15 +309,19 @@ export interface Pod {
    * its `required` as LOINC writes it, the panel `via` whose row lists it, the version of the panel members table that
    * holds the row (`origin`) and the `entry` of the pod's result for it. A required member the pod has no result for is a
    * row with no `entry`. A member reached directly and through a nested panel is a row for each `via`, and a member with
-   * several results a row for each. It is answered over the current versions of the tables, reads the pod and writes
-   * nothing.
+   * several results a row for each. It is answered over the current versions of the tables, and reads the pod. It
+   * writes nothing but, where it is the first read of the build of a pod with no database, the matches the pod is owed
+   * (`opened`), which can join the records it reads. Where a database holds the pod and an arrival is owed, a call made
+   * before the open's step starts (at the next timer turn) runs before it, over the pod as it was.
    */
   panelResults(panel: string): Promise<TextRow[]>;
   /**
    * The reference table versions that joined each entry's records (`tables/joined-by.rq`): the `entry` and the version
    * (`used`) that a counting machine Same cited while joining one of its records. The rule list and the records'
    * versions are never among them, a Same that no longer counts names nothing, and an entry joined without a table has no
-   * row. It reads the pod and writes nothing.
+   * row. It reads the pod. It writes nothing but, where it is the first read of the build of a pod with no database,
+   * the matches the pod is owed (`opened`), which are what it reports. Where a database holds the pod and an arrival is
+   * owed, a call made before the open's step starts (at the next timer turn) runs before it, over the pod as it was.
    */
   joinedBy(): Promise<TextRow[]>;
   /**
@@ -815,6 +840,8 @@ class OpenPod implements Pod {
   #calls = 0;
   /** While the open's step waits for the queue to go idle. */
   #waiting: Waiting | undefined;
+  /** For a pod whose tables did not change, the check of what the open owes, which settles to whether nothing is to be made at the step; it never rejects. */
+  #checking: Promise<boolean> | undefined;
   readonly opened: Promise<Opened | undefined>;
 
   constructor(
@@ -842,40 +869,58 @@ class OpenPod implements Pod {
       revision.catch(() => undefined);
       this.#before = { revision, tables: adopting.before };
     }
-    let settle!: (opened: Promise<Opened | undefined>) => void;
-    const queued = new Promise<Opened | undefined>((resolve) => {
-      settle = resolve;
-    });
-    const waiting: Waiting = {
-      due: false,
-      start: () => {
-        if (this.#waiting !== waiting) return;
-        this.#waiting = undefined;
-        clearTimeout(waiting.ceiling);
-        if (adopting.changed) {
-          const unheld = this.#next(() => core.unheldTableVersions());
-          unheld.catch(() => undefined);
-          this.#unheldBefore = unheld;
-        }
-        settle(
-          this.#next(async () => {
-            const opened = await adopting.open(this.#closing);
-            if (opened !== undefined) await core.revision();
-            return opened;
-          }),
-        );
-      },
-    };
-    this.#waiting = waiting;
-    setTimeout(() => {
-      waiting.due = true;
-      if (this.#calls === 0) waiting.start();
-    }, 0);
+    let queued: Promise<Opened | undefined>;
+    if (adopting.changed) queued = this.#deferred(adopting);
+    else {
+      // The check for what is owed is the first call: every call after it waits for it, so that `opened` is settled
+      // when the first read returns, where nothing is owed.
+      const checking = adopting.owed().then(
+        (arrivals) => arrivals === undefined || arrivals.length === 0,
+        () => false,
+      );
+      this.#checking = checking;
+      this.#next(() => checking).catch(() => undefined);
+      queued = checking.then((nothing) =>
+        nothing || this.#closing ? undefined : this.#deferred(adopting),
+      );
+    }
     this.opened = queued.finally(() => {
       this.#before = undefined;
       this.#unheldBefore = undefined;
     });
     this.opened.catch(() => undefined);
+  }
+
+  /** The open's step, run once the pod has no call queued or running at a turn of the timers. */
+  #deferred(adopting: Adopting): Promise<Opened | undefined> {
+    const core = this.#core;
+    return new Promise((settle) => {
+      const waiting: Waiting = {
+        due: false,
+        start: () => {
+          if (this.#waiting !== waiting) return;
+          this.#waiting = undefined;
+          clearTimeout(waiting.ceiling);
+          if (adopting.changed) {
+            const unheld = this.#next(() => core.unheldTableVersions());
+            unheld.catch(() => undefined);
+            this.#unheldBefore = unheld;
+          }
+          settle(
+            this.#next(async () => {
+              const opened = await adopting.open(this.#closing);
+              if (opened !== undefined) await core.revision();
+              return opened;
+            }),
+          );
+        },
+      };
+      this.#waiting = waiting;
+      setTimeout(() => {
+        waiting.due = true;
+        if (this.#calls === 0) waiting.start();
+      }, 0);
+    });
   }
 
   get owner(): string {
@@ -1149,7 +1194,10 @@ class OpenPod implements Pod {
     given: (page: Page) => T,
   ): Promise<T> {
     if (this.#closing) return this.#next(queued);
-    const answered = asked();
+    // The place among the calls is taken in this turn: the database is asked once the check of what the open owes is made.
+    const answered = (this.#checking ?? Promise.resolve()).then(() =>
+      this.#closing ? undefined : asked(),
+    );
     let found: Page | undefined;
     const waiting = this.#next(async () => {
       const first = await answered.catch(() => undefined);
@@ -1306,7 +1354,7 @@ class OpenPod implements Pod {
     }
     if (entries === undefined)
       throw new Error(`no importer of ${this.#importerNames()} reads ${shown}`);
-    const { rows } = await this.#core.select(`${PREFIXES}
+    const { rows } = await this.#core.selectWithoutTheOwed(`${PREFIXES}
       SELECT DISTINCT ?server ?author WHERE {
         ?record cascade:subject <${this.subject}> .
         ?revision cascade:revisionOf ?record ; prov:wasDerivedFrom ?document .
@@ -2059,6 +2107,7 @@ async function tablesChanged(
       !changed || before === undefined
         ? undefined
         : ofKinds(references, before),
+    owed: () => core.arrivalsOwedWithoutABuild(),
     open: async (closing) => {
       let opened: Opened | undefined;
       if (changed) {
@@ -2110,6 +2159,11 @@ interface Adopting {
   readonly changed: boolean;
   /** The versions of a kind the pod was last opened with; none for a pod no app's tables record, or whose tables did not change. */
   readonly before: readonly string[] | undefined;
+  /**
+   * The arrivals the pod's database names as owed, none where the tables changed or it cannot say, which leaves them to
+   * the pod's next step or first read of its build; asked before any call, for a pod whose tables did not change.
+   */
+  readonly owed: () => Promise<readonly string[] | undefined>;
   /** Runs the step, which asks for nothing owed when `closing`; none when the tables had not changed and nothing was owed. */
   readonly open: (closing: boolean) => Promise<Opened | undefined>;
 }

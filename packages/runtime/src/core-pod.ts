@@ -651,8 +651,12 @@ export class CorePod {
   #writing = new Map<string, ActFile>();
   /** Whether a step is being performed, after which the pod builds its dataset again. */
   #performing = false;
-  /** Whether the check for arrivals no run is informed by was left to the pod's next step or first read of its build. */
-  #owed = false;
+  /** Whether the check for arrivals no run is informed by was left to the pod's next step or first read of its build, and not yet made, or made and failed. */
+  #owedLeft = false;
+  /** Whether a heal made for a read failed: a read makes none after it, so a heal that keeps failing is paid once by the reads of a session. */
+  #owedFailedAtRead = false;
+  /** The check and the matches it finds, while a step or read triggered them: a trigger that comes meanwhile waits for it. It never rejects. */
+  #owedRun: Promise<void> | undefined;
   /** The quads the matcher's views lent from the kept build's store have had it remove and add again. */
   #movedInBuilt = 0;
   /** How many `deferring` calls are running, which let the steps of `DEFERRABLE` leave their rebuild. */
@@ -722,7 +726,11 @@ export class CorePod {
    * the matcher's view.
    */
   async dataset(lens: string): Promise<Union> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
+    return this.#datasetAsItStands(lens);
+  }
+
+  async #datasetAsItStands(lens: string): Promise<Union> {
     await this.#settle();
     await this.#putBackMatcherView();
     await this.#withBuilt();
@@ -1540,12 +1548,22 @@ export class CorePod {
    * revises declares a rule wrong (N15).
    */
   async match(activity?: string): Promise<Performed> {
+    return this.#matched(activity, true);
+  }
+
+  /** `match`, which, when `asking` is false, does not first ask what is owed: the run of what is owed is made so. */
+  async #matched(
+    activity: string | undefined,
+    asking: boolean,
+  ): Promise<Performed> {
     const tables = await this.#tables();
-    const migrated = await this.#migrated(tables, false);
+    const migrated = await this.#migrated(tables, false, asking);
     const performed = await this.#step(
       (context) => runMatcher(context, tables, activity),
       false,
       "match",
+      undefined,
+      asking,
     );
     return migrated === undefined
       ? performed
@@ -1558,12 +1576,31 @@ export class CorePod {
    * Nothing is written, and no matcher is made.
    */
   async arrivalsNotTaken(): Promise<string[]> {
+    await this.#askedWhatIsOwed(true);
+    return this.#arrivalsNotTaken();
+  }
+
+  /**
+   * `arrivalsNotTaken`, which does not first ask what is owed: the run of what is owed asks it so. `forRead` is for the
+   * run a read of the pod's dataset triggered, which builds the pod as that read does.
+   */
+  async #arrivalsNotTaken(forRead = false): Promise<string[]> {
     const { query } = await this.#notTakenAsked();
     const answered = await this.#arrivalsFromDatabase();
     if (answered !== undefined) return answered;
-    const { rows } = await (this.#options.build?.lens === MATCHER_LENS
-      ? this.selectKept(query)
-      : this.select(query));
+    const { build, besidePod } = this.#options;
+    // The first read of a pod builds it as a read does, which keeps the build beside the pod as it keeps the database.
+    if (
+      forRead &&
+      this.#built === undefined &&
+      build?.lens === MATCHER_LENS &&
+      besidePod !== undefined &&
+      build.incremental !== undefined
+    )
+      await this.#datasetAsItStands(build.lens);
+    const { rows } = await (build?.lens === MATCHER_LENS
+      ? this.#selectedKept(query)
+      : this.selectWithoutTheOwed(query));
     return rows.flatMap((row) => row.get("arrival")?.value ?? []);
   }
 
@@ -1582,21 +1619,39 @@ export class CorePod {
 
   /** The arrivals not taken as the database beside the pod answers them, with no build; none where it cannot. */
   async #arrivalsFromDatabase(): Promise<string[] | undefined> {
-    const { sql } = await this.#notTakenAsked();
-    if (this.#options.build?.lens !== MATCHER_LENS || sql === undefined)
+    if (!this.keepsDatabase || this.#options.build?.lens !== MATCHER_LENS)
       return undefined;
+    const { sql } = await this.#notTakenAsked();
+    if (sql === undefined) return undefined;
     const answer = await this.answered(MATCHER_LENS, sql);
     return answer?.rows.flatMap(({ arrival }) => arrival ?? []);
   }
 
   /**
    * A matcher run for each arrival the matcher has not taken but `besides`, oldest first, each its own step: what a
-   * stop between an arrival and its run left undone. It stops at the first run the rules refuse, and gives that
-   * refusal.
+   * stop between an arrival and its run left undone. A run the rules refuse leaves its arrival owed and does not stop
+   * the others; the first refusal is given.
    */
   async matchTheOwed(besides?: string): Promise<Performed> {
-    this.#owed = false;
+    await this.#owedRun;
+    this.#owedLeft = false;
     return this.#matchedEach(await this.arrivalsNotTaken(), besides);
+  }
+
+  /**
+   * The arrivals the database beside the pod names as owed, where it holds the pod as it stands, with no build; none
+   * where it cannot say, which leaves the check to the pod's next step or first read of its build.
+   */
+  async arrivalsOwedWithoutABuild(): Promise<string[] | undefined> {
+    let arrivals: string[] | undefined;
+    try {
+      arrivals = await this.#arrivalsFromDatabase();
+    } catch (error) {
+      this.#owedLeft = true;
+      throw error;
+    }
+    if (arrivals === undefined) this.#owedLeft = true;
+    return arrivals;
   }
 
   /**
@@ -1605,48 +1660,77 @@ export class CorePod {
    * its next step or the first time something reads its build, which it is needed for then.
    */
   async matchTheOwedWithoutABuild(): Promise<Performed> {
-    const arrivals = await this.#arrivalsFromDatabase();
-    if (arrivals === undefined) {
-      this.#owed = true;
-      return { wrote: [] };
-    }
-    this.#owed = false;
+    await this.#owedRun;
+    const arrivals = await this.arrivalsOwedWithoutABuild();
+    if (arrivals === undefined) return { wrote: [] };
+    this.#owedLeft = false;
     return this.#matchedEach(arrivals);
   }
 
-  /** Asks what is owed, if it was left for the first step or build and none has asked it since. */
-  async #askedWhatIsOwed(): Promise<void> {
-    if (!this.#owed || this.#performing) return;
-    await this.matchTheOwed();
+  /**
+   * Asks what is owed, and matches it, if it was left for the first step or build and none has asked it since, or the
+   * last asking failed: a refusal is not made again by a read or step, and is told by the next run of the matcher, which
+   * asks again, if the rules refuse it again. A failure at a read is made again by a step or `match`, never by a read. A trigger that comes while the matches are made waits for them. What fails here does not fail the step
+   * or read that triggered it, which goes on over the pod as it stands.
+   */
+  async #askedWhatIsOwed(forRead = false): Promise<void> {
+    if (this.#performing) return;
+    if (this.#owedRun === undefined) {
+      if (!this.#owedLeft || (forRead && this.#owedFailedAtRead)) return;
+      this.#owedLeft = false;
+      const run = this.#matchedWhatIsOwed(forRead).finally(() => {
+        if (this.#owedRun === run) this.#owedRun = undefined;
+      });
+      this.#owedRun = run;
+    }
+    await this.#owedRun;
+  }
+
+  /** The matches the pod is owed, made without asking again; a failure leaves the check for the next trigger. */
+  async #matchedWhatIsOwed(forRead: boolean): Promise<void> {
+    try {
+      await this.#matchedEach(
+        await this.#arrivalsNotTaken(forRead),
+        undefined,
+        false,
+      );
+    } catch {
+      this.#owedLeft = true;
+      if (forRead) this.#owedFailedAtRead = true;
+    }
   }
 
   async #matchedEach(
     arrivals: readonly string[],
     besides?: string,
+    asking = true,
   ): Promise<Performed> {
     const wrote: string[] = [];
+    let refused: string | undefined;
     for (const arrival of new Set(arrivals)) {
       if (arrival === besides) continue;
-      const performed = await this.match(arrival);
+      const performed = await this.#matched(arrival, asking);
       wrote.push(...performed.wrote);
-      if (performed.refused !== undefined)
-        return { wrote, refused: performed.refused };
+      refused ??= performed.refused;
     }
-    return { wrote };
+    return refused === undefined ? { wrote } : { wrote, refused };
   }
 
   /**
    * `match`, after the matcher runs of the arrivals it has not taken but the activity given: as a pod's app has its
    * runs, which are made as a call of its own after each import, entry session and connect, so a stop between the two
-   * is made good by the next run. The files written by all of them, the refusal of the first that is refused.
+   * is made good by the next run. The activity's own run is made though an owed one is refused. The files written by
+   * all of them, the refusal of the first that is refused.
    */
   async matchWithTheOwed(activity?: string): Promise<Performed> {
     const owed = await this.matchTheOwed(activity);
-    if (owed.refused !== undefined) return owed;
     const performed = await this.match(activity);
-    return owed.wrote.length === 0
-      ? performed
-      : { ...performed, wrote: [...owed.wrote, ...performed.wrote] };
+    const refused = owed.refused ?? performed.refused;
+    const wrote =
+      owed.wrote.length === 0
+        ? performed.wrote
+        : [...owed.wrote, ...performed.wrote];
+    return refused === undefined ? { wrote } : { wrote, refused };
   }
 
   /**
@@ -1805,6 +1889,7 @@ export class CorePod {
   async #migrated(
     tables: References,
     opening: boolean,
+    asking = true,
   ): Promise<Performed | undefined> {
     const retractions = await releaseRetractions(
       () => this.#matcherView(),
@@ -1815,12 +1900,20 @@ export class CorePod {
     return this.#step(
       async (context) => migrateRuleListVersions(context, retractions),
       true,
+      "other",
+      undefined,
+      asking,
     );
   }
 
   /** The query's rows over the pod as the matcher reads it: its RDF files but those the build writes, and the everyday lens's derived state. */
   async select(query: string): Promise<Rows> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
+    return this.selectWithoutTheOwed(query);
+  }
+
+  /** `select`, which does not first make the matches the pod is owed: for a question the matches cannot change. */
+  async selectWithoutTheOwed(query: string): Promise<Rows> {
     countedQuery("core-pod.matcherSelect", query);
     return timed("core-pod.matcherSelect", async () =>
       (await this.#matcherView()).select(query),
@@ -1839,13 +1932,17 @@ export class CorePod {
    * is not kept across steps this is `select`.
    */
   async selectKept(query: string): Promise<Rows> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
+    return this.#selectedKept(query);
+  }
+
+  async #selectedKept(query: string): Promise<Rows> {
     await this.#settle();
     const { build, time } = this.#options;
     const kept = await this.#keptOrBuiltWhole(
       build === undefined ? undefined : time.now(),
     );
-    if (kept === undefined) return this.select(query);
+    if (kept === undefined) return this.selectWithoutTheOwed(query);
     countedQuery("core-pod.matcherSelect", query);
     return timed("core-pod.matcherSelect", () => kept.select(query));
   }
@@ -1881,7 +1978,7 @@ export class CorePod {
    * dataset or an answer.
    */
   async selectWithRows(query: string, kind: string): Promise<Rows> {
-    await this.#askedWhatIsOwed();
+    await this.#askedWhatIsOwed(true);
     await this.#settle();
     const { vocabulary, newStore, build } = this.#options;
     const [union, references, terms] = await Promise.all([
@@ -2217,8 +2314,10 @@ export class CorePod {
     kind = "other",
     /** The records of the files of the clinical kinds the step wrote, for the steps that know them. */
     filesWritten?: () => ReadonlyMap<string, readonly string[]> | undefined,
+    /** Whether to first make the matches the pod is owed, which the step that makes them does not. */
+    asking = true,
   ): Promise<Performed> {
-    await this.#askedWhatIsOwed();
+    if (asking) await this.#askedWhatIsOwed();
     const options = this.#options;
     const deferred = this.#deferring > 0 && DEFERRABLE.has(kind);
     await this.#databaseBuilding;
