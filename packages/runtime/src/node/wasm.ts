@@ -25,6 +25,7 @@ import {
   releasedBuild,
 } from "./bridge-build.js";
 import { checkout as gitState } from "./git.js";
+import { workerExecArgv } from "./worker-arguments.js";
 import { FolderFiles } from "./folder-files.js";
 import type { Components } from "./components.js";
 import {
@@ -311,16 +312,13 @@ export async function compiledBridge(folder: string): Promise<CompiledBridge> {
   return found;
 }
 
-/**
- * Each instance in a worker thread of its own, which keeps the process alive only while a call waits on it. The worker
- * runs none of the process's `--import` and `--require` preloads: it would load each one again before its first call.
- */
+/** Each instance in a worker thread of its own, which keeps the process alive only while a call waits on it. */
 export function inWorker(bridge: CompiledBridge): Spawn {
   return () => {
     counted("bridge.workers");
     const worker = new Worker(new URL("./wasm-worker.js", import.meta.url), {
       workerData: bridge,
-      execArgv: [],
+      execArgv: workerExecArgv(),
     });
     worker.unref();
     const waiting = new Waiting();

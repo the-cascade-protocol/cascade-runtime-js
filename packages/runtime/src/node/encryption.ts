@@ -8,6 +8,7 @@ import {
   HEADER,
   Unopened,
 } from "../encryption.js";
+import { workerExecArgv } from "./worker-arguments.js";
 
 const READ_AT_MOST = 65537;
 
@@ -50,7 +51,7 @@ function started(): Worker {
   clearTimeout(idle);
   if (worker !== undefined) return worker;
   const starting = new Worker(new URL("./argon2-worker.js", import.meta.url), {
-    execArgv: [],
+    execArgv: workerExecArgv(),
   });
   starting.unref();
   starting.on("message", (response: Argon2Response) => {
