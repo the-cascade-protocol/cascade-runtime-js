@@ -18,15 +18,9 @@ import {
 
 const A = FILE("cascade-runtime", "a.test");
 
-/** Two capabilities, one with a failed case, and a glossary of two terms. */
+/** Two capabilities, one with a failed case. */
 const REPORT = report(
-  packageProperty("cascade-runtime", "cascade-runtime", "0.0.0", {
-    capabilities: ["Alpha", "Beta"],
-    glossary: [
-      { term: "claim", definition: "A say-so." },
-      { term: "pod", definition: "A person's own store." },
-    ],
-  }),
+  packageProperty("cascade-runtime", "cascade-runtime", "0.0.0", {}),
   described(
     "Alpha",
     {},
@@ -41,10 +35,10 @@ const REPORT = report(
 );
 
 /**
- * The page reads whole without script. With script, three buttons fold the tree or leave only what failed, and a box
- * filters a package's glossary. This runs the page's own script in Chromium, which no unit test can.
+ * The page reads whole without script. With script, three buttons fold the tree or leave only what failed. This runs the
+ * page's own script in Chromium, which no unit test can.
  */
-describe("The tests page's controls in a browser · expand all, collapse all, failures only, the glossary filter", () => {
+describe("The tests page's controls in a browser · expand all, collapse all, failures only", () => {
   let browser: Browser;
   let tab: Page;
   let html: string;
@@ -75,19 +69,6 @@ describe("The tests page's controls in a browser · expand all, collapse all, fa
             .length,
       );
 
-  /** Each glossary term shown, with its definition, or "hidden" when the definition is hidden. */
-  const shown = (part: Locator): Promise<string[]> =>
-    part
-      .locator(".glossary dt")
-      .evaluateAll((terms) =>
-        terms
-          .filter((dt) => !(dt as HTMLElement).hidden)
-          .map(
-            (dt) =>
-              `${dt.textContent?.trim()}: ${(dt.nextElementSibling as HTMLElement).hidden ? "hidden" : dt.nextElementSibling?.textContent?.trim()}`,
-          ),
-      );
-
   describe("when the page's script has run", () => {
     it("shows the controls", async () => {
       const part = await loaded();
@@ -104,23 +85,17 @@ describe("The tests page's controls in a browser · expand all, collapse all, fa
     it("closes every level", async () => {
       const part = await loaded();
       await part.locator('[data-action="collapse-all"]').click();
-      assert.equal(
-        await part.locator("details:not(.glossary)[open]").count(),
-        0,
-      );
+      assert.equal(await part.locator("details[open]").count(), 0);
     });
   });
 
   describe('when "Expand all" is clicked', () => {
     it("opens every level", async () => {
       const part = await loaded();
-      const levels = await part.locator("details:not(.glossary)").count();
+      const levels = await part.locator("details").count();
       await part.locator('[data-action="collapse-all"]').click();
       await part.locator('[data-action="expand-all"]').click();
-      assert.equal(
-        await part.locator("details:not(.glossary)[open]").count(),
-        levels,
-      );
+      assert.equal(await part.locator("details[open]").count(), levels);
     });
   });
 
@@ -207,56 +182,8 @@ describe("The tests page's controls in a browser · expand all, collapse all, fa
     });
   });
 
-  /** The glossary is generated closed; its filter box is inside it. */
-  async function glossaryOpened(): Promise<Locator> {
-    const part = await loaded();
-    await part.locator("details.glossary > summary").click();
-    return part;
-  }
-
-  describe("when a word is typed into the glossary filter", () => {
-    it("shows only the terms whose name or definition holds it, each with its definition", async () => {
-      const part = await glossaryOpened();
-      await part.locator("input[data-glossary-filter]").fill("store");
-      assert.deepEqual(await shown(part), ["pod: A person's own store."]);
-      assert.equal(
-        await part
-          .locator(".glossary dd")
-          .evaluateAll(
-            (defs) => defs.filter((dd) => (dd as HTMLElement).hidden).length,
-          ),
-        1,
-        "the hidden term's definition is hidden with it",
-      );
-    });
-
-    it('shows the "none match" line when no term holds it', async () => {
-      const part = await glossaryOpened();
-      await part
-        .locator("input[data-glossary-filter]")
-        .fill("nothing like this");
-      assert.deepEqual(await shown(part), []);
-      assert.equal(
-        await part
-          .locator(".none-match")
-          .evaluate((n) => (n as HTMLElement).hidden),
-        false,
-      );
-    });
-
-    it("shows every term again when the box is cleared", async () => {
-      const part = await glossaryOpened();
-      const filter = part.locator("input[data-glossary-filter]");
-      await filter.fill("store");
-      await filter.fill("");
-      assert.equal((await shown(part)).length, 2);
-    });
-  });
-
   describe("when the page is opened at a link's target", () => {
     const ORIGIN = "http://page.test/tests.html";
-    const entryId = (): string =>
-      /<dt id="([^"]+)"><dfn>pod</.exec(html)?.[1] ?? "";
     const capabilityId = (): string =>
       /<li class="capability" id="([^"]+)"[^>]*><details><summary><span class="cap-name">Beta</.exec(
         html,
@@ -282,55 +209,35 @@ describe("The tests page's controls in a browser · expand all, collapse all, fa
         .locator(selector)
         .evaluate((node) => (node as HTMLDetailsElement).open);
 
-    it("opens the glossary around a term it is loaded at", async () => {
-      assert.ok(entryId(), "the page has a term entry");
-      await openedAt(`#${entryId()}`);
-      assert.equal(await open("details.glossary"), true);
-      assert.equal(await tab.locator(`[id="${entryId()}"]`).isVisible(), true);
+    it("opens a capability's own details when it is loaded at the capability's id", async () => {
+      assert.ok(capabilityId(), "Beta has an id and is closed");
+      await openedAt(`#${capabilityId()}`);
+      assert.equal(await open(`[id="${capabilityId()}"] > details`), true);
     });
 
-    it("opens the glossary when a link inside the page is followed", async () => {
+    it("opens a capability's details when a link inside the page is followed", async () => {
       await openedAt("");
-      assert.equal(await open("details.glossary"), false);
+      assert.equal(await open(`[id="${capabilityId()}"] > details`), false);
       await tab.evaluate((id) => {
         const link = document.createElement("a");
         link.href = `#${id}`;
         link.id = "probe-link";
         link.textContent = "probe";
         document.body.prepend(link);
-      }, entryId());
+      }, capabilityId());
       await tab.locator("#probe-link").click();
-      assert.equal(await open("details.glossary"), true);
+      assert.equal(await open(`[id="${capabilityId()}"] > details`), true);
     });
 
-    it("opens a capability's own details when it is loaded at the capability's id", async () => {
-      assert.ok(capabilityId(), "Beta has an id and is closed");
-      await openedAt(`#${capabilityId()}`);
-      assert.equal(
-        await tab
-          .locator(`[id="${capabilityId()}"] > details`)
-          .evaluate((node) => (node as HTMLDetailsElement).open),
-        true,
-      );
-    });
-
-    it("still wires the glossary filter when the hash is malformed", async () => {
+    it("raises nothing and still shows the controls when the hash is malformed", async () => {
       const { errors } = await openedAt("#%E0%A4%A");
       assert.deepEqual(errors, [], "the script raised nothing");
       assert.equal(
         await tab
-          .locator("input[data-glossary-filter]")
+          .locator("[data-controls]")
           .evaluate((node) => (node as HTMLElement).hidden),
         false,
-        "the filter box is shown",
-      );
-      await tab.locator("details.glossary > summary").click();
-      await tab.locator("input[data-glossary-filter]").fill("store");
-      assert.equal(
-        await tab
-          .locator(".glossary dt:not([hidden])")
-          .evaluateAll((terms) => terms.length),
-        1,
+        "the controls are shown",
       );
     });
   });

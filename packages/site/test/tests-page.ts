@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { type Files } from "@cascade-runtime/runtime";
 import { hubFiles } from "../src/front-page.js";
 import { PLAIN } from "../src/html.js";
 import type { Suite, SuiteRun, TestRun } from "../src/hub/context.js";
@@ -116,7 +115,6 @@ export async function pageWith(
   reports: { readonly runtime?: TestRun; readonly vocabulary?: TestRun },
   others: readonly SuiteRun[] = [],
   runtime: Suite = RUNTIME,
-  vocabulary?: Files,
 ) {
   const runs: SuiteRun[] = [
     { suite: runtime, ...(reports.runtime ? { run: reports.runtime } : {}) },
@@ -128,19 +126,7 @@ export async function pageWith(
   ];
   const { tree } = await buildTree({
     sections: [testsSection],
-    ctx: {
-      tests: async () => runs,
-      chrome: PLAIN,
-      ...(vocabulary === undefined
-        ? {}
-        : {
-            vocabulary: async () => ({
-              files: vocabulary,
-              builtFrom: [],
-              at: "",
-            }),
-          }),
-    },
+    ctx: { tests: async () => runs, chrome: PLAIN },
     front: (rows) => hubFiles(["Records"], rows, PLAIN),
   });
   const markup = runs
@@ -266,19 +252,15 @@ export const promisesOf = (markup: string, heading: string): string =>
   );
 
 /**
- * A package with nine capabilities that its spec lists in order, `failing` the number of the one whose case failed, and a
- * package with two: the table cuts the first's links to six.
+ * A package with nine capabilities written in order, `failing` the number of the one whose case failed, and a package
+ * with two: the table cuts the first's links to six.
  */
 export const WIDE_PACKAGE = (failing?: number): string => {
   const names = Array.from({ length: 9 }, (_, n) => `Capability ${n + 1}`);
   return report(
     packageProperty("wide", "wide", "1.0.0", {
       about: "Says what it does. Then says it again at length.",
-      capabilities: names,
-    }) +
-      packageProperty("narrow", "narrow", "1.0.0", {
-        capabilities: ["Only one", "Only two"],
-      }),
+    }) + packageProperty("narrow", "narrow", "1.0.0", {}),
     names
       .map((name, n) =>
         described(
@@ -328,10 +310,6 @@ export function barOf(markup: string, heading: string) {
   return { bar, tallies, said: text(bar) };
 }
 
-/** How many links in the markup point at the glossary entry of `anchor` in the runtime's glossary. */
-export const hrefsTo = (markup: string, anchor: string): number =>
-  markup.split(`href="#glossary-cascade-runtime-${anchor}"`).length - 1;
-
 /** The CTRF file written for the suite named `name`, as JSON. */
 export function ctrfOf(tree: ReadonlyMap<string, Uint8Array>, name = R) {
   const bytes = tree.get(ctrfPath(name));
@@ -348,7 +326,6 @@ export function ctrfOf(tree: ReadonlyMap<string, Uint8Array>, name = R) {
         extra?: { description?: string; levels?: unknown[] };
       }[];
     };
-    extra?: { glossary?: Record<string, unknown[]> };
   };
 }
 
@@ -364,17 +341,22 @@ export const versioned = (version: string): string =>
   );
 
 /**
- * Capabilities in several files, listed in an order that is neither alphabetical nor the report's; `packingFailure` is why the
- * one case of the build capability failed, when it did.
+ * Capabilities in several files, reported in an order that is neither alphabetical nor the order they are written in (by
+ * file, then line): Importing, Zebra, Looking up, Apple; `packingFailure` is why the one case of the build capability
+ * failed, when it did.
  */
 export const groupedWith = (packingFailure?: string): string =>
   report(
     packageProperty("cascade-runtime", "cascade-runtime", "0.0.0", {
       about: "The library an app calls.",
-      capabilities: ["Looking up a term", "Importing a health export"],
       build: ["Packing"],
     }),
     [
+      described(
+        "Looking up a term",
+        { description: "Finds a term by its name.", line: 3 },
+        leafOf("finds one", terms, 6),
+      ),
       described(
         "Importing a health export",
         {
@@ -401,11 +383,6 @@ export const groupedWith = (packingFailure?: string): string =>
         ),
       ),
       described("Zebra capability", { line: 2 }, leafOf("stripes", terms, 4)),
-      described(
-        "Looking up a term",
-        { description: "Finds a term by its name.", line: 3 },
-        leafOf("finds one", terms, 6),
-      ),
       described(
         "Importing a health export",
         { line: 30 },
@@ -441,49 +418,6 @@ Error [ERR_TEST_FAILURE]: boom
 </testsuites>
 `;
 
-export const GLOSSARY = [
-  {
-    term: "claim",
-    definition: "A patient's say-so that a record is theirs.",
-    vocabulary: "https://ns.cascadeprotocol.org/cascade#Claim",
-    aliases: ["claims", "claimed"],
-  },
-  { term: "pod", definition: "The person's own store." },
-  {
-    term: "export",
-    definition: "A file from a hospital.",
-    vocabulary: "https://example.org/vocab#Export",
-  },
-];
-
-export const WITH_GLOSSARY = report(
-  packageProperty("cascade-runtime", "cascade-runtime", "0.0.0", {
-    about: "The library an app calls.",
-    capabilities: ["Importing", "Asking"],
-    glossary: GLOSSARY,
-  }),
-  [
-    described(
-      "Importing",
-      {
-        description:
-          "A claim is kept in the pod. Claims stay; the claim `claim` and disclaimed things are not links.",
-        line: 3,
-      },
-      described(
-        "when the Pod holds claims",
-        { description: "The pod again.", line: 8 },
-        leafOf("keeps what was claimed", pod, 12),
-      ),
-    ) +
-      described(
-        "Asking",
-        { description: "Asks a claim of the pod.", line: 20 },
-        leafOf("returns the export", pod, 22),
-      ),
-  ].join(""),
-);
-
 /** One passed case in each of four packages, in the order a report lists them; `failing` names one whose case failed. */
 export const FOUR_PACKAGES = (failing?: string): string =>
   report(
@@ -515,7 +449,6 @@ export const THREE_PACKAGES = (failing = 1): string => {
   return report(
     packageProperty("alpha", "alpha", "1.0.0", {
       about: "Reads what a hospital sends.",
-      capabilities: ["Reading a record · read", "Writing a record"],
       build: ["Packing"],
     }) +
       packageProperty("beta", "beta", "1.0.0", {

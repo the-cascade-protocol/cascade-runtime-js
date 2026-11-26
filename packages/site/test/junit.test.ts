@@ -246,14 +246,14 @@ describe("Reading a report from each test runner · readJunit()", () => {
 
     it("reads the modules below `tests` as the levels its properties name, and a test with none under its binary", () => {
       assert.deepEqual(levelsOf(built.markup, built.name), [
+        "cascade-bridge-cli::node_host 1 passed",
         "Naming a record 1 passed, 1 failed",
         "when the selector has a pipe 1 passed, 1 failed",
-        "cascade-bridge-cli::node_host 1 passed",
       ]);
       assert.deepEqual(casesOf(built.markup, built.name), [
+        ["runs_the_host", "passed", "40 ms"],
         ["keeps_the_base", "failed", "3 ms"],
         ["escapes it", "passed", "2 ms"],
-        ["runs_the_host", "passed", "40 ms"],
       ]);
       assert.match(text(built.part), /assertion failed: kept/);
     });
