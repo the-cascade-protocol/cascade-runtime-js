@@ -6,12 +6,25 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { workerExecArgv } from "../src/node/worker-arguments.js";
 
 describe("The arguments a worker thread is started with · workerExecArgv()", () => {
-  it("keeps the permission model and source maps, and drops the preloads and every per-process option", () => {
+  it("returns undefined for a process with no preload, so node starts the worker as it does by default", () => {
+    assert.equal(
+      workerExecArgv([
+        "--permission",
+        "--allow-fs-read=/app",
+        "--disallow-code-generation-from-strings",
+        "--max-old-space-size=300",
+      ]),
+      undefined,
+    );
+    assert.equal(workerExecArgv([]), undefined);
+  });
+
+  it("with a preload, keeps what node accepts for a worker, and drops the preloads and every option node refuses", () => {
     assert.deepEqual(
       workerExecArgv([
         "--import",
@@ -28,6 +41,9 @@ describe("The arguments a worker thread is started with · workerExecArgv()", ()
         "--allow-worker",
         "--max-old-space-size=300",
         "--use-largepages=off",
+        "--disallow-code-generation-from-strings",
+        "--frozen-intrinsics",
+        "--conditions=development",
       ]),
       [
         "--enable-source-maps",
@@ -36,6 +52,8 @@ describe("The arguments a worker thread is started with · workerExecArgv()", ()
         "--allow-fs-write",
         "/out",
         "--allow-worker",
+        "--frozen-intrinsics",
+        "--conditions=development",
       ],
     );
   });
@@ -51,17 +69,18 @@ describe("The arguments a worker thread is started with · workerExecArgv()", ()
   });
 
   describe("given a process started under `--permission`", () => {
-    it("starts a worker that still cannot read outside the allowed folder", async () => {
-      const folder = await mkdtemp(join(tmpdir(), "worker-permission-"));
-      const outside = await mkdtemp(join(tmpdir(), "worker-outside-"));
-      try {
-        await writeFile(join(outside, "secret"), "secret");
-        const helper = fileURLToPath(
-          import.meta.resolve("../src/node/worker-arguments.js"),
-        );
-        await writeFile(
-          join(folder, "run.mjs"),
-          `import { Worker } from "node:worker_threads";
+    for (const preloaded of [false, true])
+      it(`starts a worker that still cannot read outside the allowed folder, ${preloaded ? "with" : "without"} a preload`, async () => {
+        const folder = await mkdtemp(join(tmpdir(), "worker-permission-"));
+        const outside = await mkdtemp(join(tmpdir(), "worker-outside-"));
+        try {
+          await writeFile(join(outside, "secret"), "secret");
+          const helper = fileURLToPath(
+            import.meta.resolve("../src/node/worker-arguments.js"),
+          );
+          await writeFile(
+            join(folder, "run.mjs"),
+            `import { Worker } from "node:worker_threads";
 import { workerExecArgv } from ${JSON.stringify(import.meta.resolve("../src/node/worker-arguments.js"))};
 const worker = new Worker(
   \`import { readFileSync } from "node:fs";
@@ -72,19 +91,23 @@ const worker = new Worker(
 );
 worker.on("message", (said) => { console.log(said); worker.terminate(); });
 `,
-        );
-        const { stdout } = await promisify(execFile)(process.execPath, [
-          "--permission",
-          `--allow-fs-read=${folder}`,
-          `--allow-fs-read=${helper}`,
-          "--allow-worker",
-          join(folder, "run.mjs"),
-        ]);
-        assert.equal(stdout.trim(), "ERR_ACCESS_DENIED");
-      } finally {
-        await rm(folder, { recursive: true, force: true });
-        await rm(outside, { recursive: true, force: true });
-      }
-    });
+          );
+          await writeFile(join(folder, "preload.mjs"), "");
+          const { stdout } = await promisify(execFile)(process.execPath, [
+            ...(preloaded
+              ? ["--import", pathToFileURL(join(folder, "preload.mjs")).href]
+              : []),
+            "--permission",
+            `--allow-fs-read=${folder}`,
+            `--allow-fs-read=${helper}`,
+            "--allow-worker",
+            join(folder, "run.mjs"),
+          ]);
+          assert.equal(stdout.trim(), "ERR_ACCESS_DENIED");
+        } finally {
+          await rm(folder, { recursive: true, force: true });
+          await rm(outside, { recursive: true, force: true });
+        }
+      });
   });
 });
