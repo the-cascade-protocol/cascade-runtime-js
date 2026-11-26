@@ -217,6 +217,16 @@ const APART = new Set([
   "writtenValue",
   "ucumUnit",
   "unitText",
+  "quantityComparator",
+  "structuredDosage",
+  "dosageDoseQuantity",
+  "dosageRepeatFrequency",
+  "dosageRepeatPeriod",
+  "dosageRepeatPeriodUnit",
+  "dosageBoundsPeriodStart",
+  "dosageBoundsPeriodEnd",
+  "dosageRouteCode",
+  "dosageRouteCodeInOtherSystem",
 ]);
 
 /** Fields a derivation, not a view, puts on a view entry. */
