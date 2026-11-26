@@ -426,7 +426,7 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
   describe("given the built site, in `SEARCH_TREE`", () => {
     const skip =
       TREE === undefined
-        ? "SEARCH_TREE is not set: the docs site job builds the tree and names it"
+        ? "runs in the docs site job over the tree it builds; its result is in that job"
         : false;
     const out = TREE ?? "";
     const html: string[] = [];
@@ -437,7 +437,7 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
         else if (path.endsWith(".html")) html.push(path);
       }
     };
-    /** The folders of the example pods, which the tree holds whole, each with its own pages. */
+    /** The folders of the example pods, which the tree holds whole, each with its own pages: their builder passes no `hubRoot` to `shell()`, so a pod page has no search box by design, and is held to the title check all the same. */
     let pods: string[] = [];
     const inPod = (path: string) => pods.includes(path.split("/")[0] ?? "");
     let rows: SearchRow[];
@@ -485,9 +485,7 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
             .every(({ kind }) => kind === "eval"),
         );
         assert.ok(
-          rows
-            .filter(({ path }) => !inPod(path))
-            .every(({ title }) => !/ [·—] Cascade /.test(title)),
+          rows.every(({ title }) => !/ [·—] Cascade [^·—]*$/.test(title)),
         );
         assert.ok(!rows.some(({ path }) => path.startsWith("try/")));
       },

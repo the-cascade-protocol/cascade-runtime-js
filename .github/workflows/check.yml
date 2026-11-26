@@ -45,8 +45,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           PULL: ${{ github.event.pull_request.number }}
-          # docs: the pages' sources and builders, the pack, every Markdown file. The browser build's own test runs in `package`.
-          DOCS: '^(docs/|scripts/|packages/(site|evals)/|packages/cascade-runtime/pack/)|\.md$|^package(-lock)?\.json$'
+          # docs: the pages' sources and builders, the pack, every Markdown file, and what the tree is built from: the source and
+          # guide of the packages the staged package bundles and the API and MCP pages read, `cascade-runtime.json`, the TypeScript
+          # configs. The browser build's own test runs in `package`.
+          DOCS: '^(docs/|scripts/|packages/(site|evals)/|packages/cascade-runtime/pack/|packages/(runtime|cascade-runtime|apple-health|ccda-download|fhir-pull|mcp)/(src|guide|tsconfig\.json)|cascade-runtime\.json$|tsconfig[^/]*\.json$)|\.md$|^package(-lock)?\.json$'
           # starter: the action that checks the starter kit out; a Depends-On line naming a starter kit pull request is read below.
           STARTER: '^\.github/actions/starter/'
           # install: what is packed and installed: a manifest or lock, the pack, every Node-only source (the workers and
