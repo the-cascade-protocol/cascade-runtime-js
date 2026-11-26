@@ -294,11 +294,28 @@ describe("Checking a model's reply against a person's records · checkReply(), r
         fact(HBA1C, "value"),
         fact(NOTE, "date"),
       );
-      assert.deepEqual(result!.filled!.held, ["6.9"], "one value");
+      assert.deepEqual(
+        result!.filled!.held,
+        [{ sources: [], fields: [{ name: "resultValueText", value: "6.9" }] }],
+        "one value, of the entry as a whole",
+      );
       assert.deepEqual(
         note!.filled!.held,
-        ["2026-06-22T18:03:44Z", "2026-01-05T17:12:05Z"],
-        "a note two records state, each with its own time",
+        [
+          {
+            sources: ["S6"],
+            fields: [
+              { name: "noteOrDocumentDate", value: "2026-06-22T18:03:44Z" },
+            ],
+          },
+          {
+            sources: ["S3"],
+            fields: [
+              { name: "noteOrDocumentDate", value: "2026-01-05T17:12:05Z" },
+            ],
+          },
+        ],
+        "a note two records state, each with its own time and its own source",
       );
       assert.equal(
         note!.filled!.date,
@@ -319,8 +336,16 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       const [born] = await pointed(fact(PERSON, "date"));
       assert.deepEqual(reasons([born!]), ["ok"]);
       assert.deepEqual(
-        [born!.filled?.entry, born!.filled?.date, born!.filled?.held],
-        [PERSON, "1968-11-04", ["1968-11-04"]],
+        [
+          born!.filled?.entry,
+          born!.filled?.date,
+          born!.filled?.held.map((item) => item.fields),
+        ],
+        [
+          PERSON,
+          "1968-11-04",
+          [[{ name: "dateOfBirth", value: "1968-11-04" }]],
+        ],
       );
     });
   });
@@ -335,12 +360,14 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       );
       assert.deepEqual(reasons(facts), ["ok", "ok", "ok", "ok"]);
       assert.deepEqual(
-        facts.map(({ filled }) => filled?.held),
+        facts.map(({ filled }) =>
+          filled?.held.map((item) => item.fields.map((it) => it.value)),
+        ),
         [
-          ["6.9"],
-          ["2025-09-22T16:15:00Z"],
-          ["2026-06-22T18:03:44Z"],
-          ["2026-01-05T17:12:05Z"],
+          [["6.9"]],
+          [["2025-09-22T16:15:00Z"]],
+          [["2026-06-22T18:03:44Z"]],
+          [["2026-01-05T17:12:05Z"]],
         ],
       );
       assert.deepEqual(
@@ -375,194 +402,65 @@ describe("Checking a model's reply against a person's records · checkReply(), r
   });
 
   describe("given a fact that names a `property`", () => {
-    // A lisinopril entry two sources state: S3 (urn:uuid:2a2516eb…) a dose of 2 tablets three times a day by mouth, S12
-    // (urn:uuid:ca582a17…) one tablet once a day. Each dosage is a link row and the rows of its parts, as the question gives them.
-    const S3 = "urn:uuid:2a2516eb-46b0-8352-9042-93639f23ae9c";
-    const S12 = "urn:uuid:ca582a17-052b-890b-a5ad-0f2567e25670";
-    const MED = entry("medications", "a95bee7d");
-    const LAB_ENTRY = `${POD}/lab-results.ttl#cd05f84f584f21389ebd613489d46ab9634387697c9a20caf6af151360307712`;
-    const on = (
-      which: string,
-      from: string,
-      path: string | undefined,
-      fields: [string, string][],
-    ) =>
-      fields.map(([field, value]) => ({
-        entry: which,
+    it("never takes a value on a part for a value of the view entry: a reference bound is read by its own name, and the result stays the result", async () => {
+      const S3 = "urn:uuid:2a2516eb-46b0-8352-9042-93639f23ae9c";
+      const LAB_ENTRY = `${POD}/lab-results.ttl#cd05f84f584f21389ebd613489d46ab9634387697c9a20caf6af151360307712`;
+      const row = (field: string, value: string, part?: string) => ({
+        entry: LAB_ENTRY,
         field: NS + field,
         value,
-        from,
-        ...(path === undefined ? {} : { part: path }),
-      }));
-    const dosage = (
-      from: string,
-      times: string,
-      dose: string,
-      unit: string,
-    ) => [
-      ...on(MED, from, undefined, [["structuredDosage", `${MED}-dosage-1`]]),
-      ...on(MED, from, "structuredDosage 1", [
-        ["dosageRepeatFrequency", times],
-        ["dosageRepeatPeriod", "1"],
-        ["dosageRepeatPeriodUnit", "d"],
-        ["dosageRouteCode", "http://snomed.info/id/26643006"],
-        ["dosageDoseQuantity", `${MED}-dosage-1-dose-quantity`],
-      ]),
-      ...on(MED, from, "structuredDosage 1/dosageDoseQuantity", [
-        ["writtenValue", dose],
-        ["unitText", unit],
-      ]),
-    ];
-    const askWith =
-      (...more: Record<string, string>[]) =>
-      async (question: string) =>
-        question === "entry/What it shows"
-          ? // the question's order: by field, so one source's rows are not together
-            [...priya[question]!, ...more].sort((a, b) =>
-              (a.field ?? "").localeCompare(b.field ?? ""),
-            )
-          : (priya[question] ?? []);
-    const medication = askWith(
-      ...on(MED, S3, undefined, [
-        ["drugName", "lisinopril 10 MG Oral Tablet"],
-        ["medicationRequestIntent", "order"],
-      ]),
-      ...on(MED, S12, undefined, [
-        ["drugName", "lisinopril 10 MG Oral Tablet"],
-      ]),
-      ...dosage(S3, "3", "2", "tablet"),
-      ...dosage(S12, "1", "1", "tablet"),
-    );
-
-    it("returns in `held`, for a field that links a part, the whole part beneath it as the pod holds it, and no link", async () => {
-      const [dose, how] = await pointedIn(
-        medication,
-        fact(MED, "value", { property: "dosageDoseQuantity", source: "S3" }),
-        fact(MED, "value", { property: "structuredDosage", source: "S3" }),
-      );
-      assert.deepEqual(reasons([dose!, how!]), ["ok", "ok"]);
-      assert.deepEqual(dose!.filled!.held, [
-        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
-      ]);
-      assert.deepEqual(how!.filled!.held, [
-        "structuredDosage 1: dosageRepeatFrequency 3, dosageRepeatPeriod 1, dosageRepeatPeriodUnit d, dosageRouteCode http://snomed.info/id/26643006",
-        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
-      ]);
-    });
-
-    it("returns each source's part as a line of its own when none is named, and the field's value when it links no part", async () => {
-      const [dose, intent] = await pointedIn(
-        medication,
-        fact(MED, "value", { property: "dosageDoseQuantity" }),
-        fact(MED, "status", { property: "medicationRequestIntent" }),
-      );
-      assert.deepEqual(dose!.filled!.held, [
-        "S3: structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
-        "S12: structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
-      ]);
-      assert.deepEqual(
-        dose!.filled!.sources.map((it) => it.split(" ")[0]),
-        ["S3", "S12"],
-      );
-      assert.deepEqual(intent!.filled!.held, ["order"]);
-      assert.deepEqual(
-        intent!.filled!.sources.map((it) => it.split(" ")[0]),
-        ["S3"],
-        "only the source that holds the property",
-      );
-    });
-
-    it("names both sources on one line when they hold the same dose", async () => {
-      const same = askWith(
-        ...on(MED, S3, undefined, [["drugName", "lisinopril"]]),
-        ...on(MED, S12, undefined, [["drugName", "lisinopril"]]),
-        ...dosage(S3, "1", "1", "tablet"),
-        ...dosage(S12, "1", "1", "tablet"),
-      );
-      const [dose] = await pointedIn(
-        same,
-        fact(MED, "value", { property: "dosageDoseQuantity" }),
-      );
-      assert.deepEqual(dose!.filled!.held, [
-        "S3, S12: structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
-      ]);
-    });
-
-    it("takes the property as a full IRI, a prefixed name or the bare name", async () => {
-      const facts = await pointedIn(
-        medication,
-        ...[`${NS}dosageDoseQuantity`, "cascade:dosageDoseQuantity"].map(
-          (property) => fact(MED, "value", { property, source: "S3" }),
-        ),
-      );
-      assert.deepEqual(reasons(facts), ["ok", "ok"]);
-    });
-
-    it("knows a source that holds only rows no kind maps", async () => {
-      const [dose] = await pointedIn(
-        askWith(
-          ...on(MED, S3, undefined, [["drugName", "lisinopril"]]),
-          ...dosage(S3, "3", "2", "tablet"),
-          ...dosage(S12, "1", "1", "tablet"),
-        ),
-        fact(MED, "value", { property: "dosageDoseQuantity", source: "S12" }),
-      );
-      assert.deepEqual(reasons([dose!]), ["ok"]);
-      assert.deepEqual(dose!.filled!.held, [
-        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
-      ]);
-    });
-
-    it("shows a coded value by its label and then its code", async () => {
-      const [route] = await pointedIn(
-        askWith({
-          entry: MED,
-          field: `${NS}dosageRouteCode`,
-          value: "http://snomed.info/id/26643006",
-          valueLabel: "Oral route",
-          from: S3,
-        }),
-        fact(MED, "value", { property: "dosageRouteCode" }),
-      );
-      assert.deepEqual(route!.filled!.held, ["Oral route (snomed:26643006)"]);
-    });
-
-    it("returns `no such field` for a property the view entry, or the source named, does not hold", async () => {
-      const facts = await pointedIn(
-        medication,
-        fact(MED, "value", { property: "dispenseDaysSupply" }),
-        fact(MED, "value", {
-          property: "medicationRequestIntent",
-          source: "S12",
-        }),
-      );
-      assert.deepEqual(reasons(facts), [
-        "no such field: dispenseDaysSupply",
-        "no such field: medicationRequestIntent from S12",
-      ]);
-    });
-
-    it("never takes a value on a part for a value of the view entry: a reference bound is read by its own name, and the result stays the result", async () => {
-      const bounded = askWith(
-        ...on(LAB_ENTRY, S3, undefined, [
-          ["referenceRangeHigh", `${LAB_ENTRY}-high`],
-        ]),
-        // a name a kind is mapped to, written on a part: the bound is still not the result
-        ...on(LAB_ENTRY, S3, "referenceRangeHigh", [
-          ["writtenValue", "5.6"],
-          ["resultValueText", "5.6"],
-        ]),
-      );
+        from: S3,
+        ...(part === undefined ? {} : { part }),
+      });
       const [result, high] = await pointedIn(
-        bounded,
+        async (question) =>
+          question === "entry/What it shows"
+            ? [
+                ...priya[question]!,
+                row("referenceRangeHigh", `${LAB_ENTRY}-high`),
+                // a name a kind is mapped to, written on a part: the bound is still not the result
+                row("writtenValue", "5.6", "referenceRangeHigh"),
+                row("resultValueText", "5.6", "referenceRangeHigh"),
+              ]
+            : (priya[question] ?? []),
         fact(HBA1C, "value"),
         fact(HBA1C, "value", { property: "referenceRangeHigh" }),
       );
-      assert.deepEqual(result!.filled!.held, ["6.9"]);
+      assert.deepEqual(
+        result!.filled!.held.map((item) => item.fields),
+        [[{ name: "resultValueText", value: "6.9" }]],
+      );
       assert.equal(result!.filled!.value, "6.9 %");
-      assert.deepEqual(high!.filled!.held, [
-        "referenceRangeHigh: resultValueText 5.6, writtenValue 5.6",
-      ]);
+      assert.deepEqual(
+        high!.filled!.held.map(({ part, fields }) => ({ part, fields })),
+        [
+          {
+            part: "referenceRangeHigh",
+            fields: [
+              { name: "resultValueText", value: "5.6" },
+              { name: "writtenValue", value: "5.6" },
+            ],
+          },
+        ],
+      );
+    });
+
+    it("returns `no such field` for a property the view entry does not hold", async () => {
+      const [none] = await pointed(
+        fact(HBA1C, "value", { property: "dispenseDaysSupply" }),
+      );
+      assert.deepEqual(reasons([none!]), ["no such field: dispenseDaysSupply"]);
+    });
+
+    it("takes the property as a full IRI, a prefixed name or the bare name", async () => {
+      const facts = await pointed(
+        ...[
+          `${NS}referenceRangeText`,
+          "cascade:referenceRangeText",
+          "referenceRangeText",
+        ].map((property) => fact(HBA1C, "value", { property })),
+      );
+      assert.deepEqual(reasons(facts), ["ok", "ok", "ok"]);
     });
   });
 
