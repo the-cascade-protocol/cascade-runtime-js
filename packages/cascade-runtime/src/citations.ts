@@ -838,7 +838,7 @@ function pushCode(into: string[], code: unknown, system: unknown): void {
 }
 
 /** A pod's code IRI as the compact read shows it: system:code; undefined for a value that is no code IRI. */
-function shownCode(iri: string): string | undefined {
+export function shownCode(iri: string): string | undefined {
   const plain = iri.replace(/^https:/, "http:");
   for (const [name, stem] of Object.entries(codeStems)) {
     const prefix = stem.replace(/^https:/, "http:");
@@ -1340,6 +1340,9 @@ const MEMBER_PREFIX = /^(urn:uuid:\S+) /;
 export interface Held {
   readonly kind: keyof Fields;
   readonly value: string;
+  /** The field it is the value of, and its label when the question gives one; none for a form of a value made only to be matched. */
+  readonly name?: string;
+  readonly label?: string;
   /** The member record that states it; none for a value of the entry as a whole, such as a merged result. */
   readonly record?: string;
 }
@@ -1361,10 +1364,16 @@ export function entryHeld(
         : row.value;
     const by =
       row.from === undefined || row.from === "" ? {} : { record: row.from };
+    const shownAs = {
+      name,
+      ...(row.valueLabel === undefined || row.valueLabel === ""
+        ? {}
+        : { label: row.valueLabel }),
+    };
     const kinds =
       row.part === undefined || row.part === "" ? POD_FIELDS[name] : undefined;
     for (const kind of kinds ?? []) {
-      held.push({ kind, value, ...by });
+      held.push({ kind, value, ...shownAs, ...by });
       const shown = kind === "code" ? shownCode(value) : undefined;
       if (shown !== undefined) held.push({ kind: "code", value: shown, ...by });
     }
@@ -1411,7 +1420,8 @@ export function entryFieldRows(
 /**
  * The rows a fact that names `property` rests on: the rows of that field, and for a field that links a part, every row
  * of the part beneath it (its own link rows leave no row of their own). A part is beneath a link when the way to it
- * begins with the link's own way, so a reader needs no node IRI.
+ * begins with the link's own way, so a reader needs no node IRI. A field that sits on a part is read with the whole of
+ * the part it sits on, from its top, so a dosage is never shown as one of its fields.
  */
 export function ofProperty(
   rows: readonly FieldRow[],
@@ -1427,52 +1437,24 @@ export function ofProperty(
         row.part.startsWith(`${way}/`))
     );
   };
+  const links = (row: FieldRow) => rows.some((under) => below(row, under));
+  const top = (part: string) => part.split("/")[0];
   const named = rows.filter((row) => row.name === property);
+  const onParts = named.filter(
+    (row): row is FieldRow & { part: string } =>
+      row.part !== undefined && !links(row),
+  );
   return rows.filter(
     (row) =>
-      (named.includes(row) || named.some((link) => below(link, row))) &&
-      !rows.some((under) => below(row, under)),
-  );
-}
-
-/**
- * Rows as a reader is shown them: a value on the entry as its value, by its label and then its code when it has a
- * label; the values on one part of one record as one line, the way to the part and each field's name and value, so a
- * dose is not parted from its unit. With `named` (a record's source, by its short name), a line says whose it is, and
- * a line two sources share says both.
- */
-export function shownRows(
-  rows: readonly FieldRow[],
-  named?: (record: string | undefined) => string | undefined,
-): string[] {
-  const lines: { part?: string; says: string[]; by: string | undefined }[] = [];
-  const open = new Map<string, (typeof lines)[number]>();
-  for (const { name, value, label, part, record } of rows) {
-    const by = named?.(record);
-    const said =
-      label === undefined ? value : `${label} (${shownCode(value) ?? value})`;
-    if (part === undefined) {
-      lines.push({ says: [said], by });
-      continue;
-    }
-    const key = `${record ?? ""} ${part}`;
-    let line = open.get(key);
-    if (line === undefined) {
-      line = { part, says: [], by };
-      open.set(key, line);
-      lines.push(line);
-    }
-    line.says.push(`${name} ${said}`);
-  }
-  const shown = new Map<string, Set<string>>();
-  for (const { part, says, by } of lines) {
-    const text = part === undefined ? says[0]! : `${part}: ${says.join(", ")}`;
-    const sources = shown.get(text) ?? new Set<string>();
-    shown.set(text, sources);
-    if (by !== undefined) sources.add(by);
-  }
-  return [...shown].map(([text, sources]) =>
-    sources.size === 0 ? text : `${[...sources].join(", ")}: ${text}`,
+      !links(row) &&
+      (named.includes(row) ||
+        named.some((link) => below(link, row)) ||
+        onParts.some(
+          (own) =>
+            own.record === row.record &&
+            row.part !== undefined &&
+            top(own.part) === top(row.part),
+        )),
   );
 }
 
@@ -1488,6 +1470,7 @@ export function personHeld(row: Row): Held[] {
           held.push({
             kind,
             value,
+            name: column,
             ...(record === undefined ? {} : { record }),
           });
     }

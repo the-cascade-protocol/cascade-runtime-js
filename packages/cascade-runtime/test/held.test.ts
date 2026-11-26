@@ -25,6 +25,8 @@ const priya = JSON.parse(
 ) as Record<string, Readonly<Record<string, string>>[]>;
 const S3 = "urn:uuid:2a2516eb-46b0-8352-9042-93639f23ae9c";
 const S12 = "urn:uuid:ca582a17-052b-890b-a5ad-0f2567e25670";
+// another record of the document S3 is, so a source states two records
+const S3_ELSEWHERE = "urn:uuid:80afad1b-91cb-8766-b527-1beabf2a4158";
 const MED = `pod://p/clinical/medications.ttl#${"a95bee7d".padEnd(64, "0")}`;
 const LAB = `pod://p/clinical/lab-results.ttl#${"41e35923".padEnd(64, "0")}`;
 
@@ -117,7 +119,7 @@ const read = (fact: CheckedFact) =>
 const TWO_DOSAGES =
   "a-medicine-with-two-dosages-shows-each-dose-on-its-own-dosage";
 const RANGE = "lab-results-view";
-const SO = { prescribed: S3, listed: S12 };
+const SO = { "urn:x:prescribed": S3, "urn:x:listed": S12 };
 
 const A_10 =
   "Dosage: 10.0 milligram · 1 per 1 day · route snomed:26643006 · route C38288 (another code system)";
@@ -174,8 +176,8 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
 
     it("keeps two records of one source apart, each dosage its own, never one record's schedule on the other's dose", async () => {
       const rows = await fixtureRows(TWO_DOSAGES, MED, {
-        prescribed: S3,
-        listed: S3,
+        "urn:x:prescribed": S3,
+        "urn:x:listed": S3_ELSEWHERE,
       });
       const [dosages] = await check(rows, MED, {
         property: "structuredDosage",
@@ -331,9 +333,9 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
       const rows = await fixtureRows(TWO_DOSAGES, MED, SO);
       const [same] = await check(
         [
-          ...rows.filter((it) => it.from !== SO.listed),
+          ...rows.filter((it) => it.from !== S12),
           ...rows
-            .filter((it) => it.from === SO.prescribed)
+            .filter((it) => it.from === S3)
             .map((it) => ({ ...it, from: S12 })),
         ],
         MED,
@@ -342,6 +344,54 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
       assert.deepEqual(read(same!), [
         { sources: ["S3", "S12"], lines: ["Dose: 10.0 milligram"] },
       ]);
+    });
+  });
+
+  describe("given a dosage that states only some of its parts", () => {
+    const dosage = (...fields: [string, string][]) =>
+      heldInWords({
+        part: "structuredDosage 1",
+        fields: fields.map(([name, value]) => ({ name, value })),
+      });
+
+    it("words what it states and nothing it does not, a period of more than one in the plural and a comparator it does not know as written", () => {
+      assert.deepEqual(
+        [
+          dosage(),
+          dosage(["dosageRepeatFrequency", "3"]),
+          dosage(["dosageRepeatPeriod", "2"]),
+          dosage(["dosageRepeatPeriodUnit", "wk"]),
+          dosage(
+            ["dosageRepeatFrequency", "3"],
+            ["dosageRepeatPeriod", "2"],
+            ["dosageRepeatPeriodUnit", "wk"],
+          ),
+          dosage(
+            ["dosageRepeatFrequency", "3"],
+            ["dosageRepeatPeriod", "1.0"],
+            ["dosageRepeatPeriodUnit", "d"],
+          ),
+        ].flat(),
+        [
+          "Dosage: nothing stated",
+          "Dosage: frequency 3",
+          "Dosage: period 2",
+          "Dosage: period unit week",
+          "Dosage: 3 per 2 weeks",
+          "Dosage: 3 per 1.0 day",
+        ],
+      );
+      assert.deepEqual(
+        heldInWords({
+          part: "referenceRangeHigh",
+          fields: [
+            { name: "quantityComparator", value: "~" },
+            { name: "writtenValue", value: "5" },
+            { name: "ucumUnit", value: "mg" },
+          ],
+        }),
+        ["Reference range high: ~ 5 mg"],
+      );
     });
   });
 
