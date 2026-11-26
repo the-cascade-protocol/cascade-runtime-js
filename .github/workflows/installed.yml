@@ -57,7 +57,11 @@ jobs:
       - name: cascade-mcp, the installed bin started with node, over a pod on stdio
         env:
           CASCADE_RUNTIME_APP: ${{ runner.temp }}/app
-        run: node --import ./packages/cascade-runtime/dist/test/offline.js --test packages/mcp/dist/test/mcp.test.js
+        # The test enters the app's folder to replay a kit, and a worker it starts there resolves the preload against that
+        # folder, so the preload is a file URL, which names the same file wherever the process is.
+        run: |
+          offline=$(node -p "require('node:url').pathToFileURL('packages/cascade-runtime/dist/test/offline.js').href")
+          node --import "$offline" --test packages/mcp/dist/test/mcp.test.js
       - name: Everything installed is one of the packages, bundled in one, or from npm's registry
         working-directory: ${{ runner.temp }}/app
         run: |
