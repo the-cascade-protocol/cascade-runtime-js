@@ -3,8 +3,18 @@ import { before, describe, it } from "node:test";
 import { deriveWith, vocabularyBuild } from "../src/build.js";
 import type { CorePod } from "../src/core-pod.js";
 import { MemoryFiles } from "../src/files.js";
+import { featureStory } from "../src/conformance.js";
 import { importersNamed } from "../src/importers.js";
+import { kitImports } from "../src/kit-bridge.js";
+import { ofMediaType } from "../src/load-adapter.js";
+import { checkouts } from "../src/node/components.js";
 import { localVocabulary, thisRuntime } from "../src/node/runtime.js";
+import {
+  compiledBridge,
+  inWorker,
+  loadSharedAdapters,
+} from "../src/node/wasm.js";
+import { WasmBridge } from "../src/wasm-bridge.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { type Perform, PERFORMERS, Replay } from "../src/replay.js";
 import type { Happened, Step } from "../src/story.js";
@@ -111,6 +121,48 @@ function judgment(
 `;
 }
 
+let converting: Promise<Map<string, Uint8Array>> | undefined;
+
+/** The graph the adapters make of each of Tamsin's pulls, by the path a kit would save it at under her folder, made once. */
+function tamsinConverted(
+  local: Awaited<ReturnType<typeof localVocabulary>>,
+): Promise<Map<string, Uint8Array>> {
+  converting ??= (async () => {
+    const components = await checkouts(ROOT);
+    const { folder } = await components.bridge();
+    const adaptersOf = ofMediaType(
+      await loadSharedAdapters(
+        folder,
+        new WasmBridge(inWorker(await compiledBridge(folder))),
+        components.config.adapters,
+        components,
+      ),
+    );
+    const { person, steps } = await featureStory(
+      local.files,
+      "conformance/tamsin-vale/tamsin-vale.feature",
+      () => new OxigraphStore(),
+    );
+    const graphs = new Map<string, Uint8Array>();
+    for (const { converted, documents } of await kitImports({
+      vocabulary: local.files,
+      folder: person.folder,
+      steps,
+      importers: importersNamed(local.config.importers),
+      adaptersOf,
+    }))
+      for (const { stem, offered, accepting } of documents) {
+        assert.ok(accepting, `no adapter accepts ${stem}`);
+        graphs.set(
+          `${converted.slice(person.folder.length + 1)}/${stem}/graph.ttl`,
+          (await accepting.convert(offered)).graph,
+        );
+      }
+    return graphs;
+  })();
+  return converting;
+}
+
 /**
  * A story drawn from the seed: Cleo's export and Tamsin's pulls, entries of allergies sharing codes (some versions with
  * no name), the matcher, a person's Same, Different (some typing a member, as an app may), Before, Erroneous, About and ClockDiscounted, retractions of her judgments and of
@@ -133,21 +185,24 @@ async function story(seed: number) {
   }
   for (const path of await local.files.list(TAMSIN)) {
     const bytes = await local.files.read(path);
-    if (bytes !== undefined)
-      await source.write(
-        FOLDER + path.slice(TAMSIN.length),
-        path.includes("/bridge/E3/")
-          ? new TextEncoder().encode(
-              new TextDecoder()
-                .decode(bytes)
-                .replace(
-                  /(cascade:(?:drugName|testName) ")(.)/g,
-                  (_all, before: string, first: string) =>
-                    before + first.toLowerCase(),
-                ),
-            )
-          : bytes,
-      );
+    if (bytes !== undefined && !path.includes("/bridge/"))
+      await source.write(FOLDER + path.slice(TAMSIN.length), bytes);
+  }
+  for (const [path, graph] of await tamsinConverted(local)) {
+    await source.write(
+      FOLDER + path,
+      path.startsWith("bridge/E3/")
+        ? new TextEncoder().encode(
+            new TextDecoder()
+              .decode(graph)
+              .replace(
+                /(cascade:(?:drugName|testName) ")(.)/g,
+                (_all, before: string, first: string) =>
+                  before + first.toLowerCase(),
+              ),
+          )
+        : graph,
+    );
   }
   for (const path of await source.list(`${FOLDER}bridge/E2/`)) {
     const bytes = await source.read(path);
