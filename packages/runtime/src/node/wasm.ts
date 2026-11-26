@@ -74,14 +74,21 @@ function short(commit: string): string {
   return commit.slice(0, 12);
 }
 
-/** The build in a checkout's `package/dist` when it was made from the checkout as it is, or why it was passed over. */
+/**
+ * The build in a checkout's `package/dist` when it was made from the checkout as it is, or why it was passed over. A
+ * checkout with nothing uncommitted, at the commit a build with nothing uncommitted was made from, holds the sources that
+ * build recorded, so only any other checkout has them read.
+ */
 async function checkoutBuild(
   checkout: string,
+  state: Awaited<ReturnType<typeof gitState>>,
 ): Promise<{ dist: string; built: BuiltFrom } | string> {
   const dist = join(checkout, "package", "dist");
   const built = await builtFrom(dist);
   if (built === undefined || !existsSync(join(dist, WASM)))
     return `the checkout ${checkout} holds no build`;
+  if (state?.uncommitted === 0 && !built.dirty && built.commit === state.head)
+    return { dist, built };
   const sources = await promisify(execFile)(process.execPath, [
     join(checkout, "package", "sources.mjs"),
   ]).then(
@@ -173,15 +180,14 @@ async function findBridgePackageNow(
   ] as const;
   for (const [source, checkout] of checkouts) {
     if (checkout === undefined) continue;
-    const found = await checkoutBuild(checkout);
+    const state = unbuilt === undefined ? await gitState(checkout) : undefined;
+    const found = await checkoutBuild(checkout, state);
     const where =
       source === "sibling"
         ? "the sibling checkout's"
         : "the handed-in checkout's";
     if (typeof found === "string") {
       passedOver.push(found);
-      const state =
-        unbuilt === undefined ? await gitState(checkout) : undefined;
       if (state === undefined) continue;
       if (state.uncommitted > 0)
         throw new Error(
