@@ -1,3 +1,4 @@
+import type { AdaptersOf } from "./bridge.js";
 import {
   BuildFailure,
   CorePod,
@@ -9,7 +10,7 @@ import type { Files } from "./files.js";
 import type { Importer } from "./importer.js";
 import type { Layout } from "./layout.js";
 import { References } from "./references.js";
-import { SavedOutputBridge } from "./saved-output-bridge.js";
+import { SavedOutputBridge, stemsOf } from "./saved-output-bridge.js";
 import { CASCADE, type StepFile } from "./step.js";
 import type { StoreFactory } from "./store.js";
 import type { ProposalAnswer, Step, StepKind, Story } from "./story.js";
@@ -64,6 +65,17 @@ export type Performers = Partial<Record<StepKind, Perform>>;
 /** The path of a file a step names, within the story's own files. */
 function inStory(folder: string, path: string): string {
   return folder === "" ? path : `${folder}/${path}`;
+}
+
+/**
+ * Whether a person's scripted input, the story's folder, holds a `bridge/` folder. It then saves the Bridge output of
+ * every import step, and a step it saves none for is an error; a person with none has every import converted.
+ */
+export async function savesBridgeOutput(
+  source: Pick<Files, "list">,
+  folder: string,
+): Promise<boolean> {
+  return (await source.list(`${inStory(folder, "bridge")}/`)).length > 0;
 }
 
 /** The pod's step given a file the step names, named in messages by its path in the story; refused when the story has no such file. */
@@ -145,34 +157,83 @@ function begun(story: StorySide, step: Step): void {
   story.time.begin(step.when);
 }
 
-/** An import: its export's or its download's documents, of any media type, converted by the Bridge output the story saved for them. */
-const importSaved: Perform = async (pod, step, story) => {
-  const { happened } = step;
-  if (happened.kind !== "import") throw new Error("the step is no import");
-  const folder = inStory(story.folder, happened.export);
-  const converted = inStory(story.folder, happened.converted);
-  const bridge = await SavedOutputBridge.of(story.source, {
-    export: folder,
-    converted,
-  });
-  const adapter = await bridge.load({
-    iri: `${story.source.iri}${converted}/`,
-    files: new Map(),
-  });
-  try {
-    begun(story, step);
-    return await pod.import(story.source, folder, async () => () => [adapter]);
-  } finally {
-    await adapter.free();
-  }
-};
+/** `adapters` as they are, each conversion's graph also written to `kept` under the stem of the document, in `at`. */
+function recording(
+  adapters: AdaptersOf,
+  kept: Files,
+  at: string,
+  stems: ReadonlyMap<string, string>,
+): AdaptersOf {
+  return (mediaType) =>
+    adapters(mediaType).map((adapter) => ({
+      accepts: (document) => adapter.accepts(document),
+      free: () => adapter.free(),
+      convert: async (document, options) => {
+        const conversion = await adapter.convert(document, options);
+        const stem = stems.get(document.iri);
+        if (stem === undefined)
+          throw new Error(
+            `the document ${document.iri} is named by no file of the export, so its conversion has no stem to be kept under`,
+          );
+        await kept.write(`${at}/${stem}/graph.ttl`, conversion.graph);
+        return conversion;
+      },
+    }));
+}
+
+/**
+ * An import: its export's or its download's documents, of any media type, converted by the Bridge output the story saved
+ * for them, or, for a person whose scripted input saves none, by the `adapters` given. Those conversions' graphs are also written to `kept`,
+ * where the story would save them.
+ */
+export function importing(
+  adapters?: () => Promise<AdaptersOf>,
+  kept?: Files,
+): Perform {
+  return async (pod, step, story) => {
+    const { happened } = step;
+    if (happened.kind !== "import") throw new Error("the step is no import");
+    const folder = inStory(story.folder, happened.export);
+    const converted = inStory(story.folder, happened.converted);
+    if (
+      adapters !== undefined &&
+      !(await savesBridgeOutput(story.source, story.folder))
+    ) {
+      const stems =
+        kept === undefined ? undefined : await stemsOf(story.source, folder);
+      begun(story, step);
+      return pod.import(story.source, folder, async () => {
+        const loaded = await adapters();
+        return kept === undefined || stems === undefined
+          ? loaded
+          : recording(loaded, kept, converted, stems);
+      });
+    }
+    const bridge = await SavedOutputBridge.of(story.source, {
+      export: folder,
+      converted,
+    });
+    const adapter = await bridge.load({
+      iri: `${story.source.iri}${converted}/`,
+      files: new Map(),
+    });
+    try {
+      begun(story, step);
+      return await pod.import(story.source, folder, async () => () => [
+        adapter,
+      ]);
+    } finally {
+      await adapter.free();
+    }
+  };
+}
 
 export const PERFORMERS: Performers = {
   creation: (pod, step, story) => {
     begun(story, step);
     return pod.create();
   },
-  import: importSaved,
+  import: importing(),
   connect: (pod, step, story) => {
     const { happened } = step;
     if (happened.kind !== "connect") throw new Error("the step is no connect");

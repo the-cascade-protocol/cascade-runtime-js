@@ -62,6 +62,8 @@ export const KIT_CHECKS = {
 /** What the kit's checks read: one replay of its story, and the pod at its last step under `everyday`. */
 export interface KitRun {
   readonly vocabulary: Files;
+  /** What the replay converted for an import step the kit saves no Bridge output for, saved where the kit would save it. */
+  readonly converted?: Files;
   /** The kit's folder in the vocabulary, as `conformance/<name>`. */
   readonly kit: string;
   /** The folder its story's steps name their files under. */
@@ -293,10 +295,21 @@ async function inputGraph(
   run: KitRun,
   path: string,
 ): Promise<Graph | undefined> {
-  const bytes = await run.vocabulary.read(path);
+  const bytes =
+    (await run.converted?.read(path)) ?? (await run.vocabulary.read(path));
   return bytes === undefined
     ? undefined
     : new Graph(await run.newStore().parse(bytes, run.vocabulary.iri + path));
+}
+
+/** The files an import step's Bridge output is in: those the kit saves, and those the replay converted for a step it saves none for. */
+async function convertedBy(run: KitRun, folder: string): Promise<string[]> {
+  return [
+    ...new Set([
+      ...(await run.vocabulary.list(folder)),
+      ...((await run.converted?.list(folder)) ?? []),
+    ]),
+  ];
 }
 
 /** Check 4: N1 to N7, N9, N10, N14 and N15, and A9 and A11, from the run's own inputs. */
@@ -316,7 +329,7 @@ async function nameFaults(run: KitRun, held: Written): Promise<string[]> {
   const expectedRecords = new Set<string>();
   for (const { name, happened } of story.steps) {
     if (happened.kind === "import") {
-      for (const path of await vocabulary.list(at(happened.converted))) {
+      for (const path of await convertedBy(run, at(happened.converted))) {
         if (!path.endsWith("/graph.ttl")) continue;
         const graph = await inputGraph(run, path);
         for (const record of graph?.subjects(TYPE, iri(`${CASCADE}Record`)) ??
@@ -610,7 +623,7 @@ async function nameFaults(run: KitRun, held: Written): Promise<string[]> {
   for (const { name, when, happened } of story.steps) {
     if (happened.kind !== "import") continue;
     const thisImport = activityOf.get(name);
-    for (const path of await vocabulary.list(at(happened.converted))) {
+    for (const path of await convertedBy(run, at(happened.converted))) {
       if (!path.endsWith("/graph.ttl")) continue;
       const graph = (await inputGraph(run, path)) ?? new Graph([]);
       const [document] = graph.subjects(TYPE, iri(`${PROV}Entity`));

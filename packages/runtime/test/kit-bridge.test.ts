@@ -12,7 +12,7 @@ import { iri, type Triple } from "../src/rdf.js";
 import { notIsomorphic, triples } from "../src/graphs.js";
 import { ROOT, storyFrom, vocabulary } from "./vocabulary.js";
 
-const KIT = "conformance/tamsin-vale";
+const KIT = "conformance/martin-okafor";
 const ALEX = "conformance/alex-rivera";
 const CLI = join(ROOT, "packages/runtime/dist/src/node/cli.js");
 
@@ -44,7 +44,7 @@ async function filesUnder(
  * folder with the kit.
  */
 describe("Writing a kit's saved output again · npm run kit:bridge", () => {
-  describe("given the command run on `conformance/tamsin-vale`", () => {
+  describe("given the command run on `conformance/martin-okafor`", () => {
     let out: string;
     /** For each document the kit's story imports: what the kit saved and where the command wrote its own. */
     let documents: {
@@ -62,7 +62,7 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
       out = await mkdtemp(join(tmpdir(), "kit-bridge-"));
       await kitBridge(out);
       const files = await vocabulary();
-      const { story, folder } = await storyFrom(`${KIT}/tamsin-vale.feature`);
+      const { story, folder } = await storyFrom(`${KIT}/martin-okafor.feature`);
       const imports = await kitImports({
         vocabulary: files,
         folder,
@@ -95,7 +95,7 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
           });
         }
       }
-      assert.equal(documents.length, 2, "the documents Tamsin's story imports");
+      assert.equal(documents.length, 2, "the documents Martin's story imports");
     });
 
     after(async () => {

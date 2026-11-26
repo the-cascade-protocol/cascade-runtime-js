@@ -5,6 +5,7 @@ import { notIsomorphic, triples } from "./graphs.js";
 import type { Importer } from "./importer.js";
 import { kitImports } from "./kit-bridge.js";
 import { kitsOf } from "./kit.js";
+import { savesBridgeOutput } from "./replay.js";
 import { OxigraphStore } from "./oxigraph-store.js";
 import { iri, type Triple } from "./rdf.js";
 
@@ -46,7 +47,8 @@ export interface KitFindings {
 /**
  * What differs, by kit, step and stem, between the Bridge output a kit saved for each document its importers find in
  * an import step's download and what the configured adapters make of it: the first to accept it converts it, and
- * where the kit saved that no adapter accepts it, none does.
+ * where the kit saved that no adapter accepts it, none does. A kit that saves no Bridge output is left out: its replay
+ * converts the downloads, and there is nothing saved to compare.
  */
 export async function kitFindings(options: {
   readonly vocabulary: Files;
@@ -68,6 +70,7 @@ export async function kitFindings(options: {
       `${kit}/${kit.slice(kit.lastIndexOf("/") + 1)}.feature`,
       () => new OxigraphStore(),
     );
+    if (!(await savesBridgeOutput(files, person.folder))) continue;
     for (const {
       step,
       converted: saved,

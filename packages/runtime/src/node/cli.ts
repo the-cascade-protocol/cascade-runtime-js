@@ -49,7 +49,7 @@ import {
 } from "./runtime.js";
 import { featurePod } from "./story-pod.js";
 import { OxigraphStore } from "../oxigraph-store.js";
-import { EVERY_FINDING } from "../bridge.js";
+import { type AdaptersOf, EVERY_FINDING } from "../bridge.js";
 import { useOxigraph, usedOxigraph } from "../oxigraph-engine.js";
 import {
   chooseOxigraph,
@@ -177,96 +177,134 @@ async function conformance(args: string[]): Promise<number> {
   );
   const bridge = await findBridgePackage(options);
   const files = new FolderFiles(vocabulary.folder, vocabulary.iri);
-  if (values.sql !== undefined && values.assertions !== undefined) {
-    await writeFile(
-      values.assertions,
-      JSON.stringify(await sqlCheckDealt(files, dealOf(values.sql))),
+  const converting = adaptersLoader(bridge, config, options);
+  try {
+    if (values.sql !== undefined && values.assertions !== undefined) {
+      await writeFile(
+        values.assertions,
+        JSON.stringify(await sqlCheckDealt(files, dealOf(values.sql))),
+      );
+      return 0;
+    }
+    const shards =
+      values.feature === undefined && values.assertions === undefined
+        ? await shardsOf(files, jobsOf(values.jobs))
+        : [];
+    const whole =
+      values.feature === undefined && values.assertions === undefined;
+    // Sharded, the SQL check is dealt to runs of its own beside the feature shards; else it runs here, beside the features.
+    const checked = whole
+      ? shards.length > 1
+        ? sqlFunctionAssertions(files)
+        : sqlAssertions(files)
+      : Promise.resolve([]);
+    checked.catch(() => undefined);
+    const assertions =
+      shards.length > 1
+        ? await shardedRun(
+            [
+              ...shards.map((features) =>
+                features.flatMap((feature) => ["--feature", feature]),
+              ),
+              ...shards.map((_, index) => [
+                "--sql",
+                `${index}/${shards.length}`,
+              ]),
+            ],
+            values.folder,
+            { iri: files.iri, features: await featuresOf(files) },
+          )
+        : await conformed(
+            files,
+            values.feature,
+            config.importers,
+            converting.adapters,
+          );
+    if (values.assertions !== undefined) {
+      await writeFile(values.assertions, JSON.stringify(assertions));
+      return 0;
+    }
+    await reported(
+      values.feature === undefined
+        ? [
+            ...assertions,
+            ...(await kitFindingAssertions(files, config, converting.adapters)),
+            ...(await checked),
+          ]
+        : assertions,
+      report,
+      vocabulary,
+      adapters,
+      bridge,
     );
     return 0;
+  } finally {
+    await converting.end();
   }
-  const shards =
-    values.feature === undefined && values.assertions === undefined
-      ? await shardsOf(files, jobsOf(values.jobs))
-      : [];
-  const whole = values.feature === undefined && values.assertions === undefined;
-  // Sharded, the SQL check is dealt to runs of its own beside the feature shards; else it runs here, beside the features.
-  const checked = whole
-    ? shards.length > 1
-      ? sqlFunctionAssertions(files)
-      : sqlAssertions(files)
-    : Promise.resolve([]);
-  checked.catch(() => undefined);
-  const assertions =
-    shards.length > 1
-      ? await shardedRun(
-          [
-            ...shards.map((features) =>
-              features.flatMap((feature) => ["--feature", feature]),
-            ),
-            ...shards.map((_, index) => ["--sql", `${index}/${shards.length}`]),
-          ],
-          values.folder,
-          { iri: files.iri, features: await featuresOf(files) },
-        )
-      : await conformed(files, values.feature, config.importers);
-  if (values.assertions !== undefined) {
-    await writeFile(values.assertions, JSON.stringify(assertions));
-    return 0;
-  }
-  await reported(
-    values.feature === undefined
-      ? [
-          ...assertions,
-          ...(await kitFindingAssertions(
-            files,
-            config,
-            { ...options, folders },
-            bridge,
-          )),
-          ...(await checked),
-        ]
-      : assertions,
-    report,
-    vocabulary,
-    adapters,
-    bridge,
-  );
-  return 0;
+}
+
+/**
+ * The adapters `config` names, loaded into the Bridge the first time they are asked for, once for every conversion of
+ * the run; `end` lets go of them, if they were.
+ */
+function adaptersLoader(
+  found: Awaited<ReturnType<typeof findBridgePackage>>,
+  config: RuntimeConfig,
+  options: ResolverOptions,
+): { adapters: () => Promise<AdaptersOf>; end: () => Promise<void> } {
+  let loading:
+    | Promise<{
+        bridge: WasmBridge;
+        configured: Awaited<ReturnType<typeof loadConfiguredAdapters>>;
+      }>
+    | undefined;
+  const load = async () => {
+    const bridge = new WasmBridge(inWorker(await compiledBridge(found.folder)));
+    return {
+      bridge,
+      configured: await loadConfiguredAdapters(bridge, config.adapters, {
+        resolve: (component) => resolve(component, options),
+      } as Components),
+    };
+  };
+  return {
+    adapters: async () => ofMediaType((await (loading ??= load())).configured),
+    end: async () => {
+      if (loading === undefined) return;
+      const { bridge, configured } = await loading.catch(() => ({
+        bridge: undefined,
+        configured: [],
+      }));
+      for (const { adapter } of configured) await adapter.free();
+      bridge?.close();
+    },
+  };
 }
 
 /**
  * One assertion for each kit: that what the configured adapters make of each document its imports hand the Bridge is
  * the output the kit saves, so a change to an adapter that changes its findings fails until the kit saves them again.
+ * A step the kit saves nothing for is converted by the replay instead.
  */
 async function kitFindingAssertions(
   files: FolderFiles,
   config: RuntimeConfig,
-  options: ResolverOptions,
-  found: Awaited<ReturnType<typeof findBridgePackage>>,
+  adaptersOf: () => Promise<AdaptersOf>,
 ): Promise<Assertion[]> {
-  const bridge = new WasmBridge(inWorker(await compiledBridge(found.folder)));
-  const configured = await loadConfiguredAdapters(bridge, config.adapters, {
-    resolve: (component) => resolve(component, options),
-  } as Components);
-  try {
-    const { differ } = await kitFindings({
-      vocabulary: files,
-      importers: importersNamed(config.importers),
-      adaptersOf: ofMediaType(configured),
-    });
-    return (await kitsOf(files)).map((kit): Assertion => {
-      const mine = differ.filter((line) => line.startsWith(`${kit} `));
-      return {
-        test: `${files.iri}${kit}/#${KIT_FINDINGS_CHECK}`,
-        name: KIT_FINDINGS_CHECK,
-        outcome: mine.length === 0 ? "passed" : "failed",
-        ...(mine.length === 0 ? {} : { why: mine.join("\n") }),
-      };
-    });
-  } finally {
-    for (const { adapter } of configured) await adapter.free();
-    bridge.close();
-  }
+  const { differ } = await kitFindings({
+    vocabulary: files,
+    importers: importersNamed(config.importers),
+    adaptersOf: await adaptersOf(),
+  });
+  return (await kitsOf(files)).map((kit): Assertion => {
+    const mine = differ.filter((line) => line.startsWith(`${kit} `));
+    return {
+      test: `${files.iri}${kit}/#${KIT_FINDINGS_CHECK}`,
+      name: KIT_FINDINGS_CHECK,
+      outcome: mine.length === 0 ? "passed" : "failed",
+      ...(mine.length === 0 ? {} : { why: mine.join("\n") }),
+    };
+  });
 }
 
 /**
@@ -431,6 +469,7 @@ async function conformed(
   files: FolderFiles,
   features: string[] | undefined,
   importers: readonly string[],
+  adapters: () => Promise<AdaptersOf>,
 ): Promise<Assertion[]> {
   const layout = await Layout.read(files, () => new OxigraphStore());
   return runConformance({
@@ -439,6 +478,7 @@ async function conformed(
     newStore: () => new OxigraphStore(),
     newPod: (address) => new MemoryFiles(address),
     importers: importersNamed(importers),
+    adapters,
     layout,
     derive: await vocabularyDerive(files, layout),
     // Read before the tools load: the other way round, Node 22's V8 crashed in the deoptimizer inside this read (vocabulary#397).

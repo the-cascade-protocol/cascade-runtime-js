@@ -86,6 +86,7 @@ import {
 } from "../src/node/resolved.js";
 // `samplesToPublish` throws outside a packed package; `samplesOf` is the body it hands its packed source to.
 import { samplesOf } from "../src/node/samples.js";
+import { replayKitFrom } from "../src/node/kits.js";
 // A browser's `openPod` reads published answers with `keptPod` and `withLookups`, which a Node test cannot call as a page does.
 import {
   keptPod,
@@ -5233,6 +5234,23 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
 
     it("builds a pod that `openPod` opens without matching it again", async () => {
       assert.equal(await replayed.opened, undefined);
+    });
+
+    it("starts no Bridge load for a kit that saves the Bridge output of its imports", async () => {
+      let loads = 0;
+      const parts = {
+        ...(await resolved()),
+        loadBridge: () => {
+          loads += 1;
+          return Promise.reject(new Error("the Bridge was loaded"));
+        },
+      };
+      await replayKitFrom(
+        parts,
+        "martin-okafor",
+        join(pods, "kits-martin", "martin"),
+      );
+      assert.equal(loads, 0);
     });
 
     it("throws for a folder that already holds files, a kit it doesn't carry, or a step the story doesn't have", async () => {

@@ -28,6 +28,20 @@ function stemOf(path: string): string {
   return dot > 0 ? file.slice(0, dot) : file;
 }
 
+/** The stem each document of an export is saved under, by the document's name: the file's name, without its extension. */
+export async function stemsOf(
+  files: Pick<Files, "read" | "list">,
+  exported: string,
+): Promise<Map<string, string>> {
+  const stems = new Map<string, string>();
+  const listed = await files.list(exported);
+  for (const path of listed.length > 0 ? listed : [exported]) {
+    const bytes = await files.read(path);
+    if (bytes !== undefined) stems.set(await documentName(bytes), stemOf(path));
+  }
+  return stems;
+}
+
 /**
  * A Bridge that answers each conversion from the output a story saved for it. It accepts every document but one the
  * story marks unaccepted, and fails as the Bridge itself would, stopping the step, to convert one it holds no output
@@ -44,17 +58,10 @@ export class SavedOutputBridge implements Bridge {
     files: Files,
     saved: SavedOutput,
   ): Promise<SavedOutputBridge> {
-    const stems = new Map<string, string>();
-    const listed = await files.list(saved.export);
-    for (const path of listed.length > 0 ? listed : [saved.export]) {
-      const bytes = await files.read(path);
-      if (bytes !== undefined)
-        stems.set(await documentName(bytes), stemOf(path));
-    }
     return new SavedOutputBridge(
       files,
       saved.converted.replace(/\/?$/, "/"),
-      stems,
+      await stemsOf(files, saved.export),
     );
   }
 

@@ -9,6 +9,48 @@ import { type Replayed, replay, type ReplayOptions } from "../src/replay.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { readConfig, resolveVocabulary } from "../src/node/runtime.js";
 import { runtimeIri } from "../src/config.js";
+import { parseGraph } from "../src/graph.js";
+import { blank, type BlankNode, type Term, type Triple } from "../src/rdf.js";
+
+const REVISION = "https://ns.cascadeprotocol.org/cascade#Revision";
+const GENERATED_BY = "http://www.w3.org/ns/prov#wasGeneratedBy";
+const TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+
+/** A pod's files as one graph, but the imports' own, with each revision and the import that made it as blank nodes. */
+export async function filed(pod: MemoryFiles): Promise<Triple[]> {
+  const newStore = (): OxigraphStore => new OxigraphStore();
+  const triples: Triple[] = [];
+  const { folder: imports } = (await layout()).place(
+    "http://www.w3.org/ns/prov#Activity",
+    ["http://www.w3.org/ns/prov#used"],
+  );
+  for (const path of await pod.list("")) {
+    if (!(await layout()).isRdf(path) || path.startsWith(imports ?? ""))
+      continue;
+    const bytes = await pod.read(path);
+    if (bytes !== undefined)
+      triples.push(
+        ...(await parseGraph(bytes, pod.iri + path, newStore)).triples,
+      );
+  }
+  const runDependent = new Set(
+    triples.flatMap(([s, p, o]) =>
+      p.value === GENERATED_BY
+        ? [s.value, o.value]
+        : p.value === TYPE && o.value === REVISION
+          ? [s.value]
+          : [],
+    ),
+  );
+  const blanked = <T extends Term>(term: T): T | BlankNode =>
+    term.termType === "NamedNode" &&
+    runDependent.has(term.value.split("#")[0] ?? "")
+      ? blank(term.value)
+      : term;
+  return triples.map(
+    ([s, p, o]) => [blanked(s), p, blanked(o)] as unknown as Triple,
+  );
+}
 
 export const ROOT = join(
   dirname(fileURLToPath(import.meta.url)),
