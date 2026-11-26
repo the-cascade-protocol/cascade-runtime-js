@@ -100,10 +100,9 @@ job, to see what the change does to the jobs it moves. `live links` asks the dep
   `randomOrder` in a random order (a test that needs another to run first fails here; the seed is in the log), then the
   others as written. On a nightly run, or one started by hand, it also runs the conformance command over the vocabulary and the adapters, on the
   WebAssembly build; on a pull request that is the next job's, which runs it once, on the native build, and the cases
-  that assert on its report. Then the check
-  that its results read as a specification: every test in a file a package lists as `shaped` sits under a capability heading listed in its
-  `test/spec.json`, word for word. That check runs in CI, not in `npm test`, so a new capability needs its heading added to
-  `spec.json` by hand.
+  that assert on its report. Name a test to read as behaviour: its top-level `describe` is a heading of the tests page, in the order
+  the page's files and lines write them, and nothing checks the grammar of a name. A package's `test/spec.json` holds only
+  its `about` line, its `build` list and its `randomOrder` files.
 - **`conformance (native)`**: Oxigraph's native build, built here, the production engine. On a pull request it runs the
   conformance command once, on that build, posts its table on the pull request and checks the report it wrote; on a push to
   main and the nightly run it runs the command on each build and checks that every example and check has the same

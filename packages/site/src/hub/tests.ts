@@ -13,23 +13,19 @@ import {
 } from "../junit.js";
 import type { Section } from "../sections.js";
 import { STYLESHEET_FILE } from "../site.js";
-import { queryFacts } from "../term-reference.js";
-import {
-  ctrfEntry,
-  glossaryList,
-  glossaryOf,
-  type Entry,
-  Links,
-  slug,
-} from "./glossary.js";
 import type { PagesContext, Suite, TestRun } from "./context.js";
 import { SPEC_FOLDER } from "./spec.js";
 
 export const TESTS_FOLDER = "conformance/tests/";
 
+const slug = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-|-$/g, "");
+
 /** What the section reads of the context. */
-export type TestsContext = Pick<PagesContext, "tests" | "chrome"> &
-  Partial<Pick<PagesContext, "vocabulary">>;
+export type TestsContext = Pick<PagesContext, "tests" | "chrome">;
 
 /** A suite's repository's name, which names its page's folder and its CTRF file. */
 export const nameOf = (suite: Suite): string =>
@@ -176,11 +172,10 @@ ul.tree summary, li.capability > details > summary { cursor: pointer; list-style
 summary::-webkit-details-marker { display: none; }
 section.pkg > details > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; }
 section.pkg > details > summary h3 { margin: 0; }
-ul.tree summary::before, details.build > summary::before, .glossary > summary::before, section.pkg > details > summary::before {
+ul.tree summary::before, details.build > summary::before, section.pkg > details > summary::before {
   content: "\\25B8"; color: var(--muted); display: inline-block; width: 1em; transition: transform .1s; }
 details[open] > summary::before { transform: rotate(90deg); }
 summary { list-style: none; }
-dfn { font-style: normal; }
 .level-name { font-weight: 600; }
 li.case { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; column-gap: .5rem; }
 li.case > .said, li.case > pre.failure, li.case > .skip-reason { grid-column: 2 / -1; }
@@ -205,21 +200,9 @@ a.src { color: var(--muted); font-size: .8rem; }
 section.pkg { margin: 1.4rem 0 0; }
 h3.package { margin: 0 0 .2rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; }
 .package-line { color: var(--muted); margin: .1rem 0; }
-.glossary { margin: .6rem 0; border: 1px solid var(--rule); border-radius: 8px; padding: .5rem .8rem; }
-.glossary > summary { font-weight: 600; color: var(--ink); }
-.glossary-filter { display: block; box-sizing: border-box; width: 100%; max-width: 22rem; margin: .5rem 0; padding: .3rem .6rem;
-                   font: inherit; color: var(--ink); background: #fff; border: 1px solid var(--rule); border-radius: 6px; }
-.glossary dl { margin: .3rem 0; display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: .3rem 1.2rem; font-size: .9rem; }
-.glossary dt { font-weight: 600; }
-.glossary dd { margin: 0; max-width: 70ch; overflow-wrap: anywhere; }
-.glossary .aliases { font-weight: 400; color: var(--muted); }
-.glossary dt:target { background: var(--paper); }
-.glossary .none-match { color: var(--muted); }
 details.build { margin-top: 1.4rem; }
 details.build > summary { font-weight: 600; color: var(--ink); }
 @media (max-width: 40rem) {
-  .glossary dl { grid-template-columns: 1fr; gap: 0; }
-  .glossary dd { margin-bottom: .5rem; }
   .controls { margin-left: 0; }
   table.packages th[scope="row"] { display: block; padding: .1rem 0; border: 0; background: none; }
   table.packages tr.failing { background: var(--bad-bg); padding: .5rem .6rem; }
@@ -244,7 +227,7 @@ document.addEventListener("click", function (event) {
   var part = button.closest("[data-part]");
   var action = button.getAttribute("data-action");
   if (action === "expand-all" || action === "collapse-all")
-    part.querySelectorAll("details:not(.glossary)").forEach(function (d) { d.open = action === "expand-all"; });
+    part.querySelectorAll("details").forEach(function (d) { d.open = action === "expand-all"; });
   if (action === "failures-only") {
     var on = button.getAttribute("aria-pressed") !== "true";
     button.setAttribute("aria-pressed", String(on));
@@ -263,22 +246,6 @@ function openTarget(hash) {
   for (var up = target.parentElement; up; up = up.parentElement) if (up.tagName === "DETAILS") up.open = true;
   target.scrollIntoView();
 }
-document.querySelectorAll("input[data-glossary-filter]").forEach(function (input) {
-  input.hidden = false;
-  var box = input.closest("details");
-  var empty = box.querySelector(".none-match");
-  input.addEventListener("input", function () {
-    var needle = input.value.trim().toLowerCase();
-    var shown = 0;
-    box.querySelectorAll("dt").forEach(function (dt) {
-      var dd = dt.nextElementSibling;
-      var hit = needle === "" || (dt.textContent + " " + dd.textContent).toLowerCase().indexOf(needle) !== -1;
-      dt.hidden = dd.hidden = !hit;
-      if (hit) shown++;
-    });
-    empty.hidden = shown !== 0;
-  });
-});
 openTarget(location.hash);
 window.addEventListener("hashchange", function () { openTarget(location.hash); });
 `;
@@ -326,16 +293,13 @@ const status = (result: Result): Html =>
 const badge = (result: Result, n: number): Html =>
   markup`<span class="badge ${result}" data-status="${result}" data-count="${String(n)}"><span class="icon" aria-hidden="true">${ICON[result]}</span> ${String(n)} ${result}</span>`;
 
-/** The `spec.json` of a package's tests: what its page says first, the order of its capabilities, and what is build. */
+/** The `spec.json` of a package's tests: what its page says first, and which of its capabilities are build checks. */
 interface Spec {
   readonly about?: string;
-  readonly capabilities: readonly string[];
   readonly build: readonly string[];
-  /** Terms the package's tests use in one sense, defined once on its page. */
-  readonly glossary: readonly Entry[];
 }
 
-function specOf(raw: unknown, folder: string): Spec {
+function specOf(raw: unknown): Spec {
   const given = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
     string,
     unknown
@@ -346,9 +310,7 @@ function specOf(raw: unknown, folder: string): Spec {
       : [];
   return {
     ...(typeof given["about"] === "string" ? { about: given["about"] } : {}),
-    capabilities: names(given["capabilities"]),
     build: names(given["build"]),
-    glossary: glossaryOf(given["glossary"], folder),
   };
 }
 
@@ -535,11 +497,11 @@ function ruleOf(tag: string): { feature: string; id: string; href: string } {
   };
 }
 
-function prose(description: string | undefined, links: Links): Html {
+function prose(description: string | undefined): Html {
   const paragraphs = (description ?? "")
     .split("\n\n")
     .filter((one) => one !== "");
-  return markup`${paragraphs.map((one) => markup`<p class="what">${links.link(one)}</p>\n`)}`;
+  return markup`${paragraphs.map((one) => markup`<p class="what">${one}</p>\n`)}`;
 }
 
 function rulesOf(tags: readonly string[]): Html {
@@ -549,30 +511,22 @@ function rulesOf(tags: readonly string[]): Html {
     : markup`<span class="rules"><span class="label">Rule${rules.length === 1 ? "" : "s"}</span> ${rules.map(({ feature, id, href }) => markup`<a class="chip" href="${href}">${feature} ${id}</a> `)}</span> `;
 }
 
-/** A case's name linked to its source; a glossary term in it links to its entry, the source link stopping short of it. */
-function named(name: string, source: string, links: Links): Html {
-  return markup`${links.pieces(name).map((piece) => (typeof piece === "string" ? markup`<a href="${source}">${piece}</a>` : markup`<a href="#${piece.id}">${piece.text}</a>`))}`;
-}
-
-function leaf(one: TestCase, suite: Suite, run: TestRun, links: Links): Html {
+function leaf(one: TestCase, suite: Suite, run: TestRun): Html {
   const source = `${repositoryUrl(suite)}/blob/${run.commit}/${one.file}${one.line === undefined ? "" : `#L${one.line}`}`;
   const said =
     one.description === undefined && one.rules.length === 0
       ? ""
-      : markup`<div class="said">${prose(one.description, links)}${rulesOf(one.rules)}</div>`;
-  return markup`<li class="case" data-result="${one.result}">${status(one.result)} <span class="name">${named(one.name, source, links)}</span><span class="time">${seconds(one.seconds)}</span>${said}${one.message === undefined ? "" : one.result === "skipped" ? markup`<p class="skip-reason">${shown(one.message)}</p>` : markup`<pre class="failure">${shown(one.message)}</pre>`}</li>\n`;
+      : markup`<div class="said">${prose(one.description)}${rulesOf(one.rules)}</div>`;
+  return markup`<li class="case" data-result="${one.result}">${status(one.result)} <span class="name"><a href="${source}">${one.name}</a></span><span class="time">${seconds(one.seconds)}</span>${said}${one.message === undefined ? "" : one.result === "skipped" ? markup`<p class="skip-reason">${shown(one.message)}</p>` : markup`<pre class="failure">${shown(one.message)}</pre>`}</li>\n`;
 }
 
 /** A situation, or a level under one: its description, its rules and what it holds. */
-function branch(level: Level, suite: Suite, run: TestRun, links: Links): Html {
-  const name = links.link(level.name);
-  const said = prose(level.info?.description, links);
+function branch(level: Level, suite: Suite, run: TestRun): Html {
+  const said = prose(level.info?.description);
   const children = inOrder(level, suite).map((entry) =>
-    isLevel(entry)
-      ? branch(entry, suite, run, links)
-      : leaf(entry, suite, run, links),
+    isLevel(entry) ? branch(entry, suite, run) : leaf(entry, suite, run),
   );
-  return markup`<li${new Html(level.folded === true ? " data-group" : "")} data-failed="${String(count(level.cases, "failed"))}"><details${new Html(failing(level) ? " open" : "")}><summary><span class="level-name">${name}</span> ${counts(level.cases)}</summary>
+  return markup`<li${new Html(level.folded === true ? " data-group" : "")} data-failed="${String(count(level.cases, "failed"))}"><details${new Html(failing(level) ? " open" : "")}><summary><span class="level-name">${level.name}</span> ${counts(level.cases)}</summary>
 ${said}${rulesOf(level.info?.rules ?? [])}<ul class="tree">
 ${children}</ul></details></li>\n`;
 }
@@ -585,8 +539,11 @@ interface Capability {
   /** Each file it comes from, with the line its describe starts on there. */
   readonly files: Map<string, number | undefined>;
   readonly cases: TestCase[];
+  /** The position of its first case as written: its file, then its line. */
+  readonly first: string;
 }
 
+/** The capabilities of `cases` in the order they are written: by the file and line of each one's first case, then by name. */
 function capabilitiesOf(
   cases: readonly TestCase[],
   suite: Suite,
@@ -596,7 +553,7 @@ function capabilitiesOf(
     const name = one.describes[0] ?? placeOf(one.file, suite)[1] ?? one.file;
     groups.set(name, [...(groups.get(name) ?? []), one]);
   }
-  return [...groups].map(([name, held]) => {
+  const found = [...groups].map(([name, held]) => {
     const files = new Map<string, number | undefined>();
     let info: Described | undefined;
     for (const one of held) {
@@ -616,8 +573,12 @@ function capabilitiesOf(
       ...(info === undefined ? {} : { info }),
       files,
       cases: held,
+      first: held.map(positionOf).sort(before)[0] ?? "￿",
     };
   });
+  return found.sort(
+    (a, b) => before(a.first, b.first) || before(a.name, b.name),
+  );
 }
 
 /** A capability's name, and the API names after its ` · `, which are code. */
@@ -630,15 +591,11 @@ function capability(
   one: Capability,
   suite: Suite,
   run: TestRun,
-  glossary: readonly Entry[],
   id: string,
 ): Html {
-  const links = new Links(glossary);
-  const said = prose(one.info?.description, links);
+  const said = prose(one.info?.description);
   const children = inOrder(one.level, suite).map((entry) =>
-    isLevel(entry)
-      ? branch(entry, suite, run, links)
-      : leaf(entry, suite, run, links),
+    isLevel(entry) ? branch(entry, suite, run) : leaf(entry, suite, run),
   );
   const files = [...one.files].map(([file, line]) => {
     const href = `${repositoryUrl(suite)}/blob/${run.commit}/${file}${line === undefined ? "" : `#L${line}`}`;
@@ -665,15 +622,6 @@ const byRank =
     return x === y ? before(a, b) : x < y ? -1 : 1;
   };
 
-/** Capabilities in the order a spec lists them, the unlisted after them by name. */
-const arranged = (
-  list: readonly Capability[],
-  order: readonly string[],
-): Capability[] => {
-  const ranked = byRank(order);
-  return [...list].sort((a, b) => ranked(a.name, b.name));
-};
-
 /** The spec of a package's tests: the one its report carries, or for the repository's own, its artifact's `spec.json`. */
 function specFor(
   folder: string,
@@ -685,7 +633,7 @@ function specFor(
     folder === nameOf(suite)
       ? (run.spec ?? packages.get(folder)?.spec)
       : packages.get(folder)?.spec;
-  return specOf(given, folder);
+  return specOf(given);
 }
 
 /** A package as the page shows it: its section, and what its row of the table above says of it. */
@@ -710,7 +658,6 @@ function packageSection(
   suite: Suite,
   run: TestRun,
   alone: boolean,
-  properties: ReadonlySet<string>,
 ): Packaged {
   const all = capabilitiesOf(cases, suite);
   const inBuild = (one: Capability): boolean =>
@@ -718,11 +665,8 @@ function packageSection(
     [...one.files.keys()].every((file) =>
       spec.build.includes(placeOf(file, suite)[1] ?? file),
     );
-  const main = arranged(
-    all.filter((one) => !inBuild(one)),
-    spec.capabilities,
-  );
-  const build = arranged(all.filter(inBuild), spec.build);
+  const main = all.filter((one) => !inBuild(one));
+  const build = all.filter(inBuild);
   const taken = new Set<string>();
   const idOf = (one: Capability): string => {
     const stem = `capability-${folder}-${slug(one.name.split(" · ")[0] ?? one.name)}`;
@@ -742,14 +686,14 @@ function packageSection(
     id: idOf(one),
     failed: count(one.cases, "failed") > 0,
   }));
-  const body = markup`${line}${spec.about === undefined ? "" : markup`<p class="what">${spec.about}</p>\n`}${spec.glossary.length === 0 ? "" : glossaryList(spec.glossary, properties)}<ul class="tree top">
-${main.map((one, at) => capability(one, suite, run, spec.glossary, ids[at]?.id ?? ""))}</ul>
+  const body = markup`${line}${spec.about === undefined ? "" : markup`<p class="what">${spec.about}</p>\n`}<ul class="tree top">
+${main.map((one, at) => capability(one, suite, run, ids[at]?.id ?? ""))}</ul>
 ${
   build.length === 0
     ? ""
     : markup`<details class="build"${new Html(count(buildCases, "failed") > 0 ? " open" : "")}><summary>Build and packaging ${counts(buildCases)}</summary>
 <ul class="tree top">
-${build.map((one) => capability(one, suite, run, spec.glossary, idOf(one)))}</ul></details>
+${build.map((one) => capability(one, suite, run, idOf(one)))}</ul></details>
 `
 }`;
   const section = alone
@@ -870,13 +814,12 @@ function byPackage(
   return found;
 }
 
-/** A suite's cases as the page reads them: each package, with its capabilities in the order its spec gives. */
+/** A suite's cases as the page reads them: each package, with its capabilities in the order they are written. */
 function packageSections(
   cases: readonly TestCase[],
   packages: ReadonlyMap<string, PackageInfo>,
   suite: Suite,
   run: TestRun,
-  properties: ReadonlySet<string>,
 ): Html {
   const listed = byRank(suite.packages ?? []);
   const order = [...byPackage(cases, suite)].sort(
@@ -894,7 +837,6 @@ function packageSections(
       suite,
       run,
       alone,
-      properties,
     ),
   );
   return markup`${alone ? "" : packageTable(packaged)}${packaged.map((one) => one.section)}`;
@@ -924,25 +866,6 @@ function extraOf(one: TestCase): { extra?: unknown } {
   return Object.keys(extra).length === 0 ? {} : { extra };
 }
 
-/** The glossary of each package that has one, for an agent reading CTRF. */
-function extraOfGlossaries(
-  suite: Suite,
-  run: TestRun,
-  cases: readonly TestCase[],
-  packages: ReadonlyMap<string, PackageInfo>,
-): { extra?: unknown } {
-  const glossary: Record<string, unknown[]> = {};
-  const folders = new Set([
-    ...packages.keys(),
-    ...byPackage(cases, suite).keys(),
-  ]);
-  for (const folder of folders) {
-    const entries = specFor(folder, packages, suite, run).glossary;
-    if (entries.length > 0) glossary[folder] = entries.map(ctrfEntry);
-  }
-  return Object.keys(glossary).length === 0 ? {} : { extra: { glossary } };
-}
-
 /** A suite's results as CTRF (https://ctrf.io), each case with the describes it sits in as its suite. */
 function ctrf(
   suite: Suite,
@@ -951,7 +874,6 @@ function ctrf(
   timing: CtrfTiming,
   duration: number | undefined,
   failedOutside: number,
-  packages: ReadonlyMap<string, PackageInfo>,
   tool: string,
   unmeasured: boolean,
 ): unknown {
@@ -982,7 +904,6 @@ function ctrf(
     specVersion: "0.2.0",
     timestamp: run.at,
     generatedBy: "cascade-runtime-js packages/site",
-    ...extraOfGlossaries(suite, run, cases, packages),
     results: {
       tool: { name: tool },
       ...(unmeasured ? { extra: { caseDurations: "unmeasured" } } : {}),
@@ -1044,11 +965,7 @@ function casesOf(suite: Suite, run: TestRun): JunitReport & CtrfTiming {
 }
 
 /** What a suite's page shows of its run: the summary, the counts and the tree, or why there is none. */
-function part(
-  suite: Suite,
-  run: TestRun | undefined,
-  properties: ReadonlySet<string>,
-): Part {
+function part(suite: Suite, run: TestRun | undefined): Part {
   if (run === undefined)
     return {
       html: markup`<p class="prose">Not available: this build was given no report of the newest run of ${titleInSentence(suite)} on <code>main</code>.</p>
@@ -1079,9 +996,7 @@ function part(
 `
       : "";
   const shownCases =
-    cases.length === 0
-      ? ""
-      : packageSections(cases, packages, suite, run, properties);
+    cases.length === 0 ? "" : packageSections(cases, packages, suite, run);
   // A CTRF report whose cases were not timed has a run time only where it gives its start and stop.
   const milliseconds: number | undefined =
     timing.start !== undefined && timing.stop !== undefined
@@ -1102,7 +1017,6 @@ ${unlisted}${shownCases}`,
       timing,
       milliseconds,
       counted !== undefined && hidden ? counted - failed : 0,
-      packages,
       timing.tool ?? suite.runner,
       timing.unmeasured === true,
     ),
@@ -1147,12 +1061,8 @@ export const testsSection: Section<TestsContext> = {
     "the JUnit reports of the newest runs on main of each repository packages/site/test-suites.json lists",
   async build(ctx) {
     const files = new Map<string, Uint8Array>();
-    const { properties } =
-      ctx.vocabulary === undefined
-        ? { properties: new Set<string>() }
-        : await queryFacts((await ctx.vocabulary()).files);
     for (const { suite, run } of await ctx.tests()) {
-      const shown = part(suite, run, properties);
+      const shown = part(suite, run);
       files.set(
         testsPageOf(suite),
         encoder.encode(page(suite, shown, ctx.chrome).text),
