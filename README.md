@@ -82,7 +82,7 @@ them. That is how the same runtime runs in Node and in a browser:
 | Interface    | What it does                                                            | What plugs in today                                 |
 | ------------ | ----------------------------------------------------------------------- | --------------------------------------------------- |
 | `Files`      | reads and writes bytes, by path or IRI                                  | a local folder, memory, the browser's IndexedDB     |
-| `Bridge`     | describes and loads an adapter, asks if it accepts a document, converts | cascade-bridge-rs in a worker; a kit's saved output |
+| `Bridge`     | describes and loads an adapter, asks if it accepts a document, converts | cascade-bridge-rs in a worker; saved output, if any |
 | `Store`      | runs SPARQL over named graphs, and reads Turtle as it is written        | Oxigraph's JavaScript build                         |
 | `IdsAndTime` | mints the ID of an import or an entry session, and gives the time       | random UUIDs; the clock or the story's times        |
 | `Database`   | prepares and runs SQL statements, in a transaction                      | SQLite3MC through `better-sqlite3-multiple-ciphers` |
