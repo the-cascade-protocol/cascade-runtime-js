@@ -88,7 +88,7 @@ async function checkoutBuild(
   const built = await builtFrom(dist);
   if (built === undefined || !existsSync(join(dist, WASM)))
     return `the checkout ${checkout} holds no build`;
-  if (state?.uncommitted === 0 && !built.dirty && built.commit === state.commit)
+  if (state?.uncommitted === 0 && !built.dirty && built.commit === state.head)
     return { dist, built };
   const sources = await promisify(execFile)(process.execPath, [
     join(checkout, "package", "sources.mjs"),

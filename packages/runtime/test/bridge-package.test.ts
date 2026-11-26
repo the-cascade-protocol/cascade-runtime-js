@@ -305,6 +305,32 @@ describe("The Bridge package a run from a checkout uses · findBridgePackage()",
       });
   });
 
+  describe("given a sibling checkout with a build made clean at its commit and one file that differs from the commit", () => {
+    for (const [name, change] of [
+      [
+        "untracked",
+        (sibling: string) => writeFile(join(sibling, "new.rs"), ""),
+      ],
+      [
+        "staged",
+        async (sibling: string) => {
+          await writeFile(join(sibling, "new.rs"), "");
+          await git(sibling, "add", "new.rs");
+        },
+      ],
+    ] as const)
+      it(`reads the checkout's sources for a ${name} file, so the sibling with no \`package/sources.mjs\` cannot be trusted`, async () => {
+        const bridge = await sharedBridge();
+        const { sibling, options } = await siblingWithoutPackage(bridge);
+        await builtWith(sibling, { commit: bridge.two, dirty: false });
+        await change(sibling);
+        await assert.rejects(
+          findBridgePackage(options, bridge.url),
+          /could not be read.*, and its 1 uncommitted files are in no release/,
+        );
+      });
+  });
+
   describe("given a sibling checkout with no package and an uncommitted file", () => {
     it("rejects, saying how many uncommitted files are in no published package", async () => {
       const bridge = await sharedBridge();

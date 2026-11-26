@@ -22,11 +22,11 @@ const TOOLING = "compatibility@invalid";
 /**
  * The commit the folder's own checkout is at and how many files differ from it, or undefined if the folder is not the
  * top of a checkout. Where the tooling merged a Depends-On pull request into the checkout, HEAD is a merge commit no
- * server holds, so the commit is the pull request's head, the last thing merged, which a link can name.
+ * server holds, so `commit` is the pull request's head, the last thing merged, which a link can name, and `head` is HEAD itself.
  */
 export async function checkout(
   folder: string,
-): Promise<{ commit: string; uncommitted: number } | undefined> {
+): Promise<{ commit: string; head: string; uncommitted: number } | undefined> {
   try {
     const [top, head, status] = await Promise.all([
       git(folder, "rev-parse", "--show-toplevel"),
@@ -36,6 +36,7 @@ export async function checkout(
     if ((await realpath(top.trim())) !== (await realpath(folder)))
       return undefined;
     let [commit = "", parents, committer] = head.split("\n");
+    const atHead = commit;
     for (;;) {
       const heads = (parents ?? "")
         .split(" ")
@@ -49,6 +50,7 @@ export async function checkout(
     }
     return {
       commit,
+      head: atHead,
       uncommitted: status.split("\n").filter((line) => line.trim() !== "")
         .length,
     };
