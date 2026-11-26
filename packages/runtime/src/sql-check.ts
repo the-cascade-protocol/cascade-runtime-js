@@ -143,22 +143,25 @@ export async function fixtureNames(vocabulary: Files): Promise<string[]> {
   ].sort();
 }
 
-/** A fixture's manifest: its entries, and each query file or folder of them it names by ctm:comparesSqlBeside. */
+/** A fixture's manifest: its entries, and each query file or folder of them it names by ctm:comparesSqlWithSparqlUnderEveryLens. */
 async function manifestOf(
   vocabulary: Files,
   fixture: string,
   store: Store,
-): Promise<{ entries: ManifestEntry[]; comparesSqlBeside: string[] }> {
+): Promise<{
+  entries: ManifestEntry[];
+  comparesSqlWithSparqlUnderEveryLens: string[];
+}> {
   const path = `${FIXTURES}${fixture}/manifest.ttl`;
   const graph = new Graph(
     await store.parse(await readText(vocabulary, path), vocabulary.iri + path),
   );
   const [head] = graph.subjects(`${RDF}type`, iri(`${MF}Manifest`));
-  const comparesSqlBeside =
+  const comparesSqlWithSparqlUnderEveryLens =
     head === undefined
       ? []
       : graph
-          .objects(head, `${CTM}comparesSqlBeside`)
+          .objects(head, `${CTM}comparesSqlWithSparqlUnderEveryLens`)
           .flatMap(({ value }) => decoded(vocabulary, value) ?? []);
   const found: ManifestEntry[] = [];
   let list: Term | undefined =
@@ -189,13 +192,13 @@ async function manifestOf(
               .sort(),
     });
   }
-  return { entries: found, comparesSqlBeside };
+  return { entries: found, comparesSqlWithSparqlUnderEveryLens };
 }
 
 /**
  * The comparisons the fixtures' manifests choose, by fixture: each ported `.rq` compared with its `.sql` over the
  * fixture, with the lenses it is compared under. A manifest chooses a `.rq` under each lens where it names the `.rq`, or
- * a folder holding it, by ctm:comparesSqlBeside, and otherwise under the lens of each of its entries that runs the `.rq`.
+ * a folder holding it, by ctm:comparesSqlWithSparqlUnderEveryLens, and otherwise under the lens of each of its entries that runs the `.rq`.
  * A fixture that chooses none is left out. Of the fixtures given, or of all of them.
  */
 export async function sqlComparisons(
@@ -212,14 +215,14 @@ export async function sqlComparisons(
   const store = newStore();
   try {
     for (const fixture of fixtures ?? (await fixtureNames(vocabulary))) {
-      const { entries, comparesSqlBeside } = await manifestOf(
+      const { entries, comparesSqlWithSparqlUnderEveryLens } = await manifestOf(
         vocabulary,
         fixture,
         store,
       );
       const here = new Map<string, string[]>();
       for (const rq of queries) {
-        const named = comparesSqlBeside.some(
+        const named = comparesSqlWithSparqlUnderEveryLens.some(
           (path) => path === rq || (path.endsWith("/") && rq.startsWith(path)),
         );
         const under = named
@@ -271,7 +274,7 @@ function unchosen(
       test: unchosenSqlTest(vocabulary, rq),
       name: `${sqlPath(rq)} is compared over no fixture`,
       outcome: "failed",
-      why: `no fixture's manifest names ${rq}, or a folder holding it, by ctm:comparesSqlBeside, or runs it in an entry`,
+      why: `no fixture's manifest names ${rq}, or a folder holding it, by ctm:comparesSqlWithSparqlUnderEveryLens, or runs it in an entry`,
     }));
 }
 

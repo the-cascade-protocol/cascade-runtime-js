@@ -416,8 +416,9 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     const whether = "queries/questions/judgment/Whether it counts.rq";
     const kinds = "queries/questions/pod/How many of each kind.rq";
     const person = "queries/questions/pod/The person this pod is about.rq";
+    const judged = "queries/questions/judgment/Who judged what.rq";
     const kept = new Set(
-      [JUDGMENTS, whether, kinds, person].map((rq) =>
+      [JUDGMENTS, whether, kinds, person, judged].map((rq) =>
         rq.replace(/\.rq$/, ".sql"),
       ),
     );
@@ -432,12 +433,20 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
       );
     await own.write(
       `${FIXTURES}names-a-question/manifest.ttl`,
-      manifest(`; ctm:comparesSqlBeside <../../../${encodeURI(kinds)}>`),
+      manifest(
+        `; ctm:comparesSqlWithSparqlUnderEveryLens <../../../${encodeURI(kinds)}>`,
+      ),
+    );
+    await own.write(
+      `${FIXTURES}names-a-folder/manifest.ttl`,
+      manifest(
+        `; ctm:comparesSqlWithSparqlUnderEveryLens <../../../queries/questions/judgment/>`,
+      ),
     );
     await own.write(`${FIXTURES}names-nothing/manifest.ttl`, manifest(""));
     const relative = (path: string): string =>
       path.startsWith(real.iri) ? path.slice(real.iri.length) : path;
-    // The real vocabulary but its fixtures, which-judgments-count kept, and its `.sql` files, four kept.
+    // The real vocabulary but its fixtures, which-judgments-count kept, and its `.sql` files, five kept.
     const shown = (path: string): boolean =>
       path.startsWith(FIXTURES)
         ? path.startsWith(`${FIXTURES}which-judgments-count/`)
@@ -471,6 +480,11 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
         `passed: ${sql(JUDGMENTS)} over which-judgments-count under everyday`,
         `passed: ${sql(JUDGMENTS)} over which-judgments-count under export`,
         `passed: ${sql(whether)} over which-judgments-count under everyday`,
+        `passed: ${sql(whether)} over names-a-folder under everyday`,
+        `passed: ${sql(whether)} over names-a-folder under export`,
+        `passed: ${sql(judged)} over names-a-folder under everyday`,
+        `passed: ${sql(judged)} over names-a-folder under export`,
+        `passed: ${sql(judged)} over which-judgments-count under everyday`,
         `passed: ${sql(kinds)} over names-a-question under everyday`,
         `passed: ${sql(kinds)} over names-a-question under export`,
         `failed: ${sql(person)} is compared over no fixture`,
