@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import type { Suite } from "../src/hub/context.js";
-import { described, FILE, leafOf, report } from "./report.js";
+import { described, FILE, leafOf, packageProperty, report } from "./report.js";
 import { NODE, NODE_UNLISTED, PYTEST, VITEST } from "./runner-reports.js";
 import {
   barOf,
@@ -283,6 +283,59 @@ describe("Packages, capabilities and situations as a tree · testsSection, spec.
         ),
         written,
         levels.join("\n"),
+      );
+    });
+
+    it("orders headings by the line of the case that comes first where the report gives a line only to cases", async () => {
+      const { markup: lined } = await pageWith({
+        runtime: {
+          report: report(
+            "",
+            described("Zebra heading", {}, leafOf("stripes", A, 5)) +
+              described(
+                "Apple heading",
+                {},
+                leafOf("is first alphabetically", A, 40),
+              ),
+          ),
+          ...RUN,
+        },
+      });
+      const shown = levelsOf(lined, R);
+      assert.deepEqual(
+        shown.map((level) => level.split(" ")[0]),
+        ["Zebra", "Apple"],
+        shown.join("\n"),
+      );
+    });
+
+    it("puts the files a package's `spec.json` lists in `order` first, in that order, and ignores one that is not there", async () => {
+      const first = FILE("cascade-runtime", "z-first.test");
+      const second = FILE("cascade-runtime", "y-second.test");
+      const { markup: ordered } = await pageWith({
+        runtime: {
+          report: report(
+            packageProperty("cascade-runtime", "cascade-runtime", "0.0.0", {
+              order: ["z-first.test.ts", "absent.test.ts", "y-second.test.ts"],
+            }),
+            described("Apple heading", { line: 1 }, leafOf("a", A, undefined)) +
+              described(
+                "Second heading",
+                { line: 1 },
+                leafOf("b", second, undefined),
+              ) +
+              described(
+                "First heading",
+                { line: 1 },
+                leafOf("c", first, undefined),
+              ),
+          ),
+          ...RUN,
+        },
+      });
+      assert.deepEqual(
+        levelsOf(ordered, R).map((level) => level.split(" ")[0]),
+        ["First", "Second", "Apple"],
       );
     });
 

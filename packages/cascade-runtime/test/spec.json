@@ -1,5 +1,6 @@
 {
   "about": "The library an app calls to import a person's health records into their pod, store them, and query them.",
+  "order": ["pod.test.ts"],
   "build": [
     "Timing an import by mechanism · importBench(), syntheticPull(), probing()",
     "The performance file · perf-report.ts, perf-compare.mjs",

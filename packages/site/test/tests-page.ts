@@ -342,7 +342,7 @@ export const versioned = (version: string): string =>
 
 /**
  * Capabilities in several files, reported in an order that is neither alphabetical nor the order they are written in (by
- * file, then line): Importing, Zebra, Looking up, Apple; `packingFailure` is why the one case of the build capability
+ * file, then the line of the describe, which is all node:test reports): Importing, Zebra, Looking up, Apple; `packingFailure` is why the one case of the build capability
  * failed, when it did.
  */
 export const groupedWith = (packingFailure?: string): string =>
@@ -355,7 +355,7 @@ export const groupedWith = (packingFailure?: string): string =>
       described(
         "Looking up a term",
         { description: "Finds a term by its name.", line: 3 },
-        leafOf("finds one", terms, 6),
+        leafOf("finds one", terms, undefined),
       ),
       described(
         "Importing a health export",
@@ -367,7 +367,7 @@ export const groupedWith = (packingFailure?: string): string =>
         described(
           "when nobody has claimed the patient",
           { description: "A patient nobody claimed.", line: 9 },
-          leafOf("keeps the records unclaimed", pod, 12, {
+          leafOf("keeps the records unclaimed", pod, undefined, {
             description: "Nothing is dropped.",
           }),
         ),
@@ -378,24 +378,28 @@ export const groupedWith = (packingFailure?: string): string =>
         leafOf(
           "lists the entry points",
           packaging,
-          5,
+          undefined,
           packingFailure === undefined ? {} : { failure: packingFailure },
         ),
       ),
-      described("Zebra capability", { line: 2 }, leafOf("stripes", terms, 4)),
+      described(
+        "Zebra capability",
+        { line: 2 },
+        leafOf("stripes", terms, undefined),
+      ),
       described(
         "Importing a health export",
         { line: 30 },
         leafOf(
           "reads a second file",
           FILE("cascade-runtime", "pod-more.test"),
-          33,
+          undefined,
         ),
       ),
       described(
         "Apple capability",
-        { line: 2 },
-        leafOf("is alphabetical", terms, 20),
+        { line: 4 },
+        leafOf("is alphabetical", terms, undefined),
       ),
     ].join(""),
   );

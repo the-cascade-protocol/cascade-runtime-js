@@ -293,10 +293,14 @@ const status = (result: Result): Html =>
 const badge = (result: Result, n: number): Html =>
   markup`<span class="badge ${result}" data-status="${result}" data-count="${String(n)}"><span class="icon" aria-hidden="true">${ICON[result]}</span> ${String(n)} ${result}</span>`;
 
-/** The `spec.json` of a package's tests: what its page says first, and which of its capabilities are build checks. */
+/**
+ * The `spec.json` of a package's tests: what its page says first, which of its capabilities are build checks, and the
+ * test files whose capabilities come first.
+ */
 interface Spec {
   readonly about?: string;
   readonly build: readonly string[];
+  readonly order: readonly string[];
 }
 
 function specOf(raw: unknown): Spec {
@@ -311,6 +315,7 @@ function specOf(raw: unknown): Spec {
   return {
     ...(typeof given["about"] === "string" ? { about: given["about"] } : {}),
     build: names(given["build"]),
+    order: names(given["order"]),
   };
 }
 
@@ -539,15 +544,23 @@ interface Capability {
   /** Each file it comes from, with the line its describe starts on there. */
   readonly files: Map<string, number | undefined>;
   readonly cases: TestCase[];
-  /** The position of its first case as written: its file, then its line. */
+  /** Where it is written: the rank of its file in the spec's `order`, the file, then the line its describe starts on. */
   readonly first: string;
 }
 
-/** The capabilities of `cases` in the order they are written: by the file and line of each one's first case, then by name. */
+/**
+ * The capabilities of `cases` in the order they are written: by file (those the spec's `order` lists first), then by the
+ * line the capability's describe starts on where the report gives one, else the line of its first case there, then by name.
+ */
 function capabilitiesOf(
   cases: readonly TestCase[],
   suite: Suite,
+  order: readonly string[],
 ): Capability[] {
+  const rankOf = (file: string): string => {
+    const at = order.indexOf(placeOf(file, suite)[1] ?? file);
+    return at === -1 ? "￿" : String(at).padStart(4, "0");
+  };
   const groups = new Map<string, TestCase[]>();
   for (const one of cases) {
     const name = one.describes[0] ?? placeOf(one.file, suite)[1] ?? one.file;
@@ -567,13 +580,20 @@ function capabilitiesOf(
       );
       info = merged(info, one.described[0]);
     }
+    const written = [...files].map(([file, line]) => {
+      const lines = held
+        .filter((one) => one.file === file)
+        .flatMap((one) => (one.line === undefined ? [] : [one.line]));
+      const at = line ?? (lines.length === 0 ? undefined : Math.min(...lines));
+      return `${rankOf(file)}\0${file}\0${at === undefined ? "~" : String(at).padStart(8, "0")}`;
+    });
     return {
       name,
       level: levelsFrom(held, 1),
       ...(info === undefined ? {} : { info }),
       files,
       cases: held,
-      first: held.map(positionOf).sort(before)[0] ?? "￿",
+      first: written.sort(before)[0] ?? "￿",
     };
   });
   return found.sort(
@@ -659,7 +679,7 @@ function packageSection(
   run: TestRun,
   alone: boolean,
 ): Packaged {
-  const all = capabilitiesOf(cases, suite);
+  const all = capabilitiesOf(cases, suite, spec.order);
   const inBuild = (one: Capability): boolean =>
     spec.build.includes(one.name) ||
     [...one.files.keys()].every((file) =>

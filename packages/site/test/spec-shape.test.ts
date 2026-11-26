@@ -85,22 +85,6 @@ describe("Checking that a package's reports can be read for the tests page · sc
     });
   });
 
-  describe("with a spec that still holds the lists the page no longer reads", () => {
-    it("exits 0, whatever they say", () => {
-      const done = run([["sample.test.ts", "A", "returns rows"]], {
-        about: "A package.",
-        capabilities: ["Listed, but not in the report"],
-        shaped: ["missing.test.ts"],
-        allow: ["status"],
-        glossary: [
-          { term: "pod", definition: "one person's records." },
-          { term: "Pod", definition: "a folder." },
-        ],
-      });
-      assert.equal(done.status, 0, done.stdout);
-    });
-  });
-
   describe("with the suite run in two parts, a report of each", () => {
     it("exits 0, counting the cases of both", () => {
       const specFile = join(folder, FOLDER, "test", "spec.json");

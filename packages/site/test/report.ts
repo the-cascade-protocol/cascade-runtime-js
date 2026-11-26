@@ -29,14 +29,14 @@ const marks = (m: Marked): string => {
 export const described = (name: string, m: Marked, inner: string): string =>
   `<testsuite name="${name}" time="0.001" tests="1" failures="0">${marks(m)}${inner}</testsuite>`;
 
-/** A case of `file` at `line`, passed unless `m.failure` says why it failed. */
+/** A case of `file` at `line` (node:test reports none inside a describe: pass `undefined`), passed unless `m.failure` says why it failed. */
 export const leafOf = (
   name: string,
   file: string,
-  line: number,
+  line: number | undefined,
   m: Marked = {},
 ): string =>
-  `<testcase name="${name}" time="0.001" classname="test" file="${file}" line="${line}">${marks(m)}${m.failure === undefined ? "" : `<failure message="${m.failure}">${m.failure}</failure>`}</testcase>`;
+  `<testcase name="${name}" time="0.001" classname="test" file="${file}"${line === undefined ? "" : ` line="${line}"`}>${marks(m)}${m.failure === undefined ? "" : `<failure message="${m.failure}">${m.failure}</failure>`}</testcase>`;
 
 /** The property the reporter writes for the package in `dir`: its name, its version and its `spec.json`. */
 export const packageProperty = (

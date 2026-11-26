@@ -1,5 +1,10 @@
 {
   "about": "The core every Cascade package is built on: it files what arrives in a person's pod, names it, runs the matcher and builds the views. Apps call cascade-runtime, which wraps it; this page is for whoever builds on the core itself.",
+  "order": [
+    "load-adapter.test.ts",
+    "wasm-bridge.test.ts",
+    "saved-output-bridge.test.ts"
+  ],
   "build": [
     "Tripwire: a code system's IRI stem typed into code",
     "The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs",
