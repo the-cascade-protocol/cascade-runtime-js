@@ -104,7 +104,7 @@ export const replySchema = {
         property: {
           type: "string",
           description:
-            "For a point that rests on a field the kinds above do not name (a dose, how often, a route, a reference limit), that field's name as entry/What it shows gives it (dosageDoseQuantity); the whole part under a field that links one is shown.",
+            "For a point that rests on a field the kinds above do not name (a dose, how often, a route, a reference limit), that field's name as entry/What it shows gives it (dosageDoseQuantity); the whole part under a field that links one is shown, and a field that sits on a part shows the whole part it sits on.",
         },
         source: {
           type: "string",

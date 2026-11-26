@@ -1448,7 +1448,7 @@ export function ofProperty(
   const named = rows.filter((row) => row.name === property);
   const linked = new Set(named.map((it) => at(it.record, wayOf(it))));
   const wholes = new Set(
-    named.filter((row) => row.part !== undefined && !links(row)).map(top),
+    named.filter((row) => row.part !== undefined).map(top),
   );
   return rows.filter(
     (row) =>

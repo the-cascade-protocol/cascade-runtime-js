@@ -29,6 +29,9 @@ facts each cite a record and whose absences each name the query that looked), `r
 that explain it to the model, and `checkReply(reply, { ask, ran, files?, tie? })` holds a reply to the schema and
 every citation and absence to what the pod's rows and the calls that ran say, giving each fact its verdict and the
 cited record's own fields and source (`CheckedReply`). The checker trusts only those sources, never the model's words.
+A fact that names a `property` also comes back with `filled.held`: what the pod holds of that field, as items by record and
+part, each with its `records` and `sources`; `heldInWords(item)` words an item for a person, so an app shows those lines
+(its sources mapped to places) and never words the fields itself.
 
 The package needs only Node 22 or later. It carries everything a pod reads, at
 the commits its build resolved: the code under its interface, the Bridge's

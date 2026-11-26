@@ -160,7 +160,6 @@ const writer = (source: string) => source.replace(/^S\d+ /, "");
 function factLine(at: number, f: ReplyFact, filled?: FilledFact): string {
   if (!pointsAtEntry(f))
     return `- Fact ${at}: ${scrubbed(f.provider)}${f.date === undefined ? "" : `, ${f.date}`}: ${scrubbed(f.says)}`;
-  // what the pod holds of the field a fact names, worded, so a judge sees a dose and not only the drug's name
   const record = [
     [filled?.label, filled?.value].filter((it) => it !== undefined).join(": "),
     ...(f.property === undefined

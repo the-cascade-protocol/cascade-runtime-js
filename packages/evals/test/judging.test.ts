@@ -495,6 +495,7 @@ describe("Blinding the answers a judge reads · judgePackets(), blinded(), scrub
           held: [
             {
               sources: ["S12"],
+              records: [],
               fields: [{ name: "resultValueText", value: "6.9" }],
             },
           ],
@@ -528,6 +529,7 @@ describe("Blinding the answers a judge reads · judgePackets(), blinded(), scrub
           held: [
             {
               sources: ["S3"],
+              records: [],
               part: "structuredDosage 1",
               fields: [
                 { name: "dosageRepeatFrequency", value: "3" },

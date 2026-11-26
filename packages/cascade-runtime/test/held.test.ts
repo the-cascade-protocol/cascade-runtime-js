@@ -366,8 +366,8 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
       const [named, anyone] = await check(
         rows,
         MED,
-        { property: "medicationRequestIntent", source: "S12" },
-        { property: "medicationRequestIntent" },
+        { property: "dosageRouteCodeInOtherSystem", source: "S12" },
+        { property: "dosageRouteCodeInOtherSystem" },
       );
       assert.deepEqual(named!.verdict.ok, false);
       assert.deepEqual(

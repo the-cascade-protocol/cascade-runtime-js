@@ -1,6 +1,3 @@
-// What a pod holds of the field a reply's fact names: as items, each a field of the entry or a part of it (a dosage, a
-// reference bound) with the sources that state exactly this, and `heldInWords`, which words an item for a person, once,
-// so no app reads field names or codes of the vocabulary to do it.
 import {
   type FieldRow,
   type Fields,
@@ -26,11 +23,14 @@ export interface HeldPart {
 
 /**
  * What the pod holds of one field of an entry (`fields` is that field alone), or of one part of it with the parts beneath
- * it, the way the pod holds it and never worded. Records that hold exactly the same are one item, each source of them in
- * `sources` by its short name; two records that differ are two items, so one record's schedule is never shown with
- * another's dose.
+ * it, the way the pod holds it and never worded. Records that hold exactly the same are one item, each of them in
+ * `records` and each source of them in `sources` by its short name; two records that differ are two items, so one
+ * record's schedule is never shown with another's dose. Items come by record, then by part, so an app groups the
+ * dosages of one record by `records`.
  */
 export interface HeldItem {
+  /** The member records that state it, by IRI, in order; none for a value of the entry as a whole. */
+  readonly records: readonly string[];
   /** The sources that state it, by short name (`S3`); none for a value of the entry as a whole. */
   readonly sources: readonly string[];
   readonly part?: string;
@@ -38,7 +38,12 @@ export interface HeldItem {
   readonly parts?: readonly HeldPart[];
 }
 
-type Content = Omit<HeldItem, "sources">;
+type Content = Omit<HeldItem, "sources" | "records">;
+type Stated = {
+  content: Content;
+  source: string | undefined;
+  record: string | undefined;
+};
 
 /** Source short names in the order a compact read numbers them. */
 export const bySourceNumber = (a: string, b: string) =>
@@ -47,21 +52,34 @@ export const bySourceNumber = (a: string, b: string) =>
 const byName = (a: HeldField, b: HeldField) =>
   a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 
-/** Contents joined to the sources that state them, one item for each different content, in the order each is first met. */
-function joined(
-  stated: readonly { content: Content; source: string | undefined }[],
-): HeldItem[] {
-  const items = new Map<string, { content: Content; sources: Set<string> }>();
-  for (const { content, source } of stated) {
+/** Contents joined to the records and sources that state them, one item for each different content, by record and then by part. */
+function joined(stated: readonly Stated[]): HeldItem[] {
+  const items = new Map<
+    string,
+    { content: Content; sources: Set<string>; records: Set<string> }
+  >();
+  for (const { content, source, record } of stated) {
     const key = JSON.stringify(content);
-    const item = items.get(key) ?? { content, sources: new Set<string>() };
+    const item = items.get(key) ?? {
+      content,
+      sources: new Set<string>(),
+      records: new Set<string>(),
+    };
     items.set(key, item);
     if (source !== undefined) item.sources.add(source);
+    if (record !== undefined) item.records.add(record);
   }
-  return [...items.values()].map(({ content, sources }) => ({
-    sources: [...sources].sort(bySourceNumber),
-    ...content,
-  }));
+  return [...items.values()]
+    .map(({ content, sources, records }) => ({
+      records: [...records].sort(),
+      sources: [...sources].sort(bySourceNumber),
+      ...content,
+    }))
+    .sort(
+      (a, b) =>
+        (a.records[0] ?? "").localeCompare(b.records[0] ?? "") ||
+        byWay(a.part ?? "", b.part ?? ""),
+    );
 }
 
 const fieldOf = ({ name, value, label }: FieldRow): HeldField => ({
@@ -73,7 +91,7 @@ const fieldOf = ({ name, value, label }: FieldRow): HeldField => ({
 /**
  * The items of the rows a fact that names a `property` rests on: a row of the entry's own is an item of its own, and the
  * rows of a part are one item with the parts beneath it, for each record, so what a record states is never mixed with
- * what another does. The items of the entry come first, then the parts by their way.
+ * what another does.
  */
 export function heldItems(
   rows: readonly FieldRow[],
@@ -82,12 +100,13 @@ export function heldItems(
   type Node = { part: string; fields: HeldField[]; parts: Node[] };
   const nodes = new Map<string, Node>();
   const roots: { node: Node; record: string | undefined }[] = [];
-  const own: { content: Content; source: string | undefined }[] = [];
+  const own: Stated[] = [];
   for (const row of rows) {
     if (row.part === undefined) {
       own.push({
         content: { fields: [fieldOf(row)] },
         source: sourceOf(row.record),
+        record: row.record,
       });
       continue;
     }
@@ -121,12 +140,11 @@ export function heldItems(
   });
   return joined([
     ...own,
-    ...roots
-      .map(({ node, record }) => ({
-        content: content(node),
-        source: sourceOf(record),
-      }))
-      .sort((a, b) => byWay(a.content.part!, b.content.part!)),
+    ...roots.map(({ node, record }) => ({
+      content: content(node),
+      source: sourceOf(record),
+      record,
+    })),
   ]);
 }
 
@@ -145,12 +163,9 @@ export function heldValues(
         ? []
         : [
             {
-              content: {
-                fields: [
-                  { name, value, ...(label === undefined ? {} : { label }) },
-                ],
-              },
+              content: { fields: [fieldOf({ name, value, label })] },
               source: sourceOf(record),
+              record,
             },
           ],
     ),
@@ -229,6 +244,29 @@ const fieldsIn = (fields: readonly HeldField[]): string[] => {
   ];
 };
 
+/** A dosage's route as one segment: its label when a code has one, else "route", then every code it is given in. */
+function routeIn(
+  fields: readonly HeldField[],
+  taken: Set<HeldField>,
+): string[] {
+  const routes = fields.filter(
+    (it) =>
+      it.name === "dosageRouteCode" ||
+      it.name === "dosageRouteCodeInOtherSystem",
+  );
+  if (routes.length === 0) return [];
+  for (const it of routes) taken.add(it);
+  const codes = routes
+    .map((it) =>
+      it.name === "dosageRouteCode"
+        ? (shownCode(it.value) ?? it.value)
+        : `${it.value} in another code system`,
+    )
+    .join(" / ");
+  const label = routes.find((it) => it.label !== undefined)?.label;
+  return [label === undefined ? `route ${codes}` : `${label} (${codes})`];
+}
+
 /** A dosage as one line: its dose, its schedule, its route, its bounds, and anything else it holds. */
 function dosageIn(part: Pick<HeldPart, "fields" | "parts">): string {
   const taken = new Set<HeldField>();
@@ -278,20 +316,7 @@ function dosageIn(part: Pick<HeldPart, "fields" | "parts">): string {
             ? [`period unit ${unitWords}`]
             : []),
         ];
-  const routes = [
-    ...part.fields
-      .filter((it) => it.name === "dosageRouteCode")
-      .map((it) => {
-        taken.add(it);
-        return it.label ?? `route ${shownCode(it.value) ?? it.value}`;
-      }),
-    ...part.fields
-      .filter((it) => it.name === "dosageRouteCodeInOtherSystem")
-      .map((it) => {
-        taken.add(it);
-        return `route ${it.value} (another code system)`;
-      }),
-  ];
+  const route = routeIn(part.fields, taken);
   const bounds = [
     ["dosageBoundsPeriodStart", "from"],
     ["dosageBoundsPeriodEnd", "until"],
@@ -300,14 +325,7 @@ function dosageIn(part: Pick<HeldPart, "fields" | "parts">): string {
     return it === undefined ? [] : [`${say} ${written.get(name!) ?? it.value}`];
   });
   const rest = fieldsIn(part.fields.filter((it) => !taken.has(it)));
-  const said = [
-    ...dose,
-    ...schedule,
-    ...routes,
-    ...bounds,
-    ...rest,
-    ...beneath,
-  ];
+  const said = [...dose, ...schedule, ...route, ...bounds, ...rest, ...beneath];
   return `Dosage: ${said.length === 0 ? "nothing stated" : said.join(" · ")}`;
 }
 

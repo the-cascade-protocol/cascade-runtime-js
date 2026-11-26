@@ -296,19 +296,27 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       );
       assert.deepEqual(
         result!.filled!.held,
-        [{ sources: [], fields: [{ name: "resultValueText", value: "6.9" }] }],
+        [
+          {
+            records: [],
+            sources: [],
+            fields: [{ name: "resultValueText", value: "6.9" }],
+          },
+        ],
         "one value, of the entry as a whole",
       );
       assert.deepEqual(
         note!.filled!.held,
         [
           {
+            records: ["urn:uuid:45c4f0ee-4874-8fbf-89d3-b7d0214ae2cb"],
             sources: ["S6"],
             fields: [
               { name: "noteOrDocumentDate", value: "2026-06-22T18:03:44Z" },
             ],
           },
           {
+            records: ["urn:uuid:80afad1b-91cb-8766-b527-1beabf2a4158"],
             sources: ["S3"],
             fields: [
               { name: "noteOrDocumentDate", value: "2026-01-05T17:12:05Z" },
