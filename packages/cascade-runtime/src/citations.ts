@@ -1334,38 +1334,6 @@ export const POD_FIELDS: Readonly<Record<string, readonly (keyof Fields)[]>> = {
   deceased: ["value"],
 };
 
-/**
- * Pod fields no citation can be checked against: links among records, ranges, interpretations and categories, and a
- * date that is none of the kinds a citation's date names (`dispenseRequestValidityPeriodStart` and `dispenseRequestValidityPeriodEnd` are never the start or end of use).
- */
-export const POD_NOT_CHECKABLE: readonly string[] = [
-  "type",
-  "leadMember",
-  "entryMember",
-  "statusFrom",
-  "dateFrom",
-  "medicationUseStartDateFrom",
-  "prescriptionWrittenDateFrom",
-  "referenceRangeText",
-  "resultInterpretationCode",
-  "reportCategory",
-  "allergySeverity",
-  "allergyCriticality",
-  "allergyCategory",
-  "medicationRequestIntent",
-  "courseOfTherapyType",
-  "dispenseRequestValidityPeriodStart",
-  "dispenseRequestValidityPeriodEnd",
-  "wasAttributedTo",
-  "authorizingPrescription",
-  "reasonCondition",
-  "reasonCode",
-  "reasonCodeInOtherSystem",
-  "acmgClassification",
-  "subjectVariant",
-  "RO_0002351",
-];
-
 const MEMBER_PREFIX = /^(urn:uuid:\S+) /;
 
 /** A value a pod holds of an entry or of the person: the kind of field it is, and the record that states it, if one does. */
@@ -1376,7 +1344,10 @@ export interface Held {
   readonly record?: string;
 }
 
-/** What an entry's rows of `entry/What it shows` hold, value by value. */
+/**
+ * What an entry's rows of `entry/What it shows` hold, value by value. A value on a part (a dose, a reference bound) is
+ * of that part, never of the entry: it is held under no kind, however its field is named.
+ */
 export function entryHeld(
   rows: readonly Readonly<Record<string, string>>[],
 ): Held[] {
@@ -1390,13 +1361,119 @@ export function entryHeld(
         : row.value;
     const by =
       row.from === undefined || row.from === "" ? {} : { record: row.from };
-    for (const kind of POD_FIELDS[name] ?? []) {
+    const kinds =
+      row.part === undefined || row.part === "" ? POD_FIELDS[name] : undefined;
+    for (const kind of kinds ?? []) {
       held.push({ kind, value, ...by });
       const shown = kind === "code" ? shownCode(value) : undefined;
       if (shown !== undefined) held.push({ kind: "code", value: shown, ...by });
     }
   }
   return held;
+}
+
+/** A row of `entry/What it shows`: a field's local name and value, the part it sits on if it sits on one, and the record that states it. */
+export interface FieldRow {
+  readonly name: string;
+  readonly value: string;
+  /** The way to the part from the member's values, as the question's `?part` writes it. */
+  readonly part?: string;
+  readonly record?: string;
+  /** The question's `?valueLabel`, when the value has one. */
+  readonly label?: string;
+}
+
+/** An entry's rows of `entry/What it shows` by field name, whatever the field is. */
+export function entryFieldRows(
+  rows: readonly Readonly<Record<string, string>>[],
+): FieldRow[] {
+  return rows.flatMap((row) =>
+    row.value === undefined
+      ? []
+      : [
+          {
+            name: (row.field ?? "").split(/[#/:]/).pop() ?? "",
+            value: row.value,
+            ...(row.valueLabel === undefined || row.valueLabel === ""
+              ? {}
+              : { label: row.valueLabel }),
+            ...(row.part === undefined || row.part === ""
+              ? {}
+              : { part: row.part }),
+            ...(row.from === undefined || row.from === ""
+              ? {}
+              : { record: row.from }),
+          },
+        ],
+  );
+}
+
+/**
+ * The rows a fact that names `property` rests on: the rows of that field, and for a field that links a part, every row
+ * of the part beneath it (its own link rows leave no row of their own). A part is beneath a link when the way to it
+ * begins with the link's own way, so a reader needs no node IRI.
+ */
+export function ofProperty(
+  rows: readonly FieldRow[],
+  property: string,
+): FieldRow[] {
+  const below = (link: FieldRow, row: FieldRow) => {
+    const way = `${link.part === undefined ? "" : `${link.part}/`}${link.name}`;
+    return (
+      row.record === link.record &&
+      row.part !== undefined &&
+      (row.part === way ||
+        row.part.startsWith(`${way} `) ||
+        row.part.startsWith(`${way}/`))
+    );
+  };
+  const named = rows.filter((row) => row.name === property);
+  return rows.filter(
+    (row) =>
+      (named.includes(row) || named.some((link) => below(link, row))) &&
+      !rows.some((under) => below(row, under)),
+  );
+}
+
+/**
+ * Rows as a reader is shown them: a value on the entry as its value, by its label and then its code when it has a
+ * label; the values on one part of one record as one line, the way to the part and each field's name and value, so a
+ * dose is not parted from its unit. With `named` (a record's source, by its short name), a line says whose it is, and
+ * a line two sources share says both.
+ */
+export function shownRows(
+  rows: readonly FieldRow[],
+  named?: (record: string | undefined) => string | undefined,
+): string[] {
+  const lines: { part?: string; says: string[]; by: string | undefined }[] = [];
+  const open = new Map<string, (typeof lines)[number]>();
+  for (const { name, value, label, part, record } of rows) {
+    const by = named?.(record);
+    const said =
+      label === undefined ? value : `${label} (${shownCode(value) ?? value})`;
+    if (part === undefined) {
+      lines.push({ says: [said], by });
+      continue;
+    }
+    const key = `${record ?? ""} ${part}`;
+    let line = open.get(key);
+    if (line === undefined) {
+      line = { part, says: [], by };
+      open.set(key, line);
+      lines.push(line);
+    }
+    line.says.push(`${name} ${said}`);
+  }
+  const shown = new Map<string, Set<string>>();
+  for (const { part, says, by } of lines) {
+    const text = part === undefined ? says[0]! : `${part}: ${says.join(", ")}`;
+    const sources = shown.get(text) ?? new Set<string>();
+    shown.set(text, sources);
+    if (by !== undefined) sources.add(by);
+  }
+  return [...shown].map(([text, sources]) =>
+    sources.size === 0 ? text : `${[...sources].join(", ")}: ${text}`,
+  );
 }
 
 /** What the person's row of `pod/The person this pod is about` holds: each part of a column is "<record> <value>". */

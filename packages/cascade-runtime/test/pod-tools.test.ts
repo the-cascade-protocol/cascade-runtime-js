@@ -1125,6 +1125,49 @@ describe("Reading a whole pod in pages · ask tool", () => {
       ]);
     });
 
+    it("returns, for `entry/What it shows`, the rows of the view entry with the `part` each value sits on", async () => {
+      const shows = podReads({
+        names: async () => ["p"],
+        open: async () =>
+          ({
+            ask: async (question: string) =>
+              question === PROVENANCE
+                ? [{ entry, record: record(1) }]
+                : question === "entry/What it shows"
+                  ? [
+                      { entry, field: "dosageDoseQuantity", value: "a node" },
+                      {
+                        entry,
+                        field: "writtenValue",
+                        value: "2",
+                        part: "structuredDosage 1/dosageDoseQuantity",
+                      },
+                      { entry: `${entry}0`, field: "writtenValue", value: "9" },
+                    ]
+                  : [],
+            close: async () => undefined,
+          }) as unknown as Pod,
+      });
+      try {
+        const rows = (
+          (await ask.run(shows, {
+            pod: "p",
+            question: "entry/What it shows",
+            entries: [`C${sha(record(1)).slice(0, 8)}`],
+          })) as { rows: Row[] }
+        ).rows;
+        assert.deepEqual(
+          rows.map(({ value, part }) => [value, part]),
+          [
+            ["a node", undefined],
+            ["2", "structuredDosage 1/dosageDoseQuantity"],
+          ],
+        );
+      } finally {
+        await shows.close();
+      }
+    });
+
     it("throws `Refusal`, naming the handle, when no view entry has it or its letter is another view's", async () => {
       for (const [what, handle] of [
         ["another view's letter", `L${sha(record(1)).slice(0, 8)}`],
