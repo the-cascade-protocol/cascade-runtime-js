@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import "./offline-git.js";
 import { configureTables } from "cascade-runtime";
 import { type BridgeRecord, pinOfRecord } from "@cascade-runtime/runtime/node";
+import { takeTemporaryRoot } from "./temporary-root.js";
 
 configureTables({ checkOnOpen: false });
 
@@ -83,3 +84,6 @@ if (root !== undefined && process.env.CASCADE_BRIDGE_PIN === undefined) {
   const pin = pinnedBuild(root);
   if (pin !== undefined) process.env.CASCADE_BRIDGE_PIN = pin;
 }
+
+// Last, so that what is said once for the run (`sayOnce`) is kept in the temp directory the run began in.
+takeTemporaryRoot();
