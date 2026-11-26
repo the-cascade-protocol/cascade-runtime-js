@@ -1,8 +1,14 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
-const ROOT = /^cascade-test-(\d+)-/;
+const ROOT = /^cascade-test-([0-9a-f]{4})-(\d+)-/;
+
+/** Four hex digits of the host name: a container's name is its id, so containers sharing a temp folder differ. */
+export function hostTag(): string {
+  return createHash("sha256").update(hostname()).digest("hex").slice(0, 4);
+}
 
 function running(pid: number): boolean {
   try {
@@ -21,7 +27,7 @@ function remove(path: string): void {
   }
 }
 
-/** Removes the roots in `parent` whose process has ended: a run that was killed, or a file held open when its process ended. */
+/** Removes the roots of this host in `parent` whose process has ended: a run that was killed, or a file held open when its process ended. */
 export function sweepEndedRoots(parent: string): void {
   let names: string[];
   try {
@@ -30,8 +36,8 @@ export function sweepEndedRoots(parent: string): void {
     return;
   }
   for (const name of names) {
-    const pid = ROOT.exec(name)?.[1];
-    if (pid !== undefined && !running(Number(pid))) remove(join(parent, name));
+    const [, host, pid] = ROOT.exec(name) ?? [];
+    if (host === hostTag() && !running(Number(pid))) remove(join(parent, name));
   }
 }
 
@@ -43,7 +49,9 @@ export function sweepEndedRoots(parent: string): void {
 export function takeTemporaryRoot(): string {
   const parent = tmpdir();
   sweepEndedRoots(parent);
-  const root = mkdtempSync(join(parent, `cascade-test-${process.pid}-`));
+  const root = mkdtempSync(
+    join(parent, `cascade-test-${hostTag()}-${process.pid}-`),
+  );
   process.env.TEMP = process.env.TMP = process.env.TMPDIR = root;
   process.once("exit", () => remove(root));
   return root;
