@@ -457,10 +457,76 @@ describe("Checking a model's reply against a person's records · checkReply(), r
         fact(MED, "status", { property: "medicationRequestIntent" }),
       );
       assert.deepEqual(dose!.filled!.held, [
-        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
+        "S3: structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
+        "S12: structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
+      ]);
+      assert.deepEqual(
+        dose!.filled!.sources.map((it) => it.split(" ")[0]),
+        ["S3", "S12"],
+      );
+      assert.deepEqual(intent!.filled!.held, ["order"]);
+      assert.deepEqual(
+        intent!.filled!.sources.map((it) => it.split(" ")[0]),
+        ["S3"],
+        "only the source that holds the property",
+      );
+    });
+
+    it("names both sources on one line when they hold the same dose", async () => {
+      const same = askWith(
+        ...on(MED, S3, undefined, [["drugName", "lisinopril"]]),
+        ...on(MED, S12, undefined, [["drugName", "lisinopril"]]),
+        ...dosage(S3, "1", "1", "tablet"),
+        ...dosage(S12, "1", "1", "tablet"),
+      );
+      const [dose] = await pointedIn(
+        same,
+        fact(MED, "value", { property: "dosageDoseQuantity" }),
+      );
+      assert.deepEqual(dose!.filled!.held, [
+        "S3, S12: structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
+      ]);
+    });
+
+    it("takes the property as a full IRI, a prefixed name or the bare name", async () => {
+      const facts = await pointedIn(
+        medication,
+        ...[`${NS}dosageDoseQuantity`, "cascade:dosageDoseQuantity"].map(
+          (property) => fact(MED, "value", { property, source: "S3" }),
+        ),
+      );
+      assert.deepEqual(reasons(facts), ["ok", "ok"]);
+    });
+
+    it("knows a source that holds only rows no kind maps", async () => {
+      const [dose] = await pointedIn(
+        askWith(
+          ...on(MED, S3, undefined, [["drugName", "lisinopril"]]),
+          ...dosage(S3, "3", "2", "tablet"),
+          ...dosage(S12, "1", "1", "tablet"),
+        ),
+        fact(MED, "value", { property: "dosageDoseQuantity", source: "S12" }),
+      );
+      assert.deepEqual(reasons([dose!]), ["ok"]);
+      assert.deepEqual(dose!.filled!.held, [
         "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
       ]);
-      assert.deepEqual(intent!.filled!.held, ["order"]);
+    });
+
+    it("shows a coded value by its label and then its code", async () => {
+      const [route] = await pointedIn(
+        askWith({
+          entry: MED,
+          field: `${NS}dosageRouteCode`,
+          value: "http://snomed.info/id/26643006",
+          valueLabel: "Oral route",
+          from: S3,
+        }),
+        fact(MED, "value", { property: "dosageRouteCode" }),
+      );
+      assert.deepEqual(route!.filled!.held, [
+        "Oral route (http://snomed.info/id/26643006)",
+      ]);
     });
 
     it("returns `no such field` for a property the view entry, or the source named, does not hold", async () => {
