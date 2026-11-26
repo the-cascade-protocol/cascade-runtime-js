@@ -25,7 +25,7 @@ import {
   quoted,
   quoteLongEnough,
   type Ran,
-  shownRow,
+  shownRows,
   type Source,
   summary,
   type Tie,
@@ -443,12 +443,7 @@ function pointedAt(
   const values =
     fact.property === undefined
       ? once(fields[kind])
-      : // each row beside the source that states it, so two sources' doses are not run together
-        once(
-          ofProperty(rows.filter(ofNamed), fact.property).map((row) =>
-            [sourceOf(row), shownRow(row)].filter(Boolean).join(" "),
-          ),
-        );
+      : once(shownRows(ofProperty(rows.filter(ofNamed), fact.property)));
   const value = fields.value[0];
   const dateKind = DATES.includes(kind as DateKind)
     ? (kind as DateKind)

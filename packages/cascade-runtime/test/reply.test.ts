@@ -417,7 +417,10 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       (...more: Record<string, string>[]) =>
       async (question: string) =>
         question === "entry/What it shows"
-          ? [...priya[question]!, ...more]
+          ? // the question's order: by field, so one source's rows are not together
+            [...priya[question]!, ...more].sort((a, b) =>
+              (a.field ?? "").localeCompare(b.field ?? ""),
+            )
           : (priya[question] ?? []);
     const medication = askWith(
       ...on(MED, S3, undefined, [
@@ -439,32 +442,25 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       );
       assert.deepEqual(reasons([dose!, how!]), ["ok", "ok"]);
       assert.deepEqual(dose!.filled!.held, [
-        "S3 structuredDosage 1/dosageDoseQuantity writtenValue 2",
-        "S3 structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
       ]);
       assert.deepEqual(how!.filled!.held, [
-        "S3 structuredDosage 1 dosageRepeatFrequency 3",
-        "S3 structuredDosage 1 dosageRepeatPeriod 1",
-        "S3 structuredDosage 1 dosageRepeatPeriodUnit d",
-        "S3 structuredDosage 1 dosageRouteCode http://snomed.info/id/26643006",
-        "S3 structuredDosage 1/dosageDoseQuantity writtenValue 2",
-        "S3 structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "structuredDosage 1: dosageRepeatFrequency 3, dosageRepeatPeriod 1, dosageRepeatPeriodUnit d, dosageRouteCode http://snomed.info/id/26643006",
+        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
       ]);
     });
 
-    it("returns each source's part, beside its source, when none is named, and the field's value when it links no part", async () => {
+    it("returns each source's part as a line of its own when none is named, and the field's value when it links no part", async () => {
       const [dose, intent] = await pointedIn(
         medication,
         fact(MED, "value", { property: "dosageDoseQuantity" }),
         fact(MED, "status", { property: "medicationRequestIntent" }),
       );
       assert.deepEqual(dose!.filled!.held, [
-        "S3 structuredDosage 1/dosageDoseQuantity writtenValue 2",
-        "S3 structuredDosage 1/dosageDoseQuantity unitText tablet",
-        "S12 structuredDosage 1/dosageDoseQuantity writtenValue 1",
-        "S12 structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 2",
+        "structuredDosage 1/dosageDoseQuantity: unitText tablet, writtenValue 1",
       ]);
-      assert.deepEqual(intent!.filled!.held, ["S3 order"]);
+      assert.deepEqual(intent!.filled!.held, ["order"]);
     });
 
     it("returns `no such field` for a property the view entry, or the source named, does not hold", async () => {
@@ -501,8 +497,7 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       assert.deepEqual(result!.filled!.held, ["6.9"]);
       assert.equal(result!.filled!.value, "6.9 %");
       assert.deepEqual(high!.filled!.held, [
-        "S3 referenceRangeHigh writtenValue 5.6",
-        "S3 referenceRangeHigh resultValueText 5.6",
+        "referenceRangeHigh: resultValueText 5.6, writtenValue 5.6",
       ]);
     });
   });

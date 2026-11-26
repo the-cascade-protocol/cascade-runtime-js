@@ -1430,9 +1430,32 @@ export function ofProperty(
   );
 }
 
-/** A row as a reader is shown it: its value, and for one on a part, the way to the part and the field's name before it. */
-export const shownRow = ({ name, value, part }: FieldRow): string =>
-  part === undefined ? value : `${part} ${name} ${value}`;
+/**
+ * Rows as a reader is shown them: a value on the entry as its value; the values on one part of one record as one line,
+ * the way to the part and each field's name and value, so a dose is not parted from its unit and two sources' doses
+ * are not run together.
+ */
+export function shownRows(rows: readonly FieldRow[]): string[] {
+  const shown: { part?: string; says: string[] }[] = [];
+  const open = new Map<string, string[]>();
+  for (const { name, value, part, record } of rows) {
+    if (part === undefined) {
+      shown.push({ says: [value] });
+      continue;
+    }
+    const key = `${record ?? ""} ${part}`;
+    let says = open.get(key);
+    if (says === undefined) {
+      says = [];
+      open.set(key, says);
+      shown.push({ part, says });
+    }
+    says.push(`${name} ${value}`);
+  }
+  return shown.map(({ part, says }) =>
+    part === undefined ? says[0]! : `${part}: ${says.join(", ")}`,
+  );
+}
 
 /** What the person's row of `pod/The person this pod is about` holds: each part of a column is "<record> <value>". */
 export function personHeld(row: Row): Held[] {
