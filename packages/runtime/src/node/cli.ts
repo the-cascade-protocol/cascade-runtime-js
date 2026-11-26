@@ -284,7 +284,7 @@ function adaptersLoader(
 /**
  * One assertion for each kit: that what the configured adapters make of each document its imports hand the Bridge is
  * the output the kit saves, so a change to an adapter that changes its findings fails until the kit saves them again.
- * A step the kit saves nothing for is converted by the replay instead.
+ * A person folder with no `bridge/` folder is converted by the replay instead.
  */
 async function kitFindingAssertions(
   files: FolderFiles,

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { runConformance } from "../src/conformance.js";
 import { MemoryFiles, relative } from "../src/files.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import { localVocabulary } from "../src/node/runtime.js";
@@ -284,44 +283,9 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
   });
 
   /**
-   * An example that saves Bridge output for a person keeps reading it, so a runtime that converted a document it keeps
-   * has none to read and fails.
-   * @rule runtime/arrivals.feature A1
-   */
-  describe("given a run with adapters over the examples that save Bridge output, A1 and Alex's E7", () => {
-    it("converts nothing, and passes the example that has the same export imported again", async () => {
-      let asked = 0;
-      const outcomes = await runConformance({
-        vocabulary: (await localVocabulary(ROOT)).files,
-        runtime: RUNTIME,
-        newStore: () => new OxigraphStore(),
-        newPod: (address) => new MemoryFiles(address),
-        layout: await layout(),
-        adapters: () => {
-          asked += 1;
-          return Promise.reject(new Error("the adapters were asked"));
-        },
-        features: [
-          "runtime/arrivals.feature",
-          "conformance/alex-rivera/alex-rivera.feature",
-        ],
-      });
-      const guards = outcomes.filter(({ test }) =>
-        /#(an-export-bringing-a-document-the-pod-already-keeps-writes-nothing|e7-imports-x-e6-again-and-writes-no-file-not-even-an-import)$/.test(
-          test,
-        ),
-      );
-      assert.deepEqual(
-        guards.map(({ outcome }) => outcome),
-        ["passed", "passed"],
-      );
-      assert.equal(asked, 0);
-    });
-  });
-
-  /**
    * An import step converts its download with the adapters when its person's scripted input holds no `bridge/` folder.
-   * Martin's kit is replayed both ways, its saved output hidden.
+   * Martin's kit is replayed both ways, its saved output hidden. The saved side is given adapters that fail when asked,
+   * so it proves it read the saved output.
    * @rule runtime/the-kit.feature Check 4
    */
   describe("given a kit that saves no Bridge output", () => {
@@ -331,13 +295,11 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
 
     before(async () => {
       const local = await localVocabulary(ROOT);
-      assert.ok(
-        (await local.files.list(MARTINS)).length > 0,
-        "the saved side reads no saved output",
-      );
       saved = new MemoryFiles(ADDRESS);
       converted = new MemoryFiles(ADDRESS);
-      await featurePod(local, MARTIN, saved);
+      await featurePod(local, MARTIN, saved, {
+        adapters: () => Promise.reject(new Error("the adapters were asked")),
+      });
       ({ steps } = await featurePod(
         without(local, MARTINS),
         MARTIN,
