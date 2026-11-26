@@ -9,7 +9,7 @@ Report a security problem privately, by email to contact@cascadeprotocol.org, ne
 
 ## Set up
 
-You need Node.js 22 or newer and git.
+You need Node.js 24 or newer and git.
 
 ```sh
 git clone git@github.com:<you>/cascade-runtime-js.git

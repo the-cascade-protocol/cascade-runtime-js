@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { after, before, describe, it } from "node:test";
 import { runInNewContext } from "node:vm";
 import { ExportedFiles, folderOf, MemoryFiles } from "../src/files.js";
@@ -261,6 +264,36 @@ describe("Reading and writing files by path · Files, MemoryFiles, FolderFiles, 
 
     it("lists another program's file whose name ends as a half-written file's does", () => {
       assert.ok(got(outcome).listed.has("held.json.notmine.writing"));
+    });
+  });
+
+  /** Node 24.22 refuses `fsync` on any open handle to a process started with `--permission`, which a flushed write must still survive whole. */
+  describe("when Node's permission model is on", () => {
+    it("writes a flushed file whole", async () => {
+      const folder = await mkdtemp(join(tmpdir(), "permitted-"));
+      try {
+        const runtime = fileURLToPath(new URL("../../", import.meta.url));
+        const script = `
+          import { FolderFiles } from ${JSON.stringify(new URL("../src/node/folder-files.js", import.meta.url).href)};
+          await new FolderFiles(process.argv[1]).writeFlushed("a/held.json", new TextEncoder().encode("whole"));
+        `;
+        await promisify(execFile)(process.execPath, [
+          "--permission",
+          `--allow-fs-read=${runtime}`,
+          `--allow-fs-read=${folder}`,
+          `--allow-fs-write=${folder}`,
+          "--input-type=module",
+          "--eval",
+          script,
+          folder,
+        ]);
+        assert.equal(
+          await readFile(join(folder, "a", "held.json"), "utf8"),
+          "whole",
+        );
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
     });
   });
 

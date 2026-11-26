@@ -520,7 +520,7 @@ async function conformed(
     adapters,
     layout,
     derive: await vocabularyDerive(files, layout),
-    // Read before the tools load: the other way round, Node 22's V8 crashed in the deoptimizer inside this read (vocabulary#397).
+    // Read before the tools load: the other way round, V8's deoptimizer crashed inside this read on the Node before 24 (vocabulary#397); not shown unneeded on 24.
     shapes: await Shapes.read(files, () => new OxigraphStore()),
     tools: await toolsOffered(),
     proposer: await proposerOf(),

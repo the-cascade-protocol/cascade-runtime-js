@@ -9,7 +9,7 @@ import { checkShape } from "../packages/site/src/spec-shape.ts";
  * one run when the suite was run in parts. Exits 1 and names each case that breaks one; 0 when none does, or when the
  * spec lists no `capabilities` and the package is skipped; 2 when it cannot read its arguments. Another repository runs it
  * from a sparse checkout of this one's `scripts` and `packages/site/src`; Node runs the TypeScript there by stripping its
- * types (Node 22.18 or later).
+ * types.
  */
 function run(args) {
   const specFile = args.at(-1);
