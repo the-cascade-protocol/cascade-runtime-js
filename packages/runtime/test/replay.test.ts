@@ -8,11 +8,9 @@ import { OxigraphStore } from "../src/oxigraph-store.js";
 import { iri, literal, RDF, type Triple } from "../src/rdf.js";
 import { PERFORMERS, replay, type Replayed } from "../src/replay.js";
 import type { Step, Story } from "../src/story.js";
-import { layout, ROOT, RUNTIME, vocabulary } from "./vocabulary.js";
+import { notIsomorphic } from "../src/graphs.js";
+import { filed, layout, ROOT, RUNTIME, vocabulary } from "./vocabulary.js";
 
-const PROV = "http://www.w3.org/ns/prov#";
-const PROV_ACTIVITY = `${PROV}Activity`;
-const PROV_USED = `${PROV}used`;
 const ADDRESS = "https://pod.example/";
 const SUBJECT = "urn:uuid:7c2d9e41-5a8b-4f36-b0e2-9d1a4c6f8e53";
 const text = (bytes: Uint8Array | undefined): string =>
@@ -241,7 +239,8 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
    */
   describe("given a kit whose import steps save no Bridge output", () => {
     const MARTIN = "conformance/martin-okafor/martin-okafor.feature";
-    const SAVED = /^conformance\/martin-okafor\/scripted-input\/martin\/bridge\//;
+    const SAVED =
+      /^conformance\/martin-okafor\/scripted-input\/martin\/bridge\//;
     let saved: MemoryFiles;
     let converted: MemoryFiles;
     let steps: Replayed["steps"];
@@ -275,20 +274,17 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
       );
     });
 
-    it("files, the imports' own files apart, what the saved output files", async () => {
-      const { folder: imports = "" } = (await layout()).place(PROV_ACTIVITY, [
-        PROV_USED,
-      ]);
-      const filed = async (pod: MemoryFiles) =>
-        new Map(
-          await Promise.all(
-            (await pod.list(""))
-              .filter((path) => !path.startsWith(imports))
-              .map(async (path) => [path, text(await pod.read(path))] as const),
-          ),
-        );
-      assert.ok((await filed(saved)).size > 0);
-      assert.deepEqual(await filed(converted), await filed(saved));
+    it("files, the imports' own files and the snapshots' apart, the same statements as the saved output does", async () => {
+      // A snapshot names the import's file, whose name is random.
+      const snapshots = /cascade#(fileAddedToSet|firstParentSnapshot|setHash)$/;
+      const statements = async (pod: MemoryFiles) =>
+        (await filed(pod)).filter(([, p]) => !snapshots.test(p.value));
+      const expected = await statements(saved);
+      assert.ok(expected.length > 0);
+      assert.equal(
+        notIsomorphic(expected, await statements(converted)),
+        undefined,
+      );
     });
   });
 });

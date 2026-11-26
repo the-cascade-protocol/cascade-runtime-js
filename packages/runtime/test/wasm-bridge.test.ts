@@ -23,7 +23,6 @@ import { appleHealthExport } from "@cascade-runtime/apple-health";
 import { ccdaDownload } from "@cascade-runtime/ccda-download";
 import { CorePod } from "../src/core-pod.js";
 import { MemoryFiles } from "../src/files.js";
-import { parseGraph } from "../src/graph.js";
 import { StoryTime } from "../src/ids.js";
 import { ofMediaType } from "../src/load-adapter.js";
 import { importersNamed } from "../src/importers.js";
@@ -37,7 +36,6 @@ import { documentName } from "../src/names.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { probing } from "../src/probe.js";
 import { PERFORMERS } from "../src/replay.js";
-import { CASCADE } from "../src/step.js";
 import { checkouts, type Components } from "../src/node/components.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import {
@@ -57,14 +55,7 @@ import {
   loadSharedAdapters,
   Pool,
 } from "../src/node/wasm.js";
-import {
-  blank,
-  type BlankNode,
-  iri,
-  RDF,
-  type Term,
-  type Triple,
-} from "../src/rdf.js";
+import { iri, type Triple } from "../src/rdf.js";
 import {
   type CompiledBridge,
   inThread,
@@ -72,12 +63,16 @@ import {
   WasmBridge,
 } from "../src/wasm-bridge.js";
 import { notIsomorphic, triples } from "../src/graphs.js";
-import { layout, RUNTIME, ROOT, storyFrom, vocabulary } from "./vocabulary.js";
+import {
+  filed,
+  layout,
+  RUNTIME,
+  ROOT,
+  storyFrom,
+  vocabulary,
+} from "./vocabulary.js";
 
 const ALEX = "conformance/alex-rivera/alex-rivera.feature";
-const TYPE = `${RDF}type`;
-const REVISION = `${CASCADE}Revision`;
-const GENERATED_BY = "http://www.w3.org/ns/prov#wasGeneratedBy";
 const newStore = (): OxigraphStore => new OxigraphStore();
 
 let compiled: CompiledBridge;
@@ -183,41 +178,6 @@ async function standIn(
 ): Promise<BridgeDocument> {
   const bytes = new TextEncoder().encode(text);
   return { ...document, iri: await documentName(bytes), bytes };
-}
-
-/** A pod's files as one graph, but the imports' own, with each revision and the import that made it as blank nodes. */
-async function filed(pod: MemoryFiles): Promise<Triple[]> {
-  const triples: Triple[] = [];
-  for (const path of await pod.list("")) {
-    const { folder: imports } = (await layout()).place(
-      "http://www.w3.org/ns/prov#Activity",
-      ["http://www.w3.org/ns/prov#used"],
-    );
-    if (!(await layout()).isRdf(path) || path.startsWith(imports ?? ""))
-      continue;
-    const bytes = await pod.read(path);
-    if (bytes !== undefined)
-      triples.push(
-        ...(await parseGraph(bytes, pod.iri + path, newStore)).triples,
-      );
-  }
-  const runDependent = new Set(
-    triples.flatMap(([s, p, o]) =>
-      p.value === GENERATED_BY
-        ? [s.value, o.value]
-        : p.value === TYPE && o.value === REVISION
-          ? [s.value]
-          : [],
-    ),
-  );
-  const blanked = <T extends Term>(term: T): T | BlankNode =>
-    term.termType === "NamedNode" &&
-    runDependent.has(term.value.split("#")[0] ?? "")
-      ? blank(term.value)
-      : term;
-  return triples.map(
-    ([s, p, o]) => [blanked(s), p, blanked(o)] as unknown as Triple,
-  );
 }
 
 /**
