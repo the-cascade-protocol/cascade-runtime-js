@@ -80,19 +80,31 @@ describe("Calling a job's pod server · callLogged(), stopPodServer()", () => {
       },
       async () => {
         const folder = await mkdtemp(join(tmpdir(), "cascade-evals-stop-"));
+        // A socket path is 104 bytes at most on macOS: `socketOf` puts it in the temp directory, so that is `/tmp` here.
+        const posix = process.platform !== "win32";
+        const short = posix ? await mkdtemp(join("/tmp", "ce-")) : undefined;
+        const was = process.env.TMPDIR;
+        if (short !== undefined) process.env.TMPDIR = short;
         const open: { destroy(): void }[] = [];
-        const server = await listening(folder, "silent", (connection) => {
-          open.push(connection);
-        });
+        let server: Server | undefined;
         try {
+          server = await listening(folder, "silent", (connection) => {
+            open.push(connection);
+          });
           await assert.rejects(
             stopPodServer(folder, "silent", 300),
             /did not stop/,
           );
         } finally {
+          if (short !== undefined) {
+            if (was === undefined) delete process.env.TMPDIR;
+            else process.env.TMPDIR = was;
+          }
           for (const connection of open) connection.destroy();
-          server.close();
+          server?.close();
           await rm(folder, { recursive: true, force: true });
+          if (short !== undefined)
+            await rm(short, { recursive: true, force: true });
         }
       },
     );
