@@ -17,7 +17,16 @@ import { documentName } from "../src/names.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { localVocabulary, readConfig } from "../src/node/runtime.js";
-import { adaptersOfCheckouts, featurePod } from "../src/node/story-pod.js";
+import { checkouts } from "../src/node/components.js";
+import { featurePod } from "../src/node/story-pod.js";
+import {
+  compiledBridge,
+  inWorker,
+  loadSharedAdapters,
+} from "../src/node/wasm.js";
+import { WasmBridge } from "../src/wasm-bridge.js";
+import type { AdaptersOf } from "../src/bridge.js";
+import { ofMediaType } from "../src/load-adapter.js";
 import { probing } from "../src/probe.js";
 import { iri } from "../src/rdf.js";
 import { References } from "../src/references.js";
@@ -38,6 +47,25 @@ const TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 const ADDRESS = "https://pod.example/";
 const GOLDEN = join(ROOT, "packages/runtime/test/joins.golden.txt");
 const newStore = () => new OxigraphStore();
+
+let adapters: Promise<AdaptersOf> | undefined;
+/** The adapters the checkouts name, loaded when a converted import first needs them and once for the file. */
+function adaptersOfCheckouts(): Promise<AdaptersOf> {
+  adapters ??= (async () => {
+    const components = await checkouts(ROOT);
+    const { folder } = await components.bridge();
+    const bridge = new WasmBridge(inWorker(await compiledBridge(folder)));
+    return ofMediaType(
+      await loadSharedAdapters(
+        folder,
+        bridge,
+        components.config.adapters,
+        components,
+      ),
+    );
+  })();
+  return adapters;
+}
 const byCodePoint = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 

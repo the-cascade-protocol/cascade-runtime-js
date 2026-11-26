@@ -308,60 +308,71 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
    * side's proof that it converted is that its person holds no `bridge/` folder, which is what makes the replay convert.
    * @rule runtime/the-kit.feature Check 4
    */
-  describe("given a person who saves no Bridge output", () => {
-    let saved: MemoryFiles;
-    let converted: MemoryFiles;
-    let steps: Replayed["steps"];
-    let hides: boolean;
-    let showed: boolean;
+  const THE_DOWNLOAD =
+    "a download's import writes its label, its start, its association and the document it kept";
+  for (const [kind, example] of [
+    ["a FHIR pull through the fhir-r4 adapter", A_PULL],
+    ["a C-CDA download through the ccda adapter, with findings", THE_DOWNLOAD],
+  ] as const) {
+    describe(`given a person who saves no Bridge output, with ${kind}`, () => {
+      let saved: MemoryFiles;
+      let converted: MemoryFiles;
+      let steps: Replayed["steps"];
+      let hides: boolean;
+      let showed: boolean;
 
-    before(async () => {
-      const local = await localVocabulary(ROOT);
-      const hidden = without(local, FINNS);
-      showed = await savesBridgeOutput(local.files, FINN);
-      hides = !(await savesBridgeOutput(hidden.files, FINN));
-      saved = new MemoryFiles(ADDRESS);
-      converted = new MemoryFiles(ADDRESS);
-      await featurePod(local, ARRIVALS, saved, {
-        example: A_PULL,
-        adapters: () => Promise.reject(new Error("the adapters were asked")),
+      before(async () => {
+        const local = await localVocabulary(ROOT);
+        const hidden = without(local, FINNS);
+        showed = await savesBridgeOutput(local.files, FINN);
+        hides = !(await savesBridgeOutput(hidden.files, FINN));
+        saved = new MemoryFiles(ADDRESS);
+        converted = new MemoryFiles(ADDRESS);
+        await featurePod(local, ARRIVALS, saved, {
+          example,
+          adapters: () => Promise.reject(new Error("the adapters were asked")),
+        });
+        ({ steps } = await featurePod(hidden, ARRIVALS, converted, {
+          example,
+        }));
       });
-      ({ steps } = await featurePod(hidden, ARRIVALS, converted, {
-        example: A_PULL,
-      }));
-    });
 
-    it("saves its output on the side that reads it and none on the side that converts", () => {
-      assert.ok(showed, "the person saves no output to hide");
-      assert.ok(hides, "the folder is not hidden");
-    });
+      it("saves its output on the side that reads it and none on the side that converts", () => {
+        assert.ok(showed, "the person saves output on the side that reads it");
+        assert.ok(hides, "the folder is not hidden");
+      });
 
-    it("replays every step, as it does from the saved output", () => {
-      assert.deepEqual(
-        steps.filter(({ refused }) => refused !== undefined),
-        [],
-      );
-    });
+      it("replays every step, as it does from the saved output", () => {
+        assert.deepEqual(
+          steps.filter(({ refused }) => refused !== undefined),
+          [],
+        );
+      });
 
-    it("files, the imports' own files and the snapshots' apart, the same statements as the saved output does", async () => {
-      // A snapshot names the import's file, whose name is random, and the manifest's activity uses the last snapshot.
-      const snapshots = /cascade#(fileAddedToSet|firstParentSnapshot|setHash)$/;
-      const statements = async (pod: MemoryFiles) =>
-        (await filed(pod)).filter(
-          ([s, p, o]) =>
-            !snapshots.test(p.value) &&
-            !(
+      it("files, the imports' own files and the snapshots' apart, the same statements as the saved output does", async () => {
+        // A snapshot names the import's file, whose name is random. The manifest's activity uses the last snapshot,
+        // also by a random name: that use is kept, with its object named alike on both sides, so a missing or an extra
+        // use still differs.
+        const snapshots =
+          /cascade#(fileAddedToSet|firstParentSnapshot|setHash)$/;
+        const USED = iri("urn:uuid:the-last-snapshot");
+        const statements = async (pod: MemoryFiles) =>
+          (await filed(pod))
+            .filter(([, p]) => !snapshots.test(p.value))
+            .map(([s, p, o]): Triple =>
               s.termType === "BlankNode" &&
               p.value === PROV_USED &&
               o.value.startsWith("urn:uuid:")
-            ),
+                ? [s, p, USED]
+                : [s, p, o],
+            );
+        const expected = await statements(saved);
+        assert.ok(expected.length > 0);
+        assert.equal(
+          notIsomorphic(expected, await statements(converted)),
+          undefined,
         );
-      const expected = await statements(saved);
-      assert.ok(expected.length > 0);
-      assert.equal(
-        notIsomorphic(expected, await statements(converted)),
-        undefined,
-      );
+      });
     });
-  });
+  }
 });

@@ -26,7 +26,7 @@ let checkedOut: Promise<AdaptersOf> | undefined;
  * The adapters `cascade-runtime.json` names, from the checkouts this runtime runs in, loaded once for the process: the
  * Bridge's workers do not keep it alive.
  */
-export function adaptersOfCheckouts(): Promise<AdaptersOf> {
+function adaptersOfCheckouts(): Promise<AdaptersOf> {
   if (checkedOut !== undefined) return checkedOut;
   const loading = (async () => {
     const components = await checkouts(

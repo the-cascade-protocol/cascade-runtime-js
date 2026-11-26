@@ -108,8 +108,8 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
       }
       assert.equal(
         documents.length,
-        11,
-        "the documents Priya's story imports that the kit saves a graph for",
+        savedFiles.filter((path) => path.endsWith("/graph.ttl")).length,
+        "the documents the story imports that the kit saves a graph for",
       );
     });
 
