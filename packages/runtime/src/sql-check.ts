@@ -945,6 +945,18 @@ export function recordsInEntries(db: Database): string[] {
     .map(({ lex }) => String(lex));
 }
 
+/** Each record the pod holds, as its IRI: those in an entry, and those left out of every view too. */
+export function recordsOfThePod(db: Database): string[] {
+  return db
+    .prepare(
+      "SELECT DISTINCT t.lex FROM quad q JOIN term t ON t.id = q.s " +
+        "WHERE q.p = (SELECT id FROM term WHERE nt = ?) AND q.o = (SELECT id FROM term WHERE nt = ?) " +
+        "AND t.kind = 2 ORDER BY t.lex",
+    )
+    .all(`<${RDF}type>`, `<${CASCADE}Record>`)
+    .map(({ lex }) => String(lex));
+}
+
 /** A record no pod holds, which a question bound to records is also asked of: it gives no rows. */
 const NO_SUCH_RECORD = "urn:cascade:no-such-record";
 
@@ -1069,8 +1081,8 @@ export async function beforeLabels<T>(
 /**
  * Why the `.sql`, over the fixture's pod under its lens, does not give the rows of the `.rq` beside it, as lines: in a
  * whole run, in its order where it has one, a CONSTRUCT's as a set of triples and a view's through its `triples` part;
- * for a question, asked through `asked` of each record a manifest entry binds, for a list question of each record in
- * an entry, and for a `.sql` reading `asked` of a record no pod holds, against the `.rq` bound to it; through each page
+ * for a question that binds a record, asked through `asked` of each record a manifest entry binds and each record the
+ * pod holds, for a list question of each record in an entry too, and for a `.sql` reading `asked` of a record no pod holds, against the `.rq` bound to it; through each page
  * of a list question; and the rows of each manifest entry under that lens that runs it. The vocabulary's
  * tests/test_sql.py makes the same check, and alone checks a view's screen filled keyed to a change against a whole fill.
  */
@@ -1122,7 +1134,13 @@ export async function sqlFailures(
   );
   if (!construct && PAGED.test(sql))
     for (const record of recordsInEntries(db)) bound.add(record);
-  if (!construct && /\basked\b/.test(sql)) bound.add(NO_SUCH_RECORD);
+  const asks = ported.rq.startsWith(QUESTIONS)
+    ? bindsARecord(ported.rqText)
+    : /\basked\b/.test(sql);
+  if (!construct && asks) {
+    for (const record of recordsOfThePod(db)) bound.add(record);
+    bound.add(NO_SUCH_RECORD);
+  }
   // A question that gives a ?record column and binds none is never bound to a record: its binding would add the record
   // to each row that names none, as an entry's review would.
   if (

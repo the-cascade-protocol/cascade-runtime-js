@@ -384,6 +384,33 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     assert.ok(report.includes("<http://www.w3.org/ns/earl#failed>"));
   });
 
+  it("asserts failed a question's .sql that ignores the record asked, over a fixture whose manifest chooses it, asking it of each record the pod holds", async () => {
+    const files = await vocabulary();
+    const shown = "queries/questions/record/Which entry shows it.rq";
+    const text = await readText(files, shown.replace(/\.rq$/, ".sql"));
+    const ignoring = text.replace(
+      /\sWHERE record IN \(SELECT term FROM asked\)\s+UNION ALL SELECT .*? NOT EXISTS \(SELECT 1 FROM asked\)/s,
+      "",
+    );
+    assert.notEqual(ignoring, text);
+    const options = {
+      vocabulary: files,
+      newStore: () => new OxigraphStore(),
+      layout: await layout(),
+      open: (functions: readonly DatabaseFunction[]) =>
+        openDatabase(":memory:", { functions }),
+    };
+    const sqlName = shown.replace(/\.rq$/, ".sql");
+    const outcomes = async (
+      replacing: Readonly<Record<string, string>>,
+    ): Promise<string[]> =>
+      (await sqlCheckAssertions(options, ["same-and-different"], replacing))
+        .filter(({ name }) => name.startsWith(sqlName))
+        .map(({ outcome }) => outcome);
+    assert.deepEqual(await outcomes({}), ["passed"]);
+    assert.deepEqual(await outcomes({ [shown]: ignoring }), ["failed"]);
+  });
+
   it("compares each .sql over the fixtures and lenses the fixtures' manifests choose for it and no other, and fails a .sql that none chooses", async () => {
     const real = await vocabulary();
     const whether = "queries/questions/judgment/Whether it counts.rq";
