@@ -87,8 +87,8 @@ describe("Setting how a suite runs · scripts/test-files.mjs", () => {
       assert.equal(count(options, "--test-timeout"), "300000");
     });
 
-    it("ends the run when a test that timed out leaves the event loop held", () => {
-      assert.ok(suiteOptions([], {}, 8).includes("--test-force-exit"));
+    it("does not end the run before its reporters have the last events, which leaves a describe unclosed in the JUnit report", () => {
+      assert.ok(!suiteOptions([], {}, 8).includes("--test-force-exit"));
     });
   });
 
