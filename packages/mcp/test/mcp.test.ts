@@ -100,7 +100,7 @@ before(
     const here = process.cwd();
     if (APP !== undefined) process.chdir(APP);
     try {
-      await replayKit("alex-rivera", join(folder, "alex-rivera"), {
+      await replayKit("tamsin-vale", join(folder, "tamsin-vale"), {
         through: "J1",
       });
     } finally {
@@ -137,20 +137,20 @@ describe("Serving a folder of pods to an MCP client · cascade-mcp --pods, --che
 
     it("serves the pods of the folder that `--pods` names", async () => {
       assert.deepEqual((await call("list_pods", {})).value, [
-        "alex-rivera",
         "locked",
+        "tamsin-vale",
       ]);
     });
 
     it("returns the `ask` tool's rows, for a named question of a pod in the folder, as JSON text", async () => {
       const { value } = await call("ask", {
-        pod: "alex-rivera",
-        question: "pod/My active allergies",
+        pod: "tamsin-vale",
+        question: "pod/My lab results",
       });
       const { rows } = value as { rows: Record<string, string>[] };
       assert.ok(
         rows.length > 0,
-        "a pod of the folder holds an allergy once J1 judges the first export about the person",
+        "a pod of the folder holds a lab result once J1 judges the first pull about the person",
       );
     });
   });
@@ -168,7 +168,7 @@ describe("Serving a folder of pods to an MCP client · cascade-mcp --pods, --che
   describe("when started without `--check-tables`", () => {
     it('answers `reference_table_checks` with `tables: "off"` and a sentence that names the flag', async () => {
       const { value } = await call("reference_table_checks", {
-        pod: "alex-rivera",
+        pod: "tamsin-vale",
       });
       assert.deepEqual(Object.keys(value as object).sort(), ["said", "tables"]);
       assert.equal((value as { tables: string }).tables, "off");
