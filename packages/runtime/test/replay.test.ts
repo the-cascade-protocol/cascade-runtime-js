@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { MemoryFiles } from "../src/files.js";
+import { MemoryFiles, relative } from "../src/files.js";
+import { FolderFiles } from "../src/node/folder-files.js";
+import { localVocabulary } from "../src/node/runtime.js";
+import { featurePod } from "../src/node/story-pod.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { iri, literal, RDF, type Triple } from "../src/rdf.js";
 import { PERFORMERS, replay, type Replayed } from "../src/replay.js";
 import type { Step, Story } from "../src/story.js";
-import { layout, RUNTIME, vocabulary } from "./vocabulary.js";
+import { layout, ROOT, RUNTIME, vocabulary } from "./vocabulary.js";
 
+const PROV = "http://www.w3.org/ns/prov#";
+const PROV_ACTIVITY = `${PROV}Activity`;
+const PROV_USED = `${PROV}used`;
 const ADDRESS = "https://pod.example/";
 const SUBJECT = "urn:uuid:7c2d9e41-5a8b-4f36-b0e2-9d1a4c6f8e53";
 const text = (bytes: Uint8Array | undefined): string =>
@@ -225,6 +231,64 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
         ),
         lines(viewTriples),
       );
+    });
+  });
+
+  /**
+   * An import step converts its download with the adapters when its kit saves no Bridge output for it; a step whose
+   * `bridge/<step>/` holds files keeps reading them. Martin's kit is replayed both ways, its saved output hidden.
+   * @rule runtime/the-kit.feature Check 4
+   */
+  describe("given a kit whose import steps save no Bridge output", () => {
+    const MARTIN = "conformance/martin-okafor/martin-okafor.feature";
+    const SAVED = /^conformance\/martin-okafor\/scripted-input\/martin\/bridge\//;
+    let saved: MemoryFiles;
+    let converted: MemoryFiles;
+    let steps: Replayed["steps"];
+
+    before(async () => {
+      const local = await localVocabulary(ROOT);
+      class Hiding extends FolderFiles {
+        override read(path: string): Promise<Uint8Array | undefined> {
+          return SAVED.test(relative(this, path))
+            ? Promise.resolve(undefined)
+            : super.read(path);
+        }
+        override async list(folder: string): Promise<string[]> {
+          return (await super.list(folder)).filter((path) => !SAVED.test(path));
+        }
+      }
+      saved = new MemoryFiles(ADDRESS);
+      converted = new MemoryFiles(ADDRESS);
+      await featurePod(local, MARTIN, saved);
+      ({ steps } = await featurePod(
+        { ...local, files: new Hiding(local.files.folder, local.files.iri) },
+        MARTIN,
+        converted,
+      ));
+    });
+
+    it("replays every step, as it does from the saved output", () => {
+      assert.deepEqual(
+        steps.filter(({ refused }) => refused !== undefined),
+        [],
+      );
+    });
+
+    it("files, the imports' own files apart, what the saved output files", async () => {
+      const { folder: imports = "" } = (await layout()).place(PROV_ACTIVITY, [
+        PROV_USED,
+      ]);
+      const filed = async (pod: MemoryFiles) =>
+        new Map(
+          await Promise.all(
+            (await pod.list(""))
+              .filter((path) => !path.startsWith(imports))
+              .map(async (path) => [path, text(await pod.read(path))] as const),
+          ),
+        );
+      assert.ok((await filed(saved)).size > 0);
+      assert.deepEqual(await filed(converted), await filed(saved));
     });
   });
 });
