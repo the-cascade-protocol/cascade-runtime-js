@@ -116,13 +116,17 @@ const read = (fact: CheckedFact) =>
     lines: heldInWords(item),
   }));
 
+/** The records each item is of, in the order the items come. */
+const recordsOf = (fact: CheckedFact) =>
+  fact.filled!.held.map((item) => item.records);
+
 const TWO_DOSAGES =
   "a-medicine-with-two-dosages-shows-each-dose-on-its-own-dosage";
 const RANGE = "lab-results-view";
 const SO = { "urn:x:prescribed": S3, "urn:x:listed": S12 };
 
 const A_10 =
-  "Dosage: 10.0 milligram · 1 per 1 day · route snomed:26643006 · route C38288 (another code system)";
+  "Dosage: 10.0 milligram · 1 per 1 day · route snomed:26643006 / C38288 in another code system";
 const A_2 = "Dosage: 2 per 1 day · from 2026-02-01 · until 2026-03-01T10:00Z";
 const B_AT_MOST_2 =
   "Dosage: at most 2 tablet · 1 per 1 day · route snomed:26643006";
@@ -169,9 +173,10 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
       });
       assert.deepEqual(read(frequency!), [
         { sources: ["S3"], lines: [A_10] },
-        { sources: ["S12"], lines: [B_AT_MOST_2] },
         { sources: ["S3"], lines: [A_2] },
+        { sources: ["S12"], lines: [B_AT_MOST_2] },
       ]);
+      assert.deepEqual(recordsOf(frequency!), [[S3], [S3], [S12]]);
     });
 
     it("keeps two records of one source apart, each dosage its own, never one record's schedule on the other's dose", async () => {
@@ -184,19 +189,20 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
       });
       assert.deepEqual(read(dosages!), [
         { sources: ["S3"], lines: [A_10] },
-        { sources: ["S3"], lines: [B_AT_MOST_2] },
         { sources: ["S3"], lines: [A_2] },
+        { sources: ["S3"], lines: [B_AT_MOST_2] },
       ]);
+      assert.deepEqual(recordsOf(dosages!), [[S3], [S3], [S3_ELSEWHERE]]);
     });
 
-    it("puts the comparator in front of its number: at most 2 tablet, never 2 tablet beside a stray symbol", async () => {
+    it("shows the whole dosage a fact naming its dose rests on, so a wrong schedule can be seen, the comparator in front of its number", async () => {
       const rows = await fixtureRows(TWO_DOSAGES, MED, SO);
       const [dose] = await check(rows, MED, {
         property: "dosageDoseQuantity",
         source: "S12",
       });
       assert.deepEqual(read(dose!), [
-        { sources: ["S12"], lines: ["Dose: at most 2 tablet"] },
+        { sources: ["S12"], lines: [B_AT_MOST_2] },
       ]);
     });
 
@@ -208,7 +214,12 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
         { property: "dosageDoseQuantity", source: "S3" },
       );
       assert.deepEqual(read(dose!), [
-        { sources: ["S3"], lines: ["Dose: 10.0 mg"] },
+        {
+          sources: ["S3"],
+          lines: [
+            "Dosage: 10.0 mg · 1 per 1 day · route snomed:26643006 / C38288 in another code system",
+          ],
+        },
       ]);
     });
 
@@ -227,7 +238,7 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
         {
           sources: ["S12"],
           lines: [
-            "Dosage: at most 2 tablet · 1 per 1 day · Oral route, swallowed",
+            "Dosage: at most 2 tablet · 1 per 1 day · Oral route, swallowed (snomed:26643006)",
           ],
         },
       ]);
@@ -304,6 +315,7 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
       assert.deepEqual(dose!.filled!.held, [
         {
           sources: ["S12"],
+          records: [S12],
           part: "structuredDosage 1",
           fields: [
             { name: "dosageRepeatFrequency", value: "1" },
@@ -342,7 +354,39 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
         { property: "dosageDoseQuantity" },
       );
       assert.deepEqual(read(same!), [
-        { sources: ["S3", "S12"], lines: ["Dose: 10.0 milligram"] },
+        { sources: ["S3", "S12"], lines: [A_10] },
+      ]);
+      assert.deepEqual(recordsOf(same!), [[S3, S12]]);
+    });
+  });
+
+  describe("given a fact whose field or source the pod does not hold", () => {
+    it("says there is no such field from a source that does not hold the field another source does", async () => {
+      const rows = await fixtureRows(TWO_DOSAGES, MED, SO);
+      const [named, anyone] = await check(
+        rows,
+        MED,
+        { property: "medicationRequestIntent", source: "S12" },
+        { property: "medicationRequestIntent" },
+      );
+      assert.deepEqual(named!.verdict.ok, false);
+      assert.deepEqual(
+        (named!.verdict as { reason: string }).reason,
+        "no such field",
+      );
+      assert.deepEqual(anyone!.verdict.ok, true);
+    });
+
+    it("knows a source that states only parts of the entry, no field of the entry itself", async () => {
+      const rows = await fixtureRows(TWO_DOSAGES, MED, SO);
+      const [dose] = await check(
+        rows.filter((it) => it.from !== S12 || it.part !== undefined),
+        MED,
+        { property: "dosageDoseQuantity", source: "S12" },
+      );
+      assert.deepEqual(dose!.verdict.ok, true);
+      assert.deepEqual(read(dose!), [
+        { sources: ["S12"], lines: [B_AT_MOST_2] },
       ]);
     });
   });
@@ -396,6 +440,18 @@ describe("Showing a person what a pod holds beside a fact · heldInWords(), fill
   });
 
   describe("given a lab result with a reference range", () => {
+    it("shows the whole bound a fact naming the bound's number rests on", async () => {
+      const rows = await fixtureRows(RANGE, LAB, { "urn:x:mcv": S3 });
+      const [written] = await check(rows, LAB, { property: "writtenValue" });
+      assert.deepEqual(read(written!), [
+        {
+          sources: ["S3"],
+          lines: ["Reference range high: 100 fl"],
+        },
+        { sources: ["S3"], lines: ["Reference range low: 80 fL"] },
+      ]);
+    });
+
     it("words a bound as a quantity: the written number, and the unit text else the UCUM unit", async () => {
       const rows = await fixtureRows(RANGE, LAB, { "urn:x:mcv": S3 });
       const [low, high] = await check(
