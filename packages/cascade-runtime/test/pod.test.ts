@@ -5247,10 +5247,12 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
       };
       await replayKitFrom(
         parts,
-        "martin-okafor",
-        join(pods, "kits-martin", "martin"),
+        "priya-natarajan",
+        join(pods, "kits-priya", "priya"),
+        { through: "E3" },
       );
       assert.equal(loads, 0);
+      await settled(join(pods, "kits-priya"));
     });
 
     it("throws for a folder that already holds files, a kit it doesn't carry, or a step the story doesn't have", async () => {

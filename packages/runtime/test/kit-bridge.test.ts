@@ -12,7 +12,7 @@ import { iri, type Triple } from "../src/rdf.js";
 import { notIsomorphic, triples } from "../src/graphs.js";
 import { ROOT, storyFrom, vocabulary } from "./vocabulary.js";
 
-const KIT = "conformance/martin-okafor";
+const KIT = "conformance/priya-natarajan";
 const ALEX = "conformance/alex-rivera";
 const CLI = join(ROOT, "packages/runtime/dist/src/node/cli.js");
 
@@ -44,7 +44,7 @@ async function filesUnder(
  * folder with the kit.
  */
 describe("Writing a kit's saved output again · npm run kit:bridge", () => {
-  describe("given the command run on `conformance/martin-okafor`", () => {
+  describe("given the command run on `conformance/priya-natarajan`, which still saves its Bridge output", () => {
     let out: string;
     /** For each document the kit's story imports: what the kit saved and where the command wrote its own. */
     let documents: {
@@ -62,7 +62,9 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
       out = await mkdtemp(join(tmpdir(), "kit-bridge-"));
       await kitBridge(out);
       const files = await vocabulary();
-      const { story, folder } = await storyFrom(`${KIT}/martin-okafor.feature`);
+      const { story, folder } = await storyFrom(
+        `${KIT}/priya-natarajan.feature`,
+      );
       const imports = await kitImports({
         vocabulary: files,
         folder,
@@ -78,11 +80,20 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
             .filter((path) => !path.endsWith("/unaccepted.txt"))
             .map((path) => path.slice(folder.length + 1)),
         );
-        for (const { stem, path, iri: named } of imported) {
+        for (const { stem, path, iri: named, repeated } of imported) {
           const at = `${converted}/${stem}/`;
           const saved = await files.read(`${at}graph.ttl`);
           const savedFindings = await files.read(`${at}findings.ttl`);
-          assert.ok(saved && savedFindings, `${at} is saved`);
+          if (saved === undefined) {
+            // The kit saves no graph for a document no adapter accepts, or one an earlier step converted.
+            assert.ok(
+              repeated ||
+                (await files.read(`${at}unaccepted.txt`)) !== undefined,
+              `${at} is saved`,
+            );
+            continue;
+          }
+          assert.ok(savedFindings, `${at} is saved`);
           const here = join(out, converted.slice(folder.length + 1), stem);
           documents.push({
             saved,
@@ -95,7 +106,11 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
           });
         }
       }
-      assert.equal(documents.length, 2, "the documents Martin's story imports");
+      assert.equal(
+        documents.length,
+        11,
+        "the documents Priya's story imports that the kit saves a graph for",
+      );
     });
 
     after(async () => {

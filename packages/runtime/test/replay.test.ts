@@ -6,12 +6,18 @@ import { localVocabulary } from "../src/node/runtime.js";
 import { featurePod } from "../src/node/story-pod.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { iri, literal, RDF, type Triple } from "../src/rdf.js";
-import { PERFORMERS, replay, type Replayed } from "../src/replay.js";
+import {
+  PERFORMERS,
+  replay,
+  type Replayed,
+  savesBridgeOutput,
+} from "../src/replay.js";
 import type { Step, Story } from "../src/story.js";
 import { notIsomorphic } from "../src/graphs.js";
 import { filed, layout, ROOT, RUNTIME, vocabulary } from "./vocabulary.js";
 
 const ADDRESS = "https://pod.example/";
+const PROV_USED = "http://www.w3.org/ns/prov#used";
 const SUBJECT = "urn:uuid:7c2d9e41-5a8b-4f36-b0e2-9d1a4c6f8e53";
 const text = (bytes: Uint8Array | undefined): string =>
   new TextDecoder().decode(bytes);
@@ -232,8 +238,17 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
     });
   });
 
-  const MARTIN = "conformance/martin-okafor/martin-okafor.feature";
-  const MARTINS = "conformance/martin-okafor/scripted-input/martin/bridge/";
+  /**
+   * Finn's example of A21, a person who keeps saved output for good: one pull of a hospital (a bundle.json and a
+   * pull.json through the FHIR pull importer and the fhir-r4 adapter, holding allergies, an organization and a lab
+   * result), and nothing else: no tables, no matcher, no finding named by the import's random name.
+   */
+  const ARRIVALS = "runtime/arrivals.feature";
+  const A_PULL =
+    "a pulled lab result's version is attributed to the organization its performer names";
+  const THE_PULL = "hospital-pull-with-a-lab";
+  const FINN = "runtime/scripted-input/finn";
+  const FINNS = `${FINN}/bridge/`;
 
   /** The vocabulary with every file whose path starts as `hidden` does gone. */
   function without(
@@ -266,17 +281,21 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
       let asked = 0;
       await assert.rejects(
         featurePod(
-          without(await localVocabulary(ROOT), `${MARTINS}E5/`),
-          MARTIN,
+          without(await localVocabulary(ROOT), `${FINNS}${THE_PULL}/`),
+          ARRIVALS,
           new MemoryFiles(ADDRESS),
           {
+            example: A_PULL,
             adapters: () => {
               asked += 1;
               return Promise.reject(new Error("the adapters were asked"));
             },
           },
         ),
-        /stopped at step E5: .*saves no Bridge output/s,
+        new RegExp(
+          `stopped at step ${THE_PULL}: .*saves no Bridge output`,
+          "s",
+        ),
       );
       assert.equal(asked, 0);
     });
@@ -284,27 +303,37 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
 
   /**
    * An import step converts its download with the adapters when its person's scripted input holds no `bridge/` folder.
-   * Martin's kit is replayed both ways, its saved output hidden. The saved side is given adapters that fail when asked,
-   * so it proves it read the saved output.
+   * A rule example's person, who keeps saved output for good, is replayed both ways, the second with the saved output
+   * hidden. The saved side is given adapters that fail when asked, so it proves it read the saved output; the other
+   * side's proof that it converted is that its person holds no `bridge/` folder, which is what makes the replay convert.
    * @rule runtime/the-kit.feature Check 4
    */
-  describe("given a kit that saves no Bridge output", () => {
+  describe("given a person who saves no Bridge output", () => {
     let saved: MemoryFiles;
     let converted: MemoryFiles;
     let steps: Replayed["steps"];
+    let hides: boolean;
+    let showed: boolean;
 
     before(async () => {
       const local = await localVocabulary(ROOT);
+      const hidden = without(local, FINNS);
+      showed = await savesBridgeOutput(local.files, FINN);
+      hides = !(await savesBridgeOutput(hidden.files, FINN));
       saved = new MemoryFiles(ADDRESS);
       converted = new MemoryFiles(ADDRESS);
-      await featurePod(local, MARTIN, saved, {
+      await featurePod(local, ARRIVALS, saved, {
+        example: A_PULL,
         adapters: () => Promise.reject(new Error("the adapters were asked")),
       });
-      ({ steps } = await featurePod(
-        without(local, MARTINS),
-        MARTIN,
-        converted,
-      ));
+      ({ steps } = await featurePod(hidden, ARRIVALS, converted, {
+        example: A_PULL,
+      }));
+    });
+
+    it("saves its output on the side that reads it and none on the side that converts", () => {
+      assert.ok(showed, "the person saves no output to hide");
+      assert.ok(hides, "the folder is not hidden");
     });
 
     it("replays every step, as it does from the saved output", () => {
@@ -315,10 +344,18 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
     });
 
     it("files, the imports' own files and the snapshots' apart, the same statements as the saved output does", async () => {
-      // A snapshot names the import's file, whose name is random.
+      // A snapshot names the import's file, whose name is random, and the manifest's activity uses the last snapshot.
       const snapshots = /cascade#(fileAddedToSet|firstParentSnapshot|setHash)$/;
       const statements = async (pod: MemoryFiles) =>
-        (await filed(pod)).filter(([, p]) => !snapshots.test(p.value));
+        (await filed(pod)).filter(
+          ([s, p, o]) =>
+            !snapshots.test(p.value) &&
+            !(
+              s.termType === "BlankNode" &&
+              p.value === PROV_USED &&
+              o.value.startsWith("urn:uuid:")
+            ),
+        );
       const expected = await statements(saved);
       assert.ok(expected.length > 0);
       assert.equal(
