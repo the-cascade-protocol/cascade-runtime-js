@@ -22,11 +22,10 @@ import {
   relative as relativePath,
   sep,
 } from "node:path";
-import { pid, platform } from "node:process";
+import process, { pid, platform } from "node:process";
 import { pathToFileURL } from "node:url";
 import { type Files, relative, sameBytes } from "../files.js";
 import { timedAside } from "../probe.js";
-import { flushed } from "./flushed.js";
 import { Refusal } from "../step.js";
 
 /** The name of a file being written, which is no file of the folder until it is renamed over its name. */
@@ -90,16 +89,20 @@ async function retried<T>(doing: () => Promise<T>): Promise<T> {
 const renamedOver = (from: string, to: string): Promise<void> =>
   retried(() => rename(from, to));
 
-/** Writes the file as `writeFile` does, new, and flushes its bytes to storage before closing it. */
+/**
+ * Writes the file as `writeFile` does, new, and flushes its bytes to storage before closing it. Node's permission model
+ * refuses `fsync` on a handle, so there each write goes to storage as it is made, by a handle opened to do that.
+ */
 async function writtenAndFlushed(
   path: string,
   bytes: Uint8Array,
   isNew: boolean,
 ): Promise<void> {
-  const handle = await open(path, isNew ? "wx" : "w");
+  const permitted = process.permission !== undefined;
+  const handle = await open(path, permitted ? "as" : isNew ? "wx" : "w");
   try {
     await handle.writeFile(bytes);
-    await flushed(handle);
+    if (!permitted) await handle.sync();
   } finally {
     await handle.close();
   }

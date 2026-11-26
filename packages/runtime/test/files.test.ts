@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import {
-  type FileHandle,
-  mkdir,
-  mkdtemp,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { after, before, describe, it } from "node:test";
 import { runInNewContext } from "node:vm";
 import { ExportedFiles, folderOf, MemoryFiles } from "../src/files.js";
@@ -16,7 +13,6 @@ import {
   packFolder,
   unpackFolder,
 } from "../src/folder-pack.js";
-import { flushed } from "../src/node/flushed.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import { FetchedFiles } from "../src/web/fetched-files.js";
 import { got, type Kept, kept } from "./kept.js";
@@ -271,19 +267,33 @@ describe("Reading and writing files by path · Files, MemoryFiles, FolderFiles, 
     });
   });
 
-  /** A handle whose flush fails with the code a platform gives: Node 24's permission model refuses `fsync` with `ERR_ACCESS_DENIED`. */
-  describe("given a file handle whose flush is refused", () => {
-    const refusedWith = (code: string): FileHandle =>
-      ({
-        sync: () => Promise.reject(Object.assign(new Error(code), { code })),
-      }) as unknown as FileHandle;
-
-    it("goes on when the permission model refuses the flush", async () => {
-      await flushed(refusedWith("ERR_ACCESS_DENIED"));
-    });
-
-    it("throws any other refusal of the flush", async () => {
-      await assert.rejects(flushed(refusedWith("EIO")), { code: "EIO" });
+  /** Node 24.22 refuses `fsync` on any open handle to a process started with `--permission`, which a flushed write must still survive whole. */
+  describe("under Node's permission model", () => {
+    it("writes a flushed file whole", async () => {
+      const folder = await mkdtemp(join(tmpdir(), "permitted-"));
+      try {
+        const runtime = fileURLToPath(new URL("../../", import.meta.url));
+        const script = `
+          import { FolderFiles } from ${JSON.stringify(new URL("../src/node/folder-files.js", import.meta.url).href)};
+          await new FolderFiles(process.argv[1]).writeFlushed("a/held.json", new TextEncoder().encode("whole"));
+        `;
+        await promisify(execFile)(process.execPath, [
+          "--permission",
+          `--allow-fs-read=${runtime}`,
+          `--allow-fs-read=${folder}`,
+          `--allow-fs-write=${folder}`,
+          "--input-type=module",
+          "--eval",
+          script,
+          folder,
+        ]);
+        assert.equal(
+          await readFile(join(folder, "a", "held.json"), "utf8"),
+          "whole",
+        );
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
     });
   });
 
