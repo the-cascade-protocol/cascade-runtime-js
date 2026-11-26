@@ -5179,8 +5179,8 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
     let replayed: Pod;
 
     before(async () => {
-      steps = await replayKit("alex-rivera", at(), { through: "J10" });
-      story = (await kitStory("alex-rivera", { through: "J10" })).steps.map(
+      steps = await replayKit("alex-rivera", at(), { through: "E5" });
+      story = (await kitStory("alex-rivera", { through: "E5" })).steps.map(
         ({ name }) => name,
       );
       replayed = await openPod(at());
@@ -5193,7 +5193,7 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
 
     it("returns the steps it performed, in the story's order, from making the pod to the step named", () => {
       assert.deepEqual([steps[0]?.step, steps[0]?.kind], ["E1", "creation"]);
-      assert.equal(steps.at(-1)?.step, "J10");
+      assert.equal(steps.at(-1)?.step, "E5");
       // `replayKit` does not perform the story's `reference` and `open` steps, so its steps are some of the story's.
       assert.ok(
         inOrder(
@@ -5402,7 +5402,7 @@ describe("Publishing a pod for a browser · answersToPublish(), samplesToPublish
 
     before(async () => {
       samples = await samplesOf(await sourceOf(), {
-        kits: ["alex-rivera"],
+        kits: ["tamsin-vale"],
         lookups: async () => undefined,
       });
     });
@@ -5416,27 +5416,27 @@ describe("Publishing a pod for a browser · answersToPublish(), samplesToPublish
         .sort();
       assert.deepEqual([...samples.kits.keys()].sort(), carried);
       for (const title of samples.kits.values()) assert.ok(title.length > 0);
-      assert.match(samples.kits.get("alex-rivera") ?? "", /Alex/);
+      assert.match(samples.kits.get("tamsin-vale") ?? "", /Tamsin/);
     });
 
     it("returns a kit's sample as the pod's files, a list of them and one pack of them, beside its `answers.json`, `pod.json` and `lookups.json`", () => {
       const text = (path: string): string =>
         new TextDecoder().decode(samples.files.get(path));
-      const POD = "alex-rivera/pod/";
+      const POD = "tamsin-vale/pod/";
       const listed = JSON.parse(text(`${POD}files.json`)) as string[];
       assert.ok(listed.length > 0);
       assert.deepEqual(
         [...samples.files.keys()].sort(),
         [
-          "alex-rivera/answers.json",
-          "alex-rivera/lookups.json",
-          "alex-rivera/pod.json",
-          "alex-rivera/pod.pack.json",
+          "tamsin-vale/answers.json",
+          "tamsin-vale/lookups.json",
+          "tamsin-vale/pod.json",
+          "tamsin-vale/pod.pack.json",
           `${POD}files.json`,
           ...listed.map((path) => POD + path),
         ].sort(),
       );
-      const pack = JSON.parse(text("alex-rivera/pod.pack.json")) as FolderPack;
+      const pack = JSON.parse(text("tamsin-vale/pod.pack.json")) as FolderPack;
       assert.deepEqual(pack.paths, listed);
       assert.deepEqual(
         Object.keys({ ...pack.text, ...pack.base64 }).sort(),
@@ -5464,7 +5464,12 @@ describe("Publishing a pod for a browser · answersToPublish(), samplesToPublish
             relative(found.folder, path),
           ),
       });
-      await rm(join(copy, `${KIT}/scripted-input/alex/entries/a1.ttl`));
+      await rm(
+        join(
+          copy,
+          "conformance/tamsin-vale/scripted-input/tamsin/judgments/J1.ttl",
+        ),
+      );
       const lacking = {
         ...whole,
         resolve: async (component: Parameters<typeof whole.resolve>[0]) =>
@@ -5475,14 +5480,14 @@ describe("Publishing a pod for a browser · answersToPublish(), samplesToPublish
       await assert.rejects(
         samplesOf(
           { components: lacking, runtime: "copying" },
-          { kits: ["alex-rivera"] },
+          { kits: ["tamsin-vale"] },
         ),
         (error) =>
           error instanceof Error &&
           !(error instanceof Refusal) &&
-          /alex-rivera/.test(error.message) &&
-          /E3/.test(error.message) &&
-          /a1\.ttl does not exist/.test(error.message),
+          /tamsin-vale/.test(error.message) &&
+          /J1/.test(error.message) &&
+          /J1\.ttl does not exist/.test(error.message),
       );
     });
   });
