@@ -99,6 +99,7 @@ import {
 // The race of two openings is in `podKey`, which the public `openPod` does not let two callers reach at once.
 import { podKey } from "../src/encrypted.js";
 import { settled } from "./settled.js";
+import "./offline.js";
 
 const KIT = "conformance/alex-rivera";
 const ALEX = `${KIT}/scripted-input/alex`;
@@ -5245,14 +5246,10 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
           return Promise.reject(new Error("the Bridge was loaded"));
         },
       };
-      await replayKitFrom(
-        parts,
-        "priya-natarajan",
-        join(pods, "kits-priya", "priya"),
-        { through: "E3" },
-      );
+      await replayKitFrom(parts, "priya-natarajan", join(parent(), "priya"), {
+        through: "E3",
+      });
       assert.equal(loads, 0);
-      await settled(join(pods, "kits-priya"));
     });
 
     it("throws for a folder that already holds files, a kit it doesn't carry, or a step the story doesn't have", async () => {
