@@ -41,7 +41,8 @@
     "Test results for an agent · <repository>.ctrf.json",
     "Checking that tests read as a specification · checkShape()",
     "Checking a package's tests from the command line · scripts/spec-shape.mjs",
-    "Choosing the files a suite runs · scripts/test-files.mjs"
+    "Choosing the files a suite runs · scripts/test-files.mjs",
+    "Setting how a suite runs · scripts/test-files.mjs"
   ],
   "glossary": [
     {
