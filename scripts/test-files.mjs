@@ -21,9 +21,7 @@ function wholeNumber(env, name, fallback) {
 /**
  * The `node --test` options every run of the suite carries, before the ones the caller gave: how many test files run at
  * once (3, or one fewer than the processors if that is less, `CASCADE_TEST_CONCURRENCY` to change it), how long a test or
- * a hook may take (`CASCADE_TEST_TIMEOUT`, in milliseconds), the end of the run once every test has finished or timed out
- * (`--test-force-exit`, so a test that hangs on an open handle does not keep it going), and, unless
- * `CASCADE_CONFORMANCE_REPORT` names a report or the caller names a test name pattern (the skip would win over it and the
+ * a hook may take (`CASCADE_TEST_TIMEOUT`, in milliseconds), and, unless `CASCADE_CONFORMANCE_REPORT` names a report or the caller names a test name pattern (the skip would win over it and the
  * run would be empty), a skip of the case that would run the conformance command itself. An option the caller names is
  * not given a second time.
  */
@@ -45,7 +43,6 @@ export function suiteOptions(
   const passed = Object.entries(options)
     .filter(([flag]) => !named(flag))
     .map(([flag, value]) => `${flag}=${value}`);
-  if (!named("--test-force-exit")) passed.push("--test-force-exit");
   if (!env.CASCADE_CONFORMANCE_REPORT && !named("--test-name-pattern"))
     passed.push(`--test-skip-pattern=${CONFORMANCE_CASE}`);
   return passed;
