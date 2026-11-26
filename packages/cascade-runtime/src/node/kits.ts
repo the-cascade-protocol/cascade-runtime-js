@@ -184,15 +184,26 @@ export async function replayKitFrom(
   const through =
     options.through === undefined ? {} : { through: options.through };
   const { local } = parts;
-  const { person } = await featureStory(
+  const { feature, person, steps: told } = await featureStory(
     local.files,
     path,
     () => new OxigraphStore(),
     through,
   );
+  let bridge: Promise<LoadedBridge> | undefined;
+  const converts = await Promise.all(
+    told.map(async ({ happened }) => {
+      if (happened.kind !== "import") return false;
+      const saved = `${feature.folder === "" ? "" : `${feature.folder}/`}${happened.converted}/`;
+      return (await local.files.list(saved)).length === 0;
+    }),
+  );
+  if (converts.includes(true)) {
+    bridge = parts.loadBridge();
+    bridge.catch(() => undefined);
+  }
   const tables = options.tables ?? (await tablesBeside(dirname(target)));
   const references = await tables.references();
-  let bridge: Promise<LoadedBridge> | undefined;
   const { steps } = await featurePod(
     local,
     path,
