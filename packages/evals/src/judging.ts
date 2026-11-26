@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   checkReply,
   type FilledFact,
+  heldInWords,
   numberedReply,
   type PodAsker,
   pointsAtEntry,
@@ -153,14 +154,20 @@ const writer = (source: string) => source.replace(/^S\d+ /, "");
 /**
  * A fact as a judge reads it. One that copies (the records arm's, and the pod arm's before facts pointed) is its
  * provider, day and words, as it always was, so the judge of those answers is reused. One that points is who it is
- * from, its day, its words, and what the record is called and holds: all but its words the pod's, the program's fill.
+ * from, its day, its words, and what the record is called and holds, and of the field it names what the pod holds,
+ * worded: all but its words the pod's, the program's fill.
  */
 function factLine(at: number, f: ReplyFact, filled?: FilledFact): string {
   if (!pointsAtEntry(f))
     return `- Fact ${at}: ${scrubbed(f.provider)}${f.date === undefined ? "" : `, ${f.date}`}: ${scrubbed(f.says)}`;
-  const record = [filled?.label, filled?.value]
-    .filter((it) => it !== undefined)
-    .join(": ");
+  const record = [
+    [filled?.label, filled?.value].filter((it) => it !== undefined).join(": "),
+    ...(f.property === undefined
+      ? []
+      : (filled?.held ?? []).flatMap(heldInWords)),
+  ]
+    .filter((it) => it !== "")
+    .join("; ");
   const head = [
     filled === undefined
       ? undefined

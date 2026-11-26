@@ -25,13 +25,18 @@ import {
   quoted,
   quoteLongEnough,
   type Ran,
-  shownRows,
   type Source,
   summary,
   type Tie,
   type Verdict,
 } from "./citations.js";
 import { type CompactSources, compactSources } from "./compact-read.js";
+import {
+  bySourceNumber,
+  heldItems,
+  type HeldItem,
+  heldValues,
+} from "./held.js";
 import { type Row, type TextRow, textRow } from "./pod.js";
 import {
   COMPACT_QUESTIONS,
@@ -354,8 +359,11 @@ export interface FilledFact {
   /** Its day, YYYY-MM-DD: of the kind the fact names when it names a date, else when it happened. */
   readonly date?: string;
   readonly dateKind?: DateKind;
-  /** The named field's values, each once, as the pod holds them. */
-  readonly held: readonly string[];
+  /**
+   * What the pod holds of the field the fact names, as it holds it: each item is one field of the entry or one part of
+   * it, with the sources that state exactly this. `heldInWords` words an item for a person.
+   */
+  readonly held: readonly HeldItem[];
   /** The sources they are from, each by its short name in a whole compact read and who wrote it: "S3 Fernhill Family Clinic". */
   readonly sources: readonly string[];
 }
@@ -411,8 +419,6 @@ const KIND: Readonly<Record<FactField, keyof Fields>> = {
 const DATES: readonly DateKind[] = ["when", "start", "end", "recorded"];
 
 const once = <T>(values: readonly T[]) => [...new Set(values)];
-const bySourceNumber = (a: string, b: string) =>
-  Number(a.slice(1)) - Number(b.slice(1));
 
 /**
  * A fact about a pod against what the pod holds of its entry: the named source is one of the entry's, the named field
@@ -427,8 +433,9 @@ function pointedAt(
   sources: CompactSources,
   rows: readonly FieldRow[] = [],
 ): Omit<CheckedFact, "fact"> {
-  const sourceOf = ({ record }: { record?: string }) =>
+  const namedBy = (record: string | undefined) =>
     record === undefined ? undefined : sources.of(record);
+  const sourceOf = ({ record }: { record?: string }) => namedBy(record);
   const named = fact.source;
   const known =
     named === undefined ||
@@ -452,14 +459,8 @@ function pointedAt(
   const whose = once(ofField?.flatMap((it) => sourceOf(it) ?? []) ?? []);
   const values =
     ofField === undefined
-      ? once(fields[kind])
-      : shownRows(
-          ofField,
-          whose.length > 1
-            ? (record) =>
-                record === undefined ? undefined : sources.of(record)
-            : undefined,
-        );
+      ? heldValues(theirs, kind, namedBy)
+      : heldItems(ofField, namedBy);
   const value = fields.value[0];
   const dateKind = DATES.includes(kind as DateKind)
     ? (kind as DateKind)

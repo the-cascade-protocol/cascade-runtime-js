@@ -103,6 +103,12 @@ export type {
   Pointed,
   Verdict,
 } from "../citations.js";
+export {
+  heldInWords,
+  type HeldField,
+  type HeldItem,
+  type HeldPart,
+} from "../held.js";
 export type {
   CheckedAbsence,
   CheckedFact,

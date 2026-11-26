@@ -45,6 +45,7 @@
     "Offering tools to a model in a web page · toolRegistry()",
     "Checking a tool's input against its schema · checkInput()",
     "Checking a model's reply against a person's records · checkReply(), replyErrors(), replySchema, numberedReply()",
+    "Showing a person what a pod holds beside a fact · heldInWords(), filled.held",
     "Checking what a reply says a pod lacks · checkAbsence()",
     "Checking a citation of a download · checkCitation(), downloadsSource(), isoDate()",
     "Checking a citation of a view entry · checkCitation(), podRowsSource()",

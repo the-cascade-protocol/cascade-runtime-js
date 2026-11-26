@@ -70,6 +70,12 @@ export {
   type Tie,
   type Verdict,
 } from "./citations.js";
+export {
+  heldInWords,
+  type HeldField,
+  type HeldItem,
+  type HeldPart,
+} from "./held.js";
 export { downloadsSource } from "./node/downloads.js";
 export {
   type CheckedAbsence,

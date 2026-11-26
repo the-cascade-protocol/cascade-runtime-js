@@ -492,7 +492,13 @@ describe("Blinding the answers a judge reads · judgePackets(), blinded(), scrub
           value: "6.9 %",
           date: "2025-09-22",
           dateKind: "when",
-          held: ["6.9"],
+          held: [
+            {
+              sources: ["S12"],
+              records: [],
+              fields: [{ name: "resultValueText", value: "6.9" }],
+            },
+          ],
           sources: ["S12 Northbay Clinical Laboratories"],
         }),
       );
@@ -507,6 +513,49 @@ describe("Blinding the answers a judge reads · judgePackets(), blinded(), scrub
 
     it("shows no handle, and no source's short name as a compact read gives it", () => {
       assert.doesNotMatch(shown, /S12|Lcd05f84f/);
+    });
+
+    it("words what the pod holds of the field the fact names, so a judge sees a dose beside the drug's name", () => {
+      const dosage = blinded(
+        withFact({
+          says: "She takes 2 tablets.",
+          cite: { entry: "Lcd05f84f" },
+          field: "value",
+          property: "structuredDosage",
+        }),
+        () => ({
+          entry: "pod://p/clinical/medications.ttl#a95bee7d",
+          label: "lisinopril 10 MG Oral Tablet",
+          held: [
+            {
+              sources: ["S3"],
+              records: [],
+              part: "structuredDosage 1",
+              fields: [
+                { name: "dosageRepeatFrequency", value: "3" },
+                { name: "dosageRepeatPeriod", value: "1" },
+                { name: "dosageRepeatPeriodUnit", value: "d" },
+              ],
+              parts: [
+                {
+                  part: "structuredDosage 1/dosageDoseQuantity",
+                  fields: [
+                    { name: "quantityComparator", value: "<=" },
+                    { name: "unitText", value: "tablet" },
+                    { name: "writtenValue", value: "2" },
+                  ],
+                },
+              ],
+            },
+          ],
+          sources: ["S3 Fernhill Family Clinic"],
+        }),
+      );
+      assert.match(
+        dosage,
+        /\(the record: lisinopril 10 MG Oral Tablet; Dosage: at most 2 tablet · 3 per 1 day\)$/m,
+      );
+      assert.doesNotMatch(dosage, /S3|structuredDosage|[a-z][A-Z]/);
     });
   });
 

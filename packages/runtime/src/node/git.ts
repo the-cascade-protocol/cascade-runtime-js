@@ -22,34 +22,35 @@ const TOOLING = "compatibility@invalid";
 /**
  * The commit the folder's own checkout is at and how many files differ from it, or undefined if the folder is not the
  * top of a checkout. Where the tooling merged a Depends-On pull request into the checkout, HEAD is a merge commit no
- * server holds, so the commit is the pull request's head, the last thing merged, which a link can name.
+ * server holds, so `commit` is the pull request's head, the last thing merged, which a link can name, and `head` is HEAD itself.
  */
 export async function checkout(
   folder: string,
-): Promise<{ commit: string; uncommitted: number } | undefined> {
+): Promise<{ commit: string; head: string; uncommitted: number } | undefined> {
   try {
-    const top = (await git(folder, "rev-parse", "--show-toplevel")).trim();
-    if ((await realpath(top)) !== (await realpath(folder))) return undefined;
-    let commit = (await git(folder, "rev-parse", "HEAD")).trim();
+    const [top, head, status] = await Promise.all([
+      git(folder, "rev-parse", "--show-toplevel"),
+      git(folder, "log", "-1", "--format=%H%n%P%n%ce"),
+      git(folder, "status", "--porcelain", "--untracked-files=all"),
+    ]);
+    if ((await realpath(top.trim())) !== (await realpath(folder)))
+      return undefined;
+    let [commit = "", parents, committer] = head.split("\n");
+    const atHead = commit;
     for (;;) {
-      const [parents, committer] = (
-        await git(folder, "log", "-1", "--format=%P%n%ce", commit)
-      ).split("\n");
       const heads = (parents ?? "")
         .split(" ")
         .filter((parent) => parent !== "");
       if (committer !== TOOLING || heads.length !== 2 || heads[1] === undefined)
         break;
       commit = heads[1];
+      [parents, committer] = (
+        await git(folder, "log", "-1", "--format=%P%n%ce", commit)
+      ).split("\n");
     }
-    const status = await git(
-      folder,
-      "status",
-      "--porcelain",
-      "--untracked-files=all",
-    );
     return {
       commit,
+      head: atHead,
       uncommitted: status.split("\n").filter((line) => line.trim() !== "")
         .length,
     };
