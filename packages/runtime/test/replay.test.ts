@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import { runConformance } from "../src/conformance.js";
 import { MemoryFiles, relative } from "../src/files.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import { localVocabulary } from "../src/node/runtime.js";
@@ -232,39 +233,112 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
     });
   });
 
+  const MARTIN = "conformance/martin-okafor/martin-okafor.feature";
+  const MARTINS = "conformance/martin-okafor/scripted-input/martin/bridge/";
+
+  /** The vocabulary with every file whose path starts as `hidden` does gone. */
+  function without(
+    local: Awaited<ReturnType<typeof localVocabulary>>,
+    hidden: string,
+  ): typeof local {
+    class Hiding extends FolderFiles {
+      override read(path: string): Promise<Uint8Array | undefined> {
+        return relative(this, path).startsWith(hidden)
+          ? Promise.resolve(undefined)
+          : super.read(path);
+      }
+      override async list(folder: string): Promise<string[]> {
+        return (await super.list(folder)).filter(
+          (path) => !path.startsWith(hidden),
+        );
+      }
+    }
+    return { ...local, files: new Hiding(local.files.folder, local.files.iri) };
+  }
+
   /**
-   * An import step converts its download with the adapters when its kit saves no Bridge output for it; a step whose
-   * `bridge/<step>/` holds files keeps reading them. Martin's kit is replayed both ways, its saved output hidden.
+   * A person's scripted input holds a `bridge/` folder with the saved output of every import step, or holds none and
+   * every import step is converted. A step the saved output lacks stops the replay: a kit that lost a folder is not
+   * taken for one that saves nothing.
    * @rule runtime/the-kit.feature Check 4
    */
-  describe("given a kit whose import steps save no Bridge output", () => {
-    const MARTIN = "conformance/martin-okafor/martin-okafor.feature";
-    const SAVED =
-      /^conformance\/martin-okafor\/scripted-input\/martin\/bridge\//;
+  describe("given a kit that saves its Bridge output but one step's folder is missing", () => {
+    it("stops at that step, without converting its download", async () => {
+      let asked = 0;
+      await assert.rejects(
+        featurePod(
+          without(await localVocabulary(ROOT), `${MARTINS}E5/`),
+          MARTIN,
+          new MemoryFiles(ADDRESS),
+          {
+            adapters: () => {
+              asked += 1;
+              return Promise.reject(new Error("the adapters were asked"));
+            },
+          },
+        ),
+        /stopped at step E5: .*saves no Bridge output/s,
+      );
+      assert.equal(asked, 0);
+    });
+  });
+
+  /**
+   * An example that saves Bridge output for a person keeps reading it, so a runtime that converted a document it keeps
+   * has none to read and fails.
+   * @rule runtime/arrivals.feature A1
+   */
+  describe("given a run with adapters over the examples that save Bridge output, A1 and Alex's E7", () => {
+    it("converts nothing, and passes the example that has the same export imported again", async () => {
+      let asked = 0;
+      const outcomes = await runConformance({
+        vocabulary: (await localVocabulary(ROOT)).files,
+        runtime: RUNTIME,
+        newStore: () => new OxigraphStore(),
+        newPod: (address) => new MemoryFiles(address),
+        layout: await layout(),
+        adapters: () => {
+          asked += 1;
+          return Promise.reject(new Error("the adapters were asked"));
+        },
+        features: [
+          "runtime/arrivals.feature",
+          "conformance/alex-rivera/alex-rivera.feature",
+        ],
+      });
+      const guards = outcomes.filter(({ test }) =>
+        /#(an-export-bringing-a-document-the-pod-already-keeps-writes-nothing|e7-imports-x-e6-again-and-writes-no-file-not-even-an-import)$/.test(
+          test,
+        ),
+      );
+      assert.deepEqual(
+        guards.map(({ outcome }) => outcome),
+        ["passed", "passed"],
+      );
+      assert.equal(asked, 0);
+    });
+  });
+
+  /**
+   * An import step converts its download with the adapters when its person's scripted input holds no `bridge/` folder.
+   * Martin's kit is replayed both ways, its saved output hidden.
+   * @rule runtime/the-kit.feature Check 4
+   */
+  describe("given a kit that saves no Bridge output", () => {
     let saved: MemoryFiles;
     let converted: MemoryFiles;
     let steps: Replayed["steps"];
 
     before(async () => {
       const local = await localVocabulary(ROOT);
-      class Hiding extends FolderFiles {
-        override read(path: string): Promise<Uint8Array | undefined> {
-          return SAVED.test(relative(this, path))
-            ? Promise.resolve(undefined)
-            : super.read(path);
-        }
-        override async list(folder: string): Promise<string[]> {
-          return (await super.list(folder)).filter((path) => !SAVED.test(path));
-        }
-      }
+      assert.ok(
+        (await local.files.list(MARTINS)).length > 0,
+        "the saved side reads no saved output",
+      );
       saved = new MemoryFiles(ADDRESS);
       converted = new MemoryFiles(ADDRESS);
       await featurePod(local, MARTIN, saved);
-      ({ steps } = await featurePod(
-        { ...local, files: new Hiding(local.files.folder, local.files.iri) },
-        MARTIN,
-        converted,
-      ));
+      ({ steps } = await featurePod(without(local, MARTINS), MARTIN, converted));
     });
 
     it("replays every step, as it does from the saved output", () => {
