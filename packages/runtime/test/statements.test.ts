@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { earl } from "../src/conformance.js";
-import { MemoryFiles, readText } from "../src/files.js";
+import { type Files, MemoryFiles, readText } from "../src/files.js";
 import { openDatabase } from "../src/node/sqlite.js";
 import { PodDatabase } from "../src/pod-database.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import {
   compared,
+  FIXTURES,
   finalOrder,
   keyedFillFailures,
   madeScreens,
@@ -396,6 +397,76 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     );
     const report = new TextDecoder().decode(earl(found, "cascade-runtime-js"));
     assert.ok(report.includes("<http://www.w3.org/ns/earl#failed>"));
+  });
+
+  it("compares each .sql over the fixtures and lenses the fixtures' manifests choose for it and no other, and fails a .sql that none chooses", async () => {
+    const real = await vocabulary();
+    const whether = "queries/questions/judgment/Whether it counts.rq";
+    const kinds = "queries/questions/pod/How many of each kind.rq";
+    const person = "queries/questions/pod/The person this pod is about.rq";
+    const kept = new Set(
+      [JUDGMENTS, whether, kinds, person].map((rq) =>
+        rq.replace(/\.rq$/, ".sql"),
+      ),
+    );
+    const own = new MemoryFiles(real.iri);
+    const manifest = (said: string): Uint8Array =>
+      new TextEncoder().encode(
+        [
+          "@prefix ctm: <https://ns.cascadeprotocol.org/test-manifest#> .",
+          "@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .",
+          `<> a mf:Manifest ${said} ; mf:entries () .`,
+        ].join("\n"),
+      );
+    await own.write(
+      `${FIXTURES}names-a-question/manifest.ttl`,
+      manifest(
+        `; ctm:comparesSqlBeside <../../../${encodeURI(kinds)}>`,
+      ),
+    );
+    await own.write(`${FIXTURES}names-nothing/manifest.ttl`, manifest(""));
+    const relative = (path: string): string =>
+      path.startsWith(real.iri) ? path.slice(real.iri.length) : path;
+    // The real vocabulary but its fixtures, which-judgments-count kept, and its `.sql` files, four kept.
+    const shown = (path: string): boolean =>
+      path.startsWith(FIXTURES)
+        ? path.startsWith(`${FIXTURES}which-judgments-count/`)
+        : !path.endsWith(".sql") ||
+          path === STATEMENTS_SCHEMA ||
+          kept.has(path);
+    const files: Files = {
+      iri: real.iri,
+      read: async (path) =>
+        (await own.read(path)) ??
+        (shown(relative(path)) ? real.read(path) : undefined),
+      write: (path, bytes) => own.write(path, bytes),
+      list: async (folder) =>
+        [
+          ...new Set([
+            ...(await real.list(folder)).filter(shown),
+            ...(await own.list(folder)),
+          ]),
+        ].sort(),
+    };
+    const found = await sqlCheckAssertions({
+      vocabulary: files,
+      newStore: () => new OxigraphStore(),
+      layout: await layout(),
+      open: (functions) => openDatabase(":memory:", { functions }),
+    });
+    const sql = (rq: string): string => rq.replace(/\.rq$/, ".sql");
+    assert.deepEqual(
+      found.map(({ name, outcome }) => `${outcome}: ${name}`).sort(),
+      [
+        `passed: ${sql(JUDGMENTS)} over which-judgments-count under everyday`,
+        `passed: ${sql(JUDGMENTS)} over which-judgments-count under export`,
+        `passed: ${sql(whether)} over which-judgments-count under everyday`,
+        `passed: ${sql(kinds)} over names-a-question under everyday`,
+        `passed: ${sql(kinds)} over names-a-question under export`,
+        `failed: ${sql(person)} is compared over no fixture`,
+      ].sort(),
+      found.flatMap(({ why }) => why ?? []).join("\n"),
+    );
   });
 
   it("gives a list question's rows without its trailing page_key, and the key of each row as it was written", () => {
