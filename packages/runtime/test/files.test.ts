@@ -268,7 +268,7 @@ describe("Reading and writing files by path · Files, MemoryFiles, FolderFiles, 
   });
 
   /** Node 24.22 refuses `fsync` on any open handle to a process started with `--permission`, which a flushed write must still survive whole. */
-  describe("under Node's permission model", () => {
+  describe("when Node's permission model is on", () => {
     it("writes a flushed file whole", async () => {
       const folder = await mkdtemp(join(tmpdir(), "permitted-"));
       try {
