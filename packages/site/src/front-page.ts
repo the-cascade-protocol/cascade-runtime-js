@@ -357,7 +357,7 @@ export function startPage(
     nav: markup`<a href="${FRONT_PAGE}">Cascade Protocol reference</a>\n`,
     main: markup`<h1>Start an app on a Cascade pod</h1>
 <h2 class="part">1. Make the app</h2>
-<p class="prose">With Node 22 or later, run this in a folder of your choice:</p>
+<p class="prose">With Node 24 or later, run this in a folder of your choice:</p>
 <pre class="command"><code>${command}</code></pre>
 <p class="prose">It makes the app, <code>${app}</code>, in that folder, with no pod yet.</p>
 <h2 class="part">2. Hand your idea to an agent</h2>

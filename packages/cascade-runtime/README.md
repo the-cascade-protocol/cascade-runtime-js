@@ -33,7 +33,7 @@ A fact that names a `property` also comes back with `filled.held`: what the pod 
 part, each with its `records` and `sources`; `heldInWords(item)` words an item for a person, so an app shows those lines
 (its sources mapped to places) and never words the fields itself.
 
-The package needs only Node 22 or later. It carries everything a pod reads, at
+The package needs only Node 24 or later. It carries everything a pod reads, at
 the commits its build resolved: the code under its interface, the Bridge's
 WebAssembly build, the vocabulary's ontologies, queries, pod layout and every
 conformance kit, and each adapter's files. `components/packed.json` records

@@ -6,7 +6,7 @@
   "description": "An eval harness for the pod against pasted records: synthetic cases with machine-readable keys, program checks, blind judges, budgets and reports.",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "bin": {
     "cascade-evals": "dist/src/cli.js"

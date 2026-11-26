@@ -161,8 +161,6 @@ jobs:
           ref: ${{ steps.tables-at.outputs.ref }}
           path: cascade-reference-tables
           persist-credentials: false
-      # Node 24: on 22 its V8 aborts a test file now and then ("unreachable code" in the deoptimizer). The package,
-      # docs site, starter and installed jobs stay on 22, the oldest Node the package supports.
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -324,7 +322,6 @@ jobs:
           ref: ${{ steps.tables-at.outputs.ref }}
           path: cascade-reference-tables
           persist-credentials: false
-      # Node 24 as the tests job runs the same check.
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -434,7 +431,6 @@ jobs:
           ref: ${{ steps.tables-at.outputs.ref }}
           path: cascade-reference-tables
           persist-credentials: false
-      # Node 24 as the tests job runs the same check.
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -626,7 +622,7 @@ jobs:
           sparse-checkout: scripts
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@v7
         with:
           name: external-links
@@ -662,7 +658,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@v7
         with:
           name: package
@@ -751,7 +747,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@v7
         with:
           name: package
@@ -779,7 +775,7 @@ jobs:
           cd "$RUNNER_TEMP"
           node "$STARTER/check/starter.ts" "$STARTER"/build/create-cascade-app-*.tgz --runtime "$TARBALL"
 
-  # The packed package's native SQLite binding, installed from the tarball on Node 22 as an app installs it, and opened
+  # The packed package's native SQLite binding, installed from the tarball on Node 24 as an app installs it, and opened
   # sealed with a key, on linux and macos on arm and x64, after the merge and on a pull request that changes what is
   # packed or installed (`changes`). The app's second install is `npm ci` from
   # the lock its first wrote, the install that ran node-gyp on the binding when it carried what builds it from source.
@@ -800,7 +796,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: actions/download-artifact@v7
         with:
           name: package
@@ -941,7 +937,6 @@ jobs:
         with:
           path: cascade-runtime-js
           persist-credentials: false
-      # Node 24 as the tests job runs the same check.
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -1028,7 +1023,6 @@ jobs:
           ref: ${{ steps.tables-at.outputs.ref }}
           path: cascade-reference-tables
           persist-credentials: false
-      # Node 24 as the tests job runs the same suite.
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -1106,7 +1100,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
       - run: npm ci
       # The Pages tree's adapter explorers are made by cascade-bridge-spec's generator, which needs Python and rdflib.
@@ -1302,7 +1296,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
       - run: npm ci
       # A push to main saves this cache where a pull request can read it.
@@ -1345,7 +1339,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
       - run: npm ci
       - id: playwright
@@ -1381,7 +1375,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
       - run: npm ci
       - run: npm run test:launcher
@@ -1405,7 +1399,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: cascade-runtime-js/package-lock.json
       # Before the install, which reads the lockfile of the pull requests the start step merges into this checkout.

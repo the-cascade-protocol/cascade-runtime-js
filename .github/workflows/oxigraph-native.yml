@@ -85,7 +85,7 @@ jobs:
       - uses: actions/setup-node@v5
         if: matrix.runs
         with:
-          node-version: "22"
+          node-version: "24"
       # The file loads on this platform, is the Oxigraph Cargo.lock pins, and refuses an option it does not read.
       - if: matrix.runs
         run: node test/binding.mjs "$PWD/out/oxigraph-native.${{ matrix.asset }}.node"
