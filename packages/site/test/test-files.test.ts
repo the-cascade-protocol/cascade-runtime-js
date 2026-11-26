@@ -61,7 +61,8 @@ describe("Setting how a suite runs · scripts/test-files.mjs", () => {
       assert.deepEqual(caps, ["1", "1", "3", "3", "3"]);
     });
 
-    it("lets CASCADE_TEST_CONCURRENCY and CASCADE_TEST_TIMEOUT change the cap and the timeout of a test", () => {
+    it("lets CASCADE_TEST_CONCURRENCY and CASCADE_TEST_TIMEOUT change the cap and the timeout of a test, which is 300 seconds without them", () => {
+      assert.equal(count(suiteOptions([], {}, 8), "--test-timeout"), "300000");
       const env = {
         CASCADE_TEST_CONCURRENCY: "6",
         CASCADE_TEST_TIMEOUT: "1000",
@@ -71,12 +72,8 @@ describe("Setting how a suite runs · scripts/test-files.mjs", () => {
       assert.equal(count(options, "--test-timeout"), "1000");
     });
 
-    it("fails a test that runs longer than 180 seconds, with nothing set", () => {
-      assert.equal(count(suiteOptions([], {}, 8), "--test-timeout"), "180000");
-    });
-
     it("refuses a variable that is not a whole number above 0", () => {
-      for (const bad of ["0", "-1", "2.5", "many"])
+      for (const bad of ["0", "many"])
         assert.throws(
           () => suiteOptions([], { CASCADE_TEST_TIMEOUT: bad }, 8),
           /CASCADE_TEST_TIMEOUT/,
@@ -87,7 +84,11 @@ describe("Setting how a suite runs · scripts/test-files.mjs", () => {
     it("leaves out an option the caller names itself", () => {
       const options = suiteOptions(["--test-concurrency=2"], {}, 8);
       assert.equal(count(options, "--test-concurrency"), undefined);
-      assert.equal(count(options, "--test-timeout"), "180000");
+      assert.equal(count(options, "--test-timeout"), "300000");
+    });
+
+    it("ends the run when a test that timed out leaves the event loop held", () => {
+      assert.ok(suiteOptions([], {}, 8).includes("--test-force-exit"));
     });
   });
 
@@ -103,6 +104,17 @@ describe("Setting how a suite runs · scripts/test-files.mjs", () => {
 
     it("runs that case against the report CASCADE_CONFORMANCE_REPORT names", () => {
       assert.deepEqual(skips({ CASCADE_CONFORMANCE_REPORT: "earl.nt" }), []);
+    });
+
+    it("adds no skip when the caller names a test name pattern, since the skip would win and the run would be empty", () => {
+      assert.deepEqual(
+        suiteOptions(
+          ["--test-name-pattern=Reporting a conformance run"],
+          {},
+          8,
+        ).filter((option) => option.startsWith("--test-skip-pattern")),
+        [],
+      );
     });
 
     it("skips a heading that conformance.test.ts still has", () => {

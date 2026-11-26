@@ -120,8 +120,9 @@ jobs:
     name: tests and conformance
     if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
-    # A job that runs tests or the conformance command is timed out at twice its longest green run on record, rounded up,
-    # so that a hang fails in minutes and does not hold a runner for GitHub's six hours.
+    # A job that runs tests or the conformance command is timed out at about twice the longest green run among the last
+    # 40 runs of this workflow, rounded up, so that a hang fails in minutes and does not hold a runner for GitHub's six
+    # hours. `docs site` and `package` have more, as network installs can stall.
     timeout-minutes: 21
     # The suite's tests reach no network (packages/cascade-runtime/test/offline.ts); the jobs that install the package, which fetch, leave this unset.
     env:
@@ -465,7 +466,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.docs == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       CASCADE_ROWS_CACHE: ${{ github.workspace }}/cascade-runtime-js/.rows-cache
     # The start action's comment on the pull request is the tests job's to post.
@@ -1391,7 +1392,7 @@ jobs:
   package:
     name: package
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     env:
       CASCADE_ROWS_CACHE: ${{ github.workspace }}/cascade-runtime-js/.rows-cache
     defaults:

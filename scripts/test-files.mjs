@@ -6,8 +6,8 @@ import process from "node:process";
 /** The describe whose case runs the whole conformance command when no report is named. */
 const CONFORMANCE_CASE = "Reporting a conformance run";
 
-/** The longest a test or a hook may run, in milliseconds: 3 times the slowest of the suite on CI (a 47 s hook), rounded up. */
-const TEST_TIMEOUT = 180_000;
+/** The longest a test or a hook may run, in milliseconds: 4 times the slowest suite on CI (74.8 s), rounded up, for a slower machine. */
+const TEST_TIMEOUT = 300_000;
 
 /** The value of a variable naming a whole number above 0, or `fallback` when it is unset. */
 function wholeNumber(env, name, fallback) {
@@ -21,8 +21,11 @@ function wholeNumber(env, name, fallback) {
 /**
  * The `node --test` options every run of the suite carries, before the ones the caller gave: how many test files run at
  * once (3, or one fewer than the processors if that is less, `CASCADE_TEST_CONCURRENCY` to change it), how long a test or
- * a hook may take (`CASCADE_TEST_TIMEOUT`, in milliseconds), and, unless `CASCADE_CONFORMANCE_REPORT` names a report, a skip
- * of the case that would run the conformance command itself. An option the caller names is not given a second time.
+ * a hook may take (`CASCADE_TEST_TIMEOUT`, in milliseconds), the end of the run once every test has finished or timed out
+ * (`--test-force-exit`, so a test that hangs on an open handle does not keep it going), and, unless
+ * `CASCADE_CONFORMANCE_REPORT` names a report or the caller names a test name pattern (the skip would win over it and the
+ * run would be empty), a skip of the case that would run the conformance command itself. An option the caller names is
+ * not given a second time.
  */
 export function suiteOptions(
   given = [],
@@ -42,7 +45,8 @@ export function suiteOptions(
   const passed = Object.entries(options)
     .filter(([flag]) => !named(flag))
     .map(([flag, value]) => `${flag}=${value}`);
-  if (!env.CASCADE_CONFORMANCE_REPORT)
+  if (!named("--test-force-exit")) passed.push("--test-force-exit");
+  if (!env.CASCADE_CONFORMANCE_REPORT && !named("--test-name-pattern"))
     passed.push(`--test-skip-pattern=${CONFORMANCE_CASE}`);
   return passed;
 }
