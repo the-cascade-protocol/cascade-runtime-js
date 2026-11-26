@@ -253,6 +253,58 @@ describe("The Bridge package a run from a checkout uses · findBridgePackage()",
     });
   });
 
+  /** The sibling's `package/dist`, git ignoring it as the Bridge's own checkout does, holding a build recorded as made from `commit`. */
+  async function builtWith(
+    sibling: string,
+    cascadeBridge: { commit: string; dirty: boolean },
+  ): Promise<string> {
+    await writeFile(
+      join(sibling, ".git", "info", "exclude"),
+      "package/dist/\n",
+    );
+    const dist = join(sibling, "package", "dist");
+    await mkdir(dist, { recursive: true });
+    await writeFile(join(dist, "cascade_bridge_bg.wasm"), new Uint8Array());
+    await writeFile(
+      join(dist, "package.json"),
+      JSON.stringify({
+        cascadeBridge: { ...cascadeBridge, sources: "sha256-built" },
+      }),
+    );
+    return dist;
+  }
+
+  describe("given a sibling checkout with nothing uncommitted at the commit a build with nothing uncommitted was made from", () => {
+    it("returns that build without reading the checkout's sources", async () => {
+      const bridge = await sharedBridge();
+      const { sibling, options } = await siblingWithoutPackage(bridge);
+      const dist = await builtWith(sibling, {
+        commit: bridge.two,
+        dirty: false,
+      });
+      const used = await findBridgePackage(options, bridge.url);
+      assert.deepEqual([used.source, used.folder], ["sibling", dist]);
+    });
+  });
+
+  describe("given a sibling checkout whose build was made with uncommitted changes, or from another commit", () => {
+    for (const [name, built] of [
+      [
+        "with uncommitted changes",
+        (two: string) => ({ commit: two, dirty: true }),
+      ],
+      ["from another commit", () => ({ commit: "c".repeat(40), dirty: false })],
+    ] as const)
+      it(`reads the checkout's sources, which here it cannot, and so passes over a build made ${name}`, async () => {
+        const bridge = await sharedBridge();
+        const { sibling, options, lines } = await siblingWithoutPackage(bridge);
+        await builtWith(sibling, built(bridge.two));
+        const used = await findBridgePackage(options, bridge.url);
+        assert.equal(used.source, "release");
+        assert.match(lines.join("\n"), /could not be read/);
+      });
+  });
+
   describe("given a sibling checkout with no package and an uncommitted file", () => {
     it("rejects, saying how many uncommitted files are in no published package", async () => {
       const bridge = await sharedBridge();

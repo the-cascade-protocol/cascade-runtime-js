@@ -49,7 +49,9 @@ function lost(from: Worker, error: Error): void {
 function started(): Worker {
   clearTimeout(idle);
   if (worker !== undefined) return worker;
-  const starting = new Worker(new URL("./argon2-worker.js", import.meta.url));
+  const starting = new Worker(new URL("./argon2-worker.js", import.meta.url), {
+    execArgv: [],
+  });
   starting.unref();
   starting.on("message", (response: Argon2Response) => {
     const job = jobs.get(response.id);

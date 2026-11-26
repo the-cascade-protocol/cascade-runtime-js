@@ -191,6 +191,7 @@ function builtInWorker(job: WholeBuildJob): Promise<void> {
       new URL("./pod-database-worker.js", import.meta.url),
       {
         workerData: { ...job, whole: { ...job.whole, dump } },
+        execArgv: [],
         transferList: [dump.buffer],
       },
     );
