@@ -1336,7 +1336,7 @@ export const POD_FIELDS: Readonly<Record<string, readonly (keyof Fields)[]>> = {
 
 /**
  * Pod fields no citation can be checked against: links among records, ranges, interpretations and categories, and a
- * date that is none of the kinds a citation's date names (`dispenseRequestValidityPeriodEnd` is never the end of use).
+ * date that is none of the kinds a citation's date names (`dispenseRequestValidityPeriodStart` and `dispenseRequestValidityPeriodEnd` are never the start or end of use).
  */
 export const POD_NOT_CHECKABLE: readonly string[] = [
   "type",
@@ -1354,6 +1354,7 @@ export const POD_NOT_CHECKABLE: readonly string[] = [
   "allergyCategory",
   "medicationRequestIntent",
   "courseOfTherapyType",
+  "dispenseRequestValidityPeriodStart",
   "dispenseRequestValidityPeriodEnd",
   "wasAttributedTo",
   "authorizingPrescription",
