@@ -431,7 +431,9 @@ function pointedAt(
     record === undefined ? undefined : sources.of(record);
   const named = fact.source;
   const known =
-    named === undefined || held.some((it) => sourceOf(it) === named);
+    named === undefined ||
+    held.some((it) => sourceOf(it) === named) ||
+    rows.some((it) => sourceOf(it) === named);
   const ofNamed = (it: { record?: string }) =>
     named === undefined ||
     !known ||
@@ -440,10 +442,24 @@ function pointedAt(
   const theirs = held.filter(ofNamed);
   const fields = fieldsOf(theirs);
   const kind = KIND[fact.field];
-  const values =
+  const ofField =
     fact.property === undefined
+      ? undefined
+      : ofProperty(
+          rows.filter(ofNamed),
+          fact.property.split(/[#/:]/).pop() ?? "",
+        );
+  const whose = once(ofField?.flatMap((it) => sourceOf(it) ?? []) ?? []);
+  const values =
+    ofField === undefined
       ? once(fields[kind])
-      : once(shownRows(ofProperty(rows.filter(ofNamed), fact.property)));
+      : shownRows(
+          ofField,
+          whose.length > 1
+            ? (record) =>
+                record === undefined ? undefined : sources.of(record)
+            : undefined,
+        );
   const value = fields.value[0];
   const dateKind = DATES.includes(kind as DateKind)
     ? (kind as DateKind)
@@ -463,7 +479,10 @@ function pointedAt(
         }),
     ...(date === undefined ? {} : { date, dateKind: dateKind! }),
     held: values,
-    sources: once(theirs.flatMap((it) => sourceOf(it) ?? []))
+    sources: (ofField === undefined
+      ? once(theirs.flatMap((it) => sourceOf(it) ?? []))
+      : whose
+    )
       .sort(bySourceNumber)
       .map((source) =>
         [source, sources.writtenBy(source)].filter(Boolean).join(" "),

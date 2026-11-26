@@ -1379,6 +1379,8 @@ export interface FieldRow {
   /** The way to the part from the member's values, as the question's `?part` writes it. */
   readonly part?: string;
   readonly record?: string;
+  /** The question's `?valueLabel`, when the value has one. */
+  readonly label?: string;
 }
 
 /** An entry's rows of `entry/What it shows` by field name, whatever the field is. */
@@ -1392,6 +1394,9 @@ export function entryFieldRows(
           {
             name: (row.field ?? "").split(/[#/:]/).pop() ?? "",
             value: row.value,
+            ...(row.valueLabel === undefined || row.valueLabel === ""
+              ? {}
+              : { label: row.valueLabel }),
             ...(row.part === undefined || row.part === ""
               ? {}
               : { part: row.part }),
@@ -1431,29 +1436,43 @@ export function ofProperty(
 }
 
 /**
- * Rows as a reader is shown them: a value on the entry as its value; the values on one part of one record as one line,
- * the way to the part and each field's name and value, so a dose is not parted from its unit and two sources' doses
- * are not run together.
+ * Rows as a reader is shown them: a value on the entry as its value, by its label and then its code when it has a
+ * label; the values on one part of one record as one line, the way to the part and each field's name and value, so a
+ * dose is not parted from its unit. With `named` (a record's source, by its short name), a line says whose it is, and
+ * a line two sources share says both.
  */
-export function shownRows(rows: readonly FieldRow[]): string[] {
-  const shown: { part?: string; says: string[] }[] = [];
-  const open = new Map<string, string[]>();
-  for (const { name, value, part, record } of rows) {
+export function shownRows(
+  rows: readonly FieldRow[],
+  named?: (record: string | undefined) => string | undefined,
+): string[] {
+  const lines: { part?: string; says: string[]; by: string | undefined }[] = [];
+  const open = new Map<string, (typeof lines)[number]>();
+  for (const { name, value, label, part, record } of rows) {
+    const by = named?.(record);
+    const said =
+      label === undefined ? value : `${label} (${shownCode(value) ?? value})`;
     if (part === undefined) {
-      shown.push({ says: [value] });
+      lines.push({ says: [said], by });
       continue;
     }
     const key = `${record ?? ""} ${part}`;
-    let says = open.get(key);
-    if (says === undefined) {
-      says = [];
-      open.set(key, says);
-      shown.push({ part, says });
+    let line = open.get(key);
+    if (line === undefined) {
+      line = { part, says: [], by };
+      open.set(key, line);
+      lines.push(line);
     }
-    says.push(`${name} ${value}`);
+    line.says.push(`${name} ${said}`);
   }
-  return shown.map(({ part, says }) =>
-    part === undefined ? says[0]! : `${part}: ${says.join(", ")}`,
+  const shown = new Map<string, Set<string>>();
+  for (const { part, says, by } of lines) {
+    const text = part === undefined ? says[0]! : `${part}: ${says.join(", ")}`;
+    const sources = shown.get(text) ?? new Set<string>();
+    shown.set(text, sources);
+    if (by !== undefined) sources.add(by);
+  }
+  return [...shown].map(([text, sources]) =>
+    sources.size === 0 ? text : `${[...sources].join(", ")}: ${text}`,
   );
 }
 

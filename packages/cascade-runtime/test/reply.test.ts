@@ -524,9 +524,7 @@ describe("Checking a model's reply against a person's records · checkReply(), r
         }),
         fact(MED, "value", { property: "dosageRouteCode" }),
       );
-      assert.deepEqual(route!.filled!.held, [
-        "Oral route (http://snomed.info/id/26643006)",
-      ]);
+      assert.deepEqual(route!.filled!.held, ["Oral route (snomed:26643006)"]);
     });
 
     it("returns `no such field` for a property the view entry, or the source named, does not hold", async () => {
