@@ -62,7 +62,7 @@ export const KIT_CHECKS = {
 /** What the kit's checks read: one replay of its story, and the pod at its last step under `everyday`. */
 export interface KitRun {
   readonly vocabulary: Files;
-  /** What the replay converted for an import step the kit saves no Bridge output for, saved where the kit would save it. */
+  /** What the replay converted for an import step of a person folder with no `bridge/` folder, saved where the kit would save it. */
   readonly converted?: Files;
   /** The kit's folder in the vocabulary, as `conformance/<name>`. */
   readonly kit: string;
