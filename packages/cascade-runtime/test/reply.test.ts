@@ -407,6 +407,139 @@ describe("Checking a model's reply against a person's records · checkReply(), r
     });
   });
 
+  describe("given a fact that names a `property`", () => {
+    // A lisinopril entry two sources state: S3 (urn:uuid:2a2516eb…) a dose of 2 tablets three times a day by mouth, S12
+    // (urn:uuid:ca582a17…) one tablet once a day. Each dosage is a link row and the rows of its parts, as the question gives them.
+    const S3 = "urn:uuid:2a2516eb-46b0-8352-9042-93639f23ae9c";
+    const S12 = "urn:uuid:ca582a17-052b-890b-a5ad-0f2567e25670";
+    const MED = entry("medications", "a95bee7d");
+    const LAB_ENTRY = `${POD}/lab-results.ttl#cd05f84f584f21389ebd613489d46ab9634387697c9a20caf6af151360307712`;
+    const on = (
+      which: string,
+      from: string,
+      path: string | undefined,
+      fields: [string, string][],
+    ) =>
+      fields.map(([field, value]) => ({
+        entry: which,
+        field: NS + field,
+        value,
+        from,
+        ...(path === undefined ? {} : { part: path }),
+      }));
+    const dosage = (
+      from: string,
+      times: string,
+      dose: string,
+      unit: string,
+    ) => [
+      ...on(MED, from, undefined, [["structuredDosage", `${MED}-dosage-1`]]),
+      ...on(MED, from, "structuredDosage 1", [
+        ["dosageRepeatFrequency", times],
+        ["dosageRepeatPeriod", "1"],
+        ["dosageRepeatPeriodUnit", "d"],
+        ["dosageRouteCode", "http://snomed.info/id/26643006"],
+        ["dosageDoseQuantity", `${MED}-dosage-1-dose-quantity`],
+      ]),
+      ...on(MED, from, "structuredDosage 1/dosageDoseQuantity", [
+        ["writtenValue", dose],
+        ["unitText", unit],
+      ]),
+    ];
+    const askWith =
+      (...more: object[]) =>
+      async (question: string) =>
+        question === "entry/What it shows"
+          ? [...priya[question]!, ...more]
+          : (priya[question] ?? []);
+    const medication = askWith(
+      ...on(MED, S3, undefined, [
+        ["drugName", "lisinopril 10 MG Oral Tablet"],
+        ["medicationRequestIntent", "order"],
+      ]),
+      ...on(MED, S12, undefined, [
+        ["drugName", "lisinopril 10 MG Oral Tablet"],
+      ]),
+      ...dosage(S3, "3", "2", "tablet"),
+      ...dosage(S12, "1", "1", "tablet"),
+    );
+
+    it("returns in `held`, for a field that links a part, the whole part beneath it as the pod holds it, and no link", async () => {
+      const [dose, how] = await pointedIn(
+        medication,
+        fact(MED, "value", { property: "dosageDoseQuantity", source: "S3" }),
+        fact(MED, "value", { property: "structuredDosage", source: "S3" }),
+      );
+      assert.deepEqual(reasons([dose!, how!]), ["ok", "ok"]);
+      assert.deepEqual(dose!.filled!.held, [
+        "structuredDosage 1/dosageDoseQuantity writtenValue 2",
+        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+      ]);
+      assert.deepEqual(how!.filled!.held, [
+        "structuredDosage 1 dosageRepeatFrequency 3",
+        "structuredDosage 1 dosageRepeatPeriod 1",
+        "structuredDosage 1 dosageRepeatPeriodUnit d",
+        "structuredDosage 1 dosageRouteCode http://snomed.info/id/26643006",
+        "structuredDosage 1/dosageDoseQuantity writtenValue 2",
+        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+      ]);
+    });
+
+    it("returns each source's part when no source is named, and the field's value when it links no part", async () => {
+      const [dose, intent] = await pointedIn(
+        medication,
+        fact(MED, "value", { property: "dosageDoseQuantity" }),
+        fact(MED, "status", { property: "medicationRequestIntent" }),
+      );
+      assert.deepEqual(dose!.filled!.held, [
+        "structuredDosage 1/dosageDoseQuantity writtenValue 2",
+        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "structuredDosage 1/dosageDoseQuantity writtenValue 1",
+        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+      ]);
+      assert.deepEqual(intent!.filled!.held, ["order"]);
+    });
+
+    it("returns `no such field` for a property the view entry, or the source named, does not hold", async () => {
+      const facts = await pointedIn(
+        medication,
+        fact(MED, "value", { property: "dispenseDaysSupply" }),
+        fact(MED, "value", {
+          property: "medicationRequestIntent",
+          source: "S12",
+        }),
+      );
+      assert.deepEqual(reasons(facts), [
+        "no such field: dispenseDaysSupply",
+        "no such field: medicationRequestIntent from S12",
+      ]);
+    });
+
+    it("never takes a value on a part for a value of the view entry: a reference bound is read by its own name, and the result stays the result", async () => {
+      const bounded = askWith(
+        ...on(LAB_ENTRY, S3, undefined, [
+          ["referenceRangeHigh", `${LAB_ENTRY}-high`],
+        ]),
+        // a name a kind is mapped to, written on a part: the bound is still not the result
+        ...on(LAB_ENTRY, S3, "referenceRangeHigh", [
+          ["writtenValue", "5.6"],
+          ["resultValueText", "5.6"],
+        ]),
+      );
+      const [result, high] = await pointedIn(
+        bounded,
+        fact(HBA1C, "value"),
+        fact(HBA1C, "value", { property: "referenceRangeHigh" }),
+      );
+      assert.deepEqual(result!.filled!.held, ["6.9"]);
+      assert.equal(result!.filled!.value, "6.9 %");
+      assert.deepEqual(high!.filled!.held, [
+        "referenceRangeHigh writtenValue 5.6",
+        "referenceRangeHigh resultValueText 5.6",
+      ]);
+    });
+  });
+
   describe("given a fact that cites by handle", () => {
     const sha = (text: string) =>
       createHash("sha256").update(text).digest("hex");
