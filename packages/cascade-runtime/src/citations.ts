@@ -1427,34 +1427,36 @@ export function ofProperty(
   rows: readonly FieldRow[],
   property: string,
 ): FieldRow[] {
-  const below = (link: FieldRow, row: FieldRow) => {
-    const way = `${link.part === undefined ? "" : `${link.part}/`}${link.name}`;
-    return (
-      row.record === link.record &&
-      row.part !== undefined &&
-      (row.part === way ||
-        row.part.startsWith(`${way} `) ||
-        row.part.startsWith(`${way}/`))
-    );
-  };
-  const links = (row: FieldRow) => rows.some((under) => below(row, under));
-  const top = (part: string) => part.split("/")[0];
+  // A part is beneath a way in a record when it is the way or begins with it, ended by a space or a slash.
+  const at = (record: string | undefined, way: string) =>
+    `${record ?? ""}\n${way}`;
+  const wayOf = (row: FieldRow) =>
+    `${row.part === undefined ? "" : `${row.part}/`}${row.name}`;
+  const prefixes = (part: string) => [
+    part,
+    ...[...part].flatMap((char, i) =>
+      char === " " || char === "/" ? [part.slice(0, i)] : [],
+    ),
+  ];
+  const top = (row: FieldRow) => at(row.record, row.part!.split("/")[0]!);
+  const beneath = new Set(
+    rows.flatMap(({ part, record }) =>
+      part === undefined ? [] : prefixes(part).map((way) => at(record, way)),
+    ),
+  );
+  const links = (row: FieldRow) => beneath.has(at(row.record, wayOf(row)));
   const named = rows.filter((row) => row.name === property);
-  const onParts = named.filter(
-    (row): row is FieldRow & { part: string } =>
-      row.part !== undefined && !links(row),
+  const linked = new Set(named.map((it) => at(it.record, wayOf(it))));
+  const wholes = new Set(
+    named.filter((row) => row.part !== undefined && !links(row)).map(top),
   );
   return rows.filter(
     (row) =>
       !links(row) &&
-      (named.includes(row) ||
-        named.some((link) => below(link, row)) ||
-        onParts.some(
-          (own) =>
-            own.record === row.record &&
-            row.part !== undefined &&
-            top(own.part) === top(row.part),
-        )),
+      (row.name === property ||
+        (row.part !== undefined &&
+          (prefixes(row.part).some((way) => linked.has(at(row.record, way))) ||
+            wholes.has(top(row))))),
   );
 }
 
