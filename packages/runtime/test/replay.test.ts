@@ -301,19 +301,19 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
     });
   });
 
-  /**
-   * An import step converts its download with the adapters when its person's scripted input holds no `bridge/` folder.
-   * A rule example's person, who keeps saved output for good, is replayed both ways, the second with the saved output
-   * hidden. The saved side is given adapters that fail when asked, so it proves it read the saved output; the other
-   * side's proof that it converted is that its person holds no `bridge/` folder, which is what makes the replay convert.
-   * @rule runtime/the-kit.feature Check 4
-   */
   const THE_DOWNLOAD =
     "a download's import writes its label, its start, its association and the document it kept";
   for (const [kind, example] of [
     ["a FHIR pull through the fhir-r4 adapter", A_PULL],
     ["a C-CDA download through the ccda adapter, with findings", THE_DOWNLOAD],
   ] as const) {
+    /**
+     * An import step converts its download with the adapters when its person's scripted input holds no `bridge/` folder.
+     * A rule example's person, who keeps saved output for good, is replayed both ways, the second with the saved output
+     * hidden. The saved side is given adapters that fail when asked, so it proves it read the saved output; the other
+     * side's proof that it converted is that its person holds no `bridge/` folder, which is what makes the replay convert.
+     * @rule runtime/the-kit.feature Check 4
+     */
     describe(`given a person who saves no Bridge output, with ${kind}`, () => {
       let saved: MemoryFiles;
       let converted: MemoryFiles;

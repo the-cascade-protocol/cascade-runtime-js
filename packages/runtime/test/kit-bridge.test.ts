@@ -74,6 +74,7 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
       });
       documents = [];
       savedFiles = [];
+      let accepted = 0;
       for (const { converted, documents: imported } of imports) {
         savedFiles.push(
           ...(await files.list(`${converted}/`))
@@ -84,13 +85,12 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
           const at = `${converted}/${stem}/`;
           const saved = await files.read(`${at}graph.ttl`);
           const savedFindings = await files.read(`${at}findings.ttl`);
+          const unaccepted =
+            (await files.read(`${at}unaccepted.txt`)) !== undefined;
+          if (!repeated && !unaccepted) accepted += 1;
           if (saved === undefined) {
             // The kit saves no graph for a document no adapter accepts, or one an earlier step converted.
-            assert.ok(
-              repeated ||
-                (await files.read(`${at}unaccepted.txt`)) !== undefined,
-              `${at} is saved`,
-            );
+            assert.ok(repeated || unaccepted, `${at} is saved`);
             continue;
           }
           assert.ok(savedFindings, `${at} is saved`);
@@ -106,10 +106,11 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
           });
         }
       }
+      assert.ok(accepted > 0, "the story imports a document the kit accepts");
       assert.equal(
-        documents.length,
         savedFiles.filter((path) => path.endsWith("/graph.ttl")).length,
-        "the documents the story imports that the kit saves a graph for",
+        accepted,
+        "the graphs the kit saves, against the documents the story imports that are neither repeated nor unaccepted",
       );
     });
 
