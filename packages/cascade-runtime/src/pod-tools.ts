@@ -182,7 +182,7 @@ export async function entriesNamed(
   return found;
 }
 
-/** The questions `ask` offers: the person's own records, what their reports and notes say, who they are, where an entry came from and what needs review. Never free SPARQL. */
+/** The questions `ask` offers: the person's own records, what their reports and notes say, who they are, where an entry came from, every field of an entry and what needs review. Never free SPARQL. */
 export const QUESTIONS = [
   "pod/My active allergies",
   "pod/My active conditions",
@@ -196,6 +196,7 @@ export const QUESTIONS = [
   "pod/My reports, notes and documents",
   "pod/The person this pod is about",
   "entry/Where it came from",
+  "entry/What it shows",
   "entry/What needs review",
 ];
 /** The views the compact read leaves out, each beside the view that holds every one of its entries with its status. */
@@ -609,7 +610,7 @@ export const TOOLS: readonly PodTool[] = (
     ),
     {
       name: "ask",
-      description: `A pod's records by the name of a question, as rows, each naming its entry and the records, documents and hospitals it came from: its allergies with their reactions and severity, conditions (active, or all with each ruled out or resolved one and when it ended), medications (active, or all with when each started and stopped) with each source's own status, lab results with their flags and reference ranges, immunizations, procedures, the text a source wrote for a lab result, procedure or medication, genetic variants, the person it is about with each source's date of birth, gender and death, where an entry came from, or which entries need review and why. With format compact and no question, the whole pod in one read, a page of at most ${PAGE_CHARACTERS} characters at a time: ${COMPACT_QUESTIONS.join(", ")}, each view's rows tab-separated with its count, each entry by a short handle that can be cited as its entry, each source by a short name its legend explains. It leaves out ${Object.keys(LEFT_OUT_OF_THE_COMPACT_READ).join(" and ")}, whose entries are all in the history beside them, and when each record arrived; ${PROVENANCE_QUESTION} with entries gives an entry's records and documents. A record the pod leaves out of every view (entered in error at its source, an allergy its source refutes, a record about no one known to be the person, or one a judgment sets aside) is in no question's answer.`,
+      description: `A pod's records by the name of a question, as rows, each naming its entry and the records, documents and hospitals it came from: its allergies with their reactions and severity, conditions (active, or all with each ruled out or resolved one and when it ended), medications (active, or all with when each started and stopped) with each source's own status, lab results with their flags and reference ranges, immunizations, procedures, the text a source wrote for a lab result, procedure or medication, genetic variants, the person it is about with each source's date of birth, gender and death, where an entry came from, or which entries need review and why. With format compact and no question, the whole pod in one read, a page of at most ${PAGE_CHARACTERS} characters at a time: ${COMPACT_QUESTIONS.join(", ")}, each view's rows tab-separated with its count, each entry by a short handle that can be cited as its entry, each source by a short name its legend explains. It leaves out ${Object.keys(LEFT_OUT_OF_THE_COMPACT_READ).join(" and ")}, whose entries are all in the history beside them, and when each record arrived; ${PROVENANCE_QUESTION} with entries gives an entry's records and documents, and entry/What it shows with entries every field of an entry, each with its source, and for a dose or a reference bound the part it sits on, which a reply can cite by the field's name. A record the pod leaves out of every view (entered in error at its source, an allergy its source refutes, a record about no one known to be the person, or one a judgment sets aside) is in no question's answer.`,
       inputSchema: {
         type: "object",
         properties: {

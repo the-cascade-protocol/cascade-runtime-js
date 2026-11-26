@@ -19,8 +19,8 @@ import {
 } from "cascade-runtime";
 import { checkCopiedReply } from "cascade-runtime/copied-reply";
 import { readConfig, resolveVocabulary } from "@cascade-runtime/runtime/node";
-// The package exports neither: they exist to be held to the vocabulary, which is what the last two leaves do.
-import { POD_FIELDS, POD_NOT_CHECKABLE } from "../src/citations.js";
+// The package does not export it: it exists to be held to the vocabulary, which is what the last leaf does.
+import { POD_FIELDS } from "../src/citations.js";
 
 const read = (name: string): unknown =>
   JSON.parse(
@@ -204,39 +204,6 @@ function beyondStructuredOutput(
   ];
 }
 
-/** Nodes the views construct beside the view entry, which the entry question leaves out; they are not fields. */
-const APART = new Set([
-  "valuesOfMember",
-  "memberCurrentValues",
-  "paddedDateTime",
-  "paddedDateTimeProperty",
-  "timeAsWritten",
-  "referenceRangeLow",
-  "referenceRangeHigh",
-  "decimalValue",
-  "writtenValue",
-  "ucumUnit",
-  "unitText",
-  "quantityComparator",
-  "structuredDosage",
-  "dosageDoseQuantity",
-  "dosageRepeatFrequency",
-  "dosageRepeatPeriod",
-  "dosageRepeatPeriodUnit",
-  "dosageBoundsPeriodStart",
-  "dosageBoundsPeriodEnd",
-  "dosageRouteCode",
-  "dosageRouteCodeInOtherSystem",
-]);
-
-/** Fields a derivation, not a view, puts on a view entry. */
-const DERIVED = [
-  "dateFrom",
-  "medicationUseStartDateFrom",
-  "prescriptionWrittenDateFrom",
-  "type",
-];
-
 /** The field names one view's CONSTRUCT template writes; it throws, saying what to do, on a view or a prefix it cannot read. */
 function constructedBy(file: string, text: string): string[] {
   const from = text.indexOf("CONSTRUCT {");
@@ -253,9 +220,9 @@ function constructedBy(file: string, text: string): string[] {
     if (!["cascade", "prov", "obo"].includes(at!))
       throw new Error(
         `${file} writes ${at}:${name}, a prefix this test does not read, so a field could be missed: ` +
-          `add "${at}" to the prefixes read in constructedBy, then map the field in POD_FIELDS or POD_NOT_CHECKABLE`,
+          `add "${at}" to the prefixes read in constructedBy`,
       );
-    if (/^[a-z]|^RO_/.test(name!) && !APART.has(name!)) names.push(name!);
+    if (/^[a-z]|^RO_/.test(name!)) names.push(name!);
   }
   if (/<https?:/.test(template))
     throw new Error(
@@ -447,7 +414,7 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       ]),
     ];
     const askWith =
-      (...more: object[]) =>
+      (...more: Record<string, string>[]) =>
       async (question: string) =>
         question === "entry/What it shows"
           ? [...priya[question]!, ...more]
@@ -472,32 +439,32 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       );
       assert.deepEqual(reasons([dose!, how!]), ["ok", "ok"]);
       assert.deepEqual(dose!.filled!.held, [
-        "structuredDosage 1/dosageDoseQuantity writtenValue 2",
-        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "S3 structuredDosage 1/dosageDoseQuantity writtenValue 2",
+        "S3 structuredDosage 1/dosageDoseQuantity unitText tablet",
       ]);
       assert.deepEqual(how!.filled!.held, [
-        "structuredDosage 1 dosageRepeatFrequency 3",
-        "structuredDosage 1 dosageRepeatPeriod 1",
-        "structuredDosage 1 dosageRepeatPeriodUnit d",
-        "structuredDosage 1 dosageRouteCode http://snomed.info/id/26643006",
-        "structuredDosage 1/dosageDoseQuantity writtenValue 2",
-        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "S3 structuredDosage 1 dosageRepeatFrequency 3",
+        "S3 structuredDosage 1 dosageRepeatPeriod 1",
+        "S3 structuredDosage 1 dosageRepeatPeriodUnit d",
+        "S3 structuredDosage 1 dosageRouteCode http://snomed.info/id/26643006",
+        "S3 structuredDosage 1/dosageDoseQuantity writtenValue 2",
+        "S3 structuredDosage 1/dosageDoseQuantity unitText tablet",
       ]);
     });
 
-    it("returns each source's part when no source is named, and the field's value when it links no part", async () => {
+    it("returns each source's part, beside its source, when none is named, and the field's value when it links no part", async () => {
       const [dose, intent] = await pointedIn(
         medication,
         fact(MED, "value", { property: "dosageDoseQuantity" }),
         fact(MED, "status", { property: "medicationRequestIntent" }),
       );
       assert.deepEqual(dose!.filled!.held, [
-        "structuredDosage 1/dosageDoseQuantity writtenValue 2",
-        "structuredDosage 1/dosageDoseQuantity unitText tablet",
-        "structuredDosage 1/dosageDoseQuantity writtenValue 1",
-        "structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "S3 structuredDosage 1/dosageDoseQuantity writtenValue 2",
+        "S3 structuredDosage 1/dosageDoseQuantity unitText tablet",
+        "S12 structuredDosage 1/dosageDoseQuantity writtenValue 1",
+        "S12 structuredDosage 1/dosageDoseQuantity unitText tablet",
       ]);
-      assert.deepEqual(intent!.filled!.held, ["order"]);
+      assert.deepEqual(intent!.filled!.held, ["S3 order"]);
     });
 
     it("returns `no such field` for a property the view entry, or the source named, does not hold", async () => {
@@ -534,8 +501,8 @@ describe("Checking a model's reply against a person's records · checkReply(), r
       assert.deepEqual(result!.filled!.held, ["6.9"]);
       assert.equal(result!.filled!.value, "6.9 %");
       assert.deepEqual(high!.filled!.held, [
-        "referenceRangeHigh writtenValue 5.6",
-        "referenceRangeHigh resultValueText 5.6",
+        "S3 referenceRangeHigh writtenValue 5.6",
+        "S3 referenceRangeHigh resultValueText 5.6",
       ]);
     });
   });
@@ -978,35 +945,13 @@ describe("Checking a model's reply against a person's records · checkReply(), r
   });
 
   describe("given the fields the vocabulary's views write on a view entry", () => {
-    it("has every field the views write on a view entry either one a fact can rest on or listed as one no fact can, and none as both", async () => {
+    it("has a view that writes every field a kind is mapped to", async () => {
       const fields = await viewFields();
       assert.ok(fields.length > 40, "the views were read");
-      const unmapped = fields.filter(
-        (name) => !(name in POD_FIELDS) && !POD_NOT_CHECKABLE.includes(name),
-      );
       assert.deepEqual(
-        unmapped,
+        Object.keys(POD_FIELDS).filter((name) => !fields.includes(name)),
         [],
-        `the views construct ${unmapped.join(", ")}, which the checker does not know. If a view now sends a field: map it in ` +
-          `POD_FIELDS, or list it in POD_NOT_CHECKABLE. If the vocabulary change is not on this branch: land this runtime ` +
-          `PR with the vocabulary PR, each naming the other on a Depends-On line. If it is a helper node beside the view entry: ` +
-          `add it to APART in this test`,
-      );
-      assert.deepEqual(
-        POD_NOT_CHECKABLE.filter((name) => name in POD_FIELDS),
-        [],
-        "a field is checkable or not, never both: remove it from one of POD_FIELDS and POD_NOT_CHECKABLE",
-      );
-    });
-
-    it("lists no field that no view writes", async () => {
-      const fields = await viewFields();
-      assert.deepEqual(
-        [...Object.keys(POD_FIELDS), ...POD_NOT_CHECKABLE].filter(
-          (name) => !fields.includes(name) && !DERIVED.includes(name),
-        ),
-        [],
-        "a field no view sends is no coverage: remove it from POD_FIELDS or POD_NOT_CHECKABLE, or add it to DERIVED if a derivation puts it on the view entry",
+        "a field no view writes is no coverage: remove it from POD_FIELDS. Any other field a view writes is cited by its name, as a `property`, with nothing to map",
       );
     });
   });

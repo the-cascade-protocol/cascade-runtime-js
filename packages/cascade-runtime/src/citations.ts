@@ -1334,38 +1334,6 @@ export const POD_FIELDS: Readonly<Record<string, readonly (keyof Fields)[]>> = {
   deceased: ["value"],
 };
 
-/**
- * Pod fields no citation can be checked against: links among records, ranges, interpretations and categories, and a
- * date that is none of the kinds a citation's date names (`dispenseRequestValidityPeriodStart` and `dispenseRequestValidityPeriodEnd` are never the start or end of use).
- */
-export const POD_NOT_CHECKABLE: readonly string[] = [
-  "type",
-  "leadMember",
-  "entryMember",
-  "statusFrom",
-  "dateFrom",
-  "medicationUseStartDateFrom",
-  "prescriptionWrittenDateFrom",
-  "referenceRangeText",
-  "resultInterpretationCode",
-  "reportCategory",
-  "allergySeverity",
-  "allergyCriticality",
-  "allergyCategory",
-  "medicationRequestIntent",
-  "courseOfTherapyType",
-  "dispenseRequestValidityPeriodStart",
-  "dispenseRequestValidityPeriodEnd",
-  "wasAttributedTo",
-  "authorizingPrescription",
-  "reasonCondition",
-  "reasonCode",
-  "reasonCodeInOtherSystem",
-  "acmgClassification",
-  "subjectVariant",
-  "RO_0002351",
-];
-
 const MEMBER_PREFIX = /^(urn:uuid:\S+) /;
 
 /** A value a pod holds of an entry or of the person: the kind of field it is, and the record that states it, if one does. */
@@ -1376,7 +1344,10 @@ export interface Held {
   readonly record?: string;
 }
 
-/** What an entry's rows of `entry/What it shows` hold, value by value. */
+/**
+ * What an entry's rows of `entry/What it shows` hold, value by value. A value on a part (a dose, a reference bound) is
+ * of that part, never of the entry: it is held under no kind, however its field is named.
+ */
 export function entryHeld(
   rows: readonly Readonly<Record<string, string>>[],
 ): Held[] {
@@ -1390,7 +1361,9 @@ export function entryHeld(
         : row.value;
     const by =
       row.from === undefined || row.from === "" ? {} : { record: row.from };
-    for (const kind of POD_FIELDS[name] ?? []) {
+    const kinds =
+      row.part === undefined || row.part === "" ? POD_FIELDS[name] : undefined;
+    for (const kind of kinds ?? []) {
       held.push({ kind, value, ...by });
       const shown = kind === "code" ? shownCode(value) : undefined;
       if (shown !== undefined) held.push({ kind: "code", value: shown, ...by });
@@ -1398,6 +1371,68 @@ export function entryHeld(
   }
   return held;
 }
+
+/** A row of `entry/What it shows`: a field's local name and value, the part it sits on if it sits on one, and the record that states it. */
+export interface FieldRow {
+  readonly name: string;
+  readonly value: string;
+  /** The way to the part from the member's values, as the question's `?part` writes it. */
+  readonly part?: string;
+  readonly record?: string;
+}
+
+/** An entry's rows of `entry/What it shows` by field name, whatever the field is. */
+export function entryFieldRows(
+  rows: readonly Readonly<Record<string, string>>[],
+): FieldRow[] {
+  return rows.flatMap((row) =>
+    row.value === undefined
+      ? []
+      : [
+          {
+            name: (row.field ?? "").split(/[#/:]/).pop() ?? "",
+            value: row.value,
+            ...(row.part === undefined || row.part === ""
+              ? {}
+              : { part: row.part }),
+            ...(row.from === undefined || row.from === ""
+              ? {}
+              : { record: row.from }),
+          },
+        ],
+  );
+}
+
+/**
+ * The rows a fact that names `property` rests on: the rows of that field, and for a field that links a part, every row
+ * of the part beneath it (its own link rows leave no row of their own). A part is beneath a link when the way to it
+ * begins with the link's own way, so a reader needs no node IRI.
+ */
+export function ofProperty(
+  rows: readonly FieldRow[],
+  property: string,
+): FieldRow[] {
+  const below = (link: FieldRow, row: FieldRow) => {
+    const way = `${link.part === undefined ? "" : `${link.part}/`}${link.name}`;
+    return (
+      row.record === link.record &&
+      row.part !== undefined &&
+      (row.part === way ||
+        row.part.startsWith(`${way} `) ||
+        row.part.startsWith(`${way}/`))
+    );
+  };
+  const named = rows.filter((row) => row.name === property);
+  return rows.filter(
+    (row) =>
+      (named.includes(row) || named.some((link) => below(link, row))) &&
+      !rows.some((under) => below(row, under)),
+  );
+}
+
+/** A row as a reader is shown it: its value, and for one on a part, the way to the part and the field's name before it. */
+export const shownRow = ({ name, value, part }: FieldRow): string =>
+  part === undefined ? value : `${part} ${name} ${value}`;
 
 /** What the person's row of `pod/The person this pod is about` holds: each part of a column is "<record> <value>". */
 export function personHeld(row: Row): Held[] {
