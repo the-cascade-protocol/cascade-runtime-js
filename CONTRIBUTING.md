@@ -32,7 +32,9 @@ npm test
 
 `npm test` transpiles without checking types, so run `npm run typecheck` before you push. `npm run format` fixes what the
 formatting check in `npm run lint` finds. The suite runs in seconds. While you work, pass node's own test flags through
-it, for example `npm test -- --test-name-pattern="<words from a test name>"`.
+it, for example `npm test -- --test-name-pattern="<words from a test name>"`. The suite runs at most 3 test files at once
+(one fewer than your processors if that is less) and fails a test or hook that takes longer than 300 seconds, naming it, and ends the run when every test has finished or timed out;
+`CASCADE_TEST_CONCURRENCY` and `CASCADE_TEST_TIMEOUT` (milliseconds) change either.
 
 The runtime reads the vocabulary and the adapters from the repositories [`cascade-runtime.json`](cascade-runtime.json) names; CI checks them out beside this repository.
 
@@ -55,10 +57,9 @@ and a failed example's report names its rule and the step that failed.
 `--folder <repository>=<folder>` hands in a folder for a repository, and
 `--feature <path>` runs only that feature file of the vocabulary.
 
-`npm test` runs the command once and asserts on its report. With
-`CASCADE_CONFORMANCE_REPORT=<report>` it asserts on that report instead and
-does not run the command; CI hands it the report its compatibility check wrote.
-A pull request's CI runs the command once, on Oxigraph's native build; a push to
+`npm test` does not run the command: the cases that assert on a conformance report are skipped. With
+`CASCADE_CONFORMANCE_REPORT=<report>` they run against that report; CI's `conformance (native)` job does that on every
+event, with the report it wrote. A pull request's CI runs the command once, on Oxigraph's native build; a push to
 main and the nightly run run it on the WebAssembly build and the native build,
 and every example and check must have the same outcome on both.
 

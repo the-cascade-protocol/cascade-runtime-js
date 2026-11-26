@@ -120,6 +120,10 @@ jobs:
     name: tests and conformance
     if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
+    # A job that runs tests or the conformance command is timed out at about twice the longest green run among the last
+    # 40 runs of this workflow, rounded up, so that a hang fails in minutes and does not hold a runner for GitHub's six
+    # hours. `docs site` and `package` have more, as network installs can stall.
+    timeout-minutes: 21
     # The suite's tests reach no network (packages/cascade-runtime/test/offline.ts); the jobs that install the package, which fetch, leave this unset.
     env:
       CASCADE_TEST_OFFLINE: "1"
@@ -224,17 +228,16 @@ jobs:
       # random order: one that needs another to run first fails here. The seed is in the log; rerun with
       # --test-random-seed=N to repeat it. The type check and the lint are the `lint and types` job's.
       # On a pull request this is the suite's one run, on the WebAssembly build; `tests (native)` runs it on the native
-      # build after the merge. The conformance report is asserted on in `conformance (native)`, which wrote it, so the
-      # cases that read it are skipped here.
+      # build after the merge. The conformance report is asserted on in `conformance (native)`, which wrote it, and
+      # scripts/test.mjs skips the cases that read it unless CASCADE_CONFORMANCE_REPORT names one, as it does here off a
+      # pull request.
       - name: Tests in random order
         id: listed
         if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
         shell: bash
         run: |
-          skip=()
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then skip=(--test-skip-pattern="Reporting a conformance run"); fi
           node scripts/transpile.mjs
-          node scripts/test.mjs --listed --test-randomize "${skip[@]}" \
+          node scripts/test.mjs --listed --test-randomize \
             --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-listed.xml" \
             --test-reporter=spec --test-reporter-destination=stdout
       # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite and keeps its report:
@@ -245,9 +248,7 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
         shell: bash
         run: |
-          skip=()
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then skip=(--test-skip-pattern="Reporting a conformance run"); fi
-          node scripts/test.mjs --unlisted "${skip[@]}" \
+          node scripts/test.mjs --unlisted \
             --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-unlisted.xml" \
             --test-reporter=spec --test-reporter-destination=stdout
         env:
@@ -288,6 +289,7 @@ jobs:
   conformance-native:
     name: conformance (native)
     runs-on: ubuntu-latest
+    timeout-minutes: 19
     env:
       CASCADE_TEST_OFFLINE: "1"
     # The start action's comment on the pull request.
@@ -360,8 +362,9 @@ jobs:
           grep -q "on Oxigraph's native build" "$RUNNER_TEMP/native.log"
           node scripts/same-outcomes.mjs "$RUNNER_TEMP/wasm.nt" "$RUNNER_TEMP/native.nt"
       # The cases that assert on the report just written, the start step's on a pull request, instead of running the
-      # command again. `tests and conformance` skips them on a pull request and `tests (native)` always, so this is where
-      # they run: that one test file only, not every file asked which of its cases match.
+      # command again. scripts/test.mjs skips them wherever no report is named, which is every job that runs the suite on a
+      # pull request, a push or by hand, so this is where they run on each event: that one test file only, not every file
+      # asked which of its cases match.
       - name: The report the conformance command wrote reads as it should
         if: ${{ !cancelled() }}
         env:
@@ -400,7 +403,7 @@ jobs:
     name: tests (native)
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     env:
       CASCADE_TEST_OFFLINE: "1"
     defaults:
@@ -453,7 +456,7 @@ jobs:
         env:
           CASCADE_OXIGRAPH: native
           GITHUB_TOKEN: ${{ github.token }}
-        run: npm test -- --test-skip-pattern="Reporting a conformance run"
+        run: npm test
 
   # The docs site as Pages would serve it: `build-pages` runs the same command, and this job keeps the tree it wrote.
   # After the merge, on a push, nightly and by hand; on a pull request only when it touches what the site is built from
@@ -463,6 +466,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.docs == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       CASCADE_ROWS_CACHE: ${{ github.workspace }}/cascade-runtime-js/.rows-cache
     # The start action's comment on the pull request is the tests job's to post.
@@ -928,6 +932,7 @@ jobs:
     name: conformance
     if: ${{ (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     defaults:
       run:
         working-directory: cascade-runtime-js
@@ -1387,6 +1392,7 @@ jobs:
   package:
     name: package
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     env:
       CASCADE_ROWS_CACHE: ${{ github.workspace }}/cascade-runtime-js/.rows-cache
     defaults:
