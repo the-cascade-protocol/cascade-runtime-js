@@ -359,7 +359,16 @@ a column is a list, read it as its array. `ask` with a query of your own has no 
   `?statuses`, each record's own status and the day it ended, so a medication
   one hospital stopped and another still lists says both, `?dosages`, each record
   that states a dosage, "<record> <text>", a list (none when no record states
-  one), `?narrativeTexts`, the text each record's source wrote for it, such as a
+  one), `?structuredDosages`, how a medicine is to be taken as the source structured it, one item
+  for each dosage of each record, "<record> dosage <n>" (n the dosage's number in its source) then,
+  each after ", " and in this order, "<frequency> per <period> <unit>", "from <start>", "until <end>",
+  "route <code>" for each route and last "dose <comparator><number> <unit>"; these are the source's
+  values with nothing computed or rounded, a part the source does not state is left out, and
+  a dosage that states nothing is the record and number alone, a list (none when no
+  record has one); `?prescriptionDetails`, one item for each record that states any of its
+  intent, course of therapy and dispensing window, "<record> intent <intent>, course <course>,
+  dispense request valid from <start>, dispense request valid until <end>", a list (none when no record states one),
+  `?narrativeTexts`, the text each record's source wrote for it, such as a
   stop reason, in the same form, `?reasons`, what each record says the
   medication was given for, a list (none when no record says), each as
   "<record> for <what>". A name or a code may itself hold ", ", " for " and " in
@@ -389,7 +398,7 @@ a column is a list, read it as its array. `ask` with a query of your own has no 
   stopped, paused, unknown or entered in error), which says whether the
   medication is still taken; `?records` is how many records its `?entry` joins;
   `?statuses` gives each record's own status and end, as in
-  `pod/My active medications`, `?dosages` the dosage each record states, `?narrativeTexts` the text each record's source wrote for it, such as a stop reason, `?reasons` what each record says the medication was given for, as in `pod/My active medications`, and `?sources` each record's source.
+  `pod/My active medications`, `?dosages` the dosage each record states, `?structuredDosages` and `?prescriptionDetails` as in `pod/My active medications` (how the source structured each dosage, item by item with its record, its values with nothing computed, and each record's intent, course and dispensing window), `?narrativeTexts` the text each record's source wrote for it, such as a stop reason, `?reasons` what each record says the medication was given for, as in `pod/My active medications`, and `?sources` each record's source.
 - `pod/My procedures`: procedures, newest first (`?performed`, `?procedure`,
   `?procedureCode`, `?status`, `?records`, `?entry`), with the text each record's
   source wrote for it, such as the finding beside a screening
