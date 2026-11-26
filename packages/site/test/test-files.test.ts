@@ -72,10 +72,7 @@ describe("Setting how a suite runs · scripts/test-files.mjs", () => {
     });
 
     it("fails a test that runs longer than 180 seconds, with nothing set", () => {
-      assert.equal(
-        count(suiteOptions([], {}, 8), "--test-timeout"),
-        "180000",
-      );
+      assert.equal(count(suiteOptions([], {}, 8), "--test-timeout"), "180000");
     });
 
     it("refuses a variable that is not a whole number above 0", () => {
