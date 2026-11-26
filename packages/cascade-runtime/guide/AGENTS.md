@@ -955,7 +955,7 @@ A version that does not descend from the one held of its series is never kept.
 - The feed is a draft: until it publishes a series, a rule reading its kind
   joins nothing.
 - Alex's story runs into 2027: a record entered today orders before hers.
-- Node 22 or later, the pod in a folder or in memory; each call rebuilds its views.
+- Node 24 or later, the pod in a folder or in memory; each call rebuilds its views.
 - Sign-in reaches only the test directory: the demo hospitals and the SMART
   launcher, no real hospital. A sign-in lasts one pull: no refresh, no staying
   signed in.
