@@ -33,8 +33,10 @@ npm test
 `npm test` transpiles without checking types, so run `npm run typecheck` before you push. `npm run format` fixes what the
 formatting check in `npm run lint` finds. The suite runs in seconds. While you work, pass node's own test flags through
 it, for example `npm test -- --test-name-pattern="<words from a test name>"`. The suite runs at most 3 test files at once
-(one fewer than your processors if that is less) and fails a test or hook that takes longer than 300 seconds, naming it, and ends the run when every test has finished or timed out;
-`CASCADE_TEST_CONCURRENCY` and `CASCADE_TEST_TIMEOUT` (milliseconds) change either.
+(one fewer than your processors if that is less) and fails a test or hook that takes longer than 300 seconds, naming it;
+`CASCADE_TEST_CONCURRENCY` and `CASCADE_TEST_TIMEOUT` (milliseconds) change either. It does not pass `--test-force-exit`,
+which ended the run before the JUnit reporter had the last events and left describes unclosed in the report; a test that
+hangs on an open handle is ended by the timeout, and a hung job by its `timeout-minutes`.
 
 The runtime reads the vocabulary and the adapters from the repositories [`cascade-runtime.json`](cascade-runtime.json) names; CI checks them out beside this repository.
 
