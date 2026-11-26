@@ -26,6 +26,7 @@ import { pid, platform } from "node:process";
 import { pathToFileURL } from "node:url";
 import { type Files, relative, sameBytes } from "../files.js";
 import { timedAside } from "../probe.js";
+import { flushed } from "./flushed.js";
 import { Refusal } from "../step.js";
 
 /** The name of a file being written, which is no file of the folder until it is renamed over its name. */
@@ -98,7 +99,7 @@ async function writtenAndFlushed(
   const handle = await open(path, isNew ? "wx" : "w");
   try {
     await handle.writeFile(bytes);
-    await handle.sync();
+    await flushed(handle);
   } finally {
     await handle.close();
   }

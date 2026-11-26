@@ -3,6 +3,7 @@ import { access, mkdir, open, rename, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { probed, recorded, timedAside } from "../probe.js";
+import { flushed } from "./flushed.js";
 import { Worker } from "node:worker_threads";
 import {
   type Database,
@@ -166,7 +167,7 @@ async function removed(paths: readonly string[]): Promise<void> {
 async function synced(path: string, flags: "r" | "r+"): Promise<void> {
   const handle = await open(path, flags);
   try {
-    await handle.sync();
+    await flushed(handle);
   } finally {
     await handle.close();
   }

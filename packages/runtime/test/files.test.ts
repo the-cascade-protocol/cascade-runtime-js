@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  type FileHandle,
+  mkdir,
+  mkdtemp,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -10,6 +16,7 @@ import {
   packFolder,
   unpackFolder,
 } from "../src/folder-pack.js";
+import { flushed } from "../src/node/flushed.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import { FetchedFiles } from "../src/web/fetched-files.js";
 import { got, type Kept, kept } from "./kept.js";
@@ -261,6 +268,22 @@ describe("Reading and writing files by path · Files, MemoryFiles, FolderFiles, 
 
     it("lists another program's file whose name ends as a half-written file's does", () => {
       assert.ok(got(outcome).listed.has("held.json.notmine.writing"));
+    });
+  });
+
+  /** A handle whose flush fails with the code a platform gives: Node 24's permission model refuses `fsync` with `ERR_ACCESS_DENIED`. */
+  describe("given a file handle whose flush is refused", () => {
+    const refusedWith = (code: string): FileHandle =>
+      ({
+        sync: () => Promise.reject(Object.assign(new Error(code), { code })),
+      }) as unknown as FileHandle;
+
+    it("goes on when the permission model refuses the flush", async () => {
+      await flushed(refusedWith("ERR_ACCESS_DENIED"));
+    });
+
+    it("throws any other refusal of the flush", async () => {
+      await assert.rejects(flushed(refusedWith("EIO")), { code: "EIO" });
     });
   });
 
