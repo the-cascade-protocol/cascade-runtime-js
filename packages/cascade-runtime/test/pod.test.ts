@@ -5245,7 +5245,11 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
           return Promise.reject(new Error("the Bridge was loaded"));
         },
       };
-      await replayKitFrom(parts, "martin-okafor", join(parent(), "martin"));
+      await replayKitFrom(
+        parts,
+        "martin-okafor",
+        join(pods, "kits-martin", "martin"),
+      );
       assert.equal(loads, 0);
     });
 

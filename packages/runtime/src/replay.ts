@@ -67,6 +67,17 @@ function inStory(folder: string, path: string): string {
   return folder === "" ? path : `${folder}/${path}`;
 }
 
+/**
+ * Whether a person's scripted input, the story's folder, holds a `bridge/` folder. It then saves the Bridge output of
+ * every import step, and a step it saves none for is an error; a person with none has every import converted.
+ */
+export async function savesBridgeOutput(
+  source: Pick<Files, "list">,
+  folder: string,
+): Promise<boolean> {
+  return (await source.list(`${inStory(folder, "bridge")}/`)).length > 0;
+}
+
 /** The pod's step given a file the step names, named in messages by its path in the story; refused when the story has no such file. */
 async function withStoryFile(
   pod: CorePod,
@@ -160,8 +171,11 @@ function recording(
       convert: async (document, options) => {
         const conversion = await adapter.convert(document, options);
         const stem = stems.get(document.iri);
-        if (stem !== undefined)
-          await kept.write(`${at}/${stem}/graph.ttl`, conversion.graph);
+        if (stem === undefined)
+          throw new Error(
+            `the document ${document.iri} is named by no file of the export, so its conversion has no stem to be kept under`,
+          );
+        await kept.write(`${at}/${stem}/graph.ttl`, conversion.graph);
         return conversion;
       },
     }));
@@ -169,7 +183,7 @@ function recording(
 
 /**
  * An import: its export's or its download's documents, of any media type, converted by the Bridge output the story saved
- * for them, or, for a step that saves none, by the `adapters` given. Those conversions' graphs are also written to `kept`,
+ * for them, or, for a person whose scripted input saves none, by the `adapters` given. Those conversions' graphs are also written to `kept`,
  * where the story would save them.
  */
 export function importing(
@@ -183,7 +197,7 @@ export function importing(
     const converted = inStory(story.folder, happened.converted);
     if (
       adapters !== undefined &&
-      (await story.source.list(`${converted}/`)).length === 0
+      !(await savesBridgeOutput(story.source, story.folder))
     ) {
       const stems =
         kept === undefined ? undefined : await stemsOf(story.source, folder);

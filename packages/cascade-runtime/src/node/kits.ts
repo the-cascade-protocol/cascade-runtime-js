@@ -5,6 +5,7 @@ import {
   kitsOf,
   OxigraphStore,
   Refusal,
+  savesBridgeOutput,
 } from "@cascade-runtime/runtime";
 import {
   featurePod,
@@ -184,46 +185,45 @@ export async function replayKitFrom(
   const through =
     options.through === undefined ? {} : { through: options.through };
   const { local } = parts;
-  const {
-    feature,
-    person,
-    steps: told,
-  } = await featureStory(local.files, path, () => new OxigraphStore(), through);
-  let bridge: Promise<LoadedBridge> | undefined;
-  const converts = await Promise.all(
-    told.map(async ({ happened }) => {
-      if (happened.kind !== "import") return false;
-      const saved = `${feature.folder === "" ? "" : `${feature.folder}/`}${happened.converted}/`;
-      return (await local.files.list(saved)).length === 0;
-    }),
-  );
-  if (converts.includes(true)) {
-    bridge = parts.loadBridge();
-    bridge.catch(() => undefined);
-  }
-  const tables = options.tables ?? (await tablesBeside(dirname(target)));
-  const references = await tables.references();
-  const { steps } = await featurePod(
-    local,
+  const { person, steps: told } = await featureStory(
+    local.files,
     path,
-    new FolderFiles(target, person.address),
-    {
-      ...through,
-      tables: () => Promise.resolve(references),
-      adapters: async () => (await (bridge ??= parts.loadBridge())).adapters,
-    },
-  ).finally(async () => {
-    await (await bridge?.catch(() => undefined))?.close();
-  });
-  await tables.recordOpen(
-    person.address,
-    shipped(references),
-    basename(target),
+    () => new OxigraphStore(),
+    through,
   );
-  return steps.map(({ step, wrote, refused }) => ({
-    step: step.name,
-    kind: step.happened.kind,
-    wrote,
-    ...(refused === undefined ? {} : { refused }),
-  }));
+  let bridge: Promise<LoadedBridge> | undefined;
+  try {
+    if (
+      told.some(({ happened }) => happened.kind === "import") &&
+      !(await savesBridgeOutput(local.files, person.folder))
+    ) {
+      bridge = parts.loadBridge();
+      bridge.catch(() => undefined);
+    }
+    const tables = options.tables ?? (await tablesBeside(dirname(target)));
+    const references = await tables.references();
+    const { steps } = await featurePod(
+      local,
+      path,
+      new FolderFiles(target, person.address),
+      {
+        ...through,
+        tables: () => Promise.resolve(references),
+        adapters: async () => (await (bridge ??= parts.loadBridge())).adapters,
+      },
+    );
+    await tables.recordOpen(
+      person.address,
+      shipped(references),
+      basename(target),
+    );
+    return steps.map(({ step, wrote, refused }) => ({
+      step: step.name,
+      kind: step.happened.kind,
+      wrote,
+      ...(refused === undefined ? {} : { refused }),
+    }));
+  } finally {
+    await (await bridge?.catch(() => undefined))?.close();
+  }
 }

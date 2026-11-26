@@ -156,7 +156,7 @@ export interface ConformanceOptions {
   readonly newPod: (address: string) => Files;
   readonly importers?: readonly Importer[];
   readonly performers?: Performers;
-  /** The adapters an import step is converted with when its kit saves no Bridge output for it, loaded when a step first needs them. */
+  /** The adapters an import step is converted with when its person saves no Bridge output, loaded when a step first needs them; not to be given with an import performer of your own. */
   readonly adapters?: () => Promise<AdaptersOf>;
   readonly derive?: Derive;
   /**
@@ -659,6 +659,13 @@ export async function runConformance(
   options: ConformanceOptions,
 ): Promise<Assertion[]> {
   const { vocabulary } = options;
+  if (
+    options.adapters !== undefined &&
+    options.performers?.import !== undefined
+  )
+    throw new Error(
+      "give `adapters` or an import performer of your own, not both: the adapters make the import performer",
+    );
   const layout =
     options.layout ?? (await Layout.read(vocabulary, options.newStore));
   const run = new Run(options, layout);

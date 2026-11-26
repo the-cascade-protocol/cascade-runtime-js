@@ -338,7 +338,11 @@ describe("Replaying a story into a pod · replay(), PERFORMERS", () => {
       saved = new MemoryFiles(ADDRESS);
       converted = new MemoryFiles(ADDRESS);
       await featurePod(local, MARTIN, saved);
-      ({ steps } = await featurePod(without(local, MARTINS), MARTIN, converted));
+      ({ steps } = await featurePod(
+        without(local, MARTINS),
+        MARTIN,
+        converted,
+      ));
     });
 
     it("replays every step, as it does from the saved output", () => {
