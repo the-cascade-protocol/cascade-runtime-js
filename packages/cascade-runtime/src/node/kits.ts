@@ -184,12 +184,11 @@ export async function replayKitFrom(
   const through =
     options.through === undefined ? {} : { through: options.through };
   const { local } = parts;
-  const { feature, person, steps: told } = await featureStory(
-    local.files,
-    path,
-    () => new OxigraphStore(),
-    through,
-  );
+  const {
+    feature,
+    person,
+    steps: told,
+  } = await featureStory(local.files, path, () => new OxigraphStore(), through);
   let bridge: Promise<LoadedBridge> | undefined;
   const converts = await Promise.all(
     told.map(async ({ happened }) => {
