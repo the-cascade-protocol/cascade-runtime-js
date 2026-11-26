@@ -17,11 +17,17 @@ import { documentName } from "../src/names.js";
 import { FolderFiles } from "../src/node/folder-files.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { localVocabulary, readConfig } from "../src/node/runtime.js";
-import { featurePod } from "../src/node/story-pod.js";
+import { adaptersOfCheckouts, featurePod } from "../src/node/story-pod.js";
 import { probing } from "../src/probe.js";
 import { iri } from "../src/rdf.js";
 import { References } from "../src/references.js";
-import { Replay, type ReplayOptions, titleOf } from "../src/replay.js";
+import {
+  importing,
+  PERFORMERS,
+  Replay,
+  type ReplayOptions,
+  titleOf,
+} from "../src/replay.js";
 import type { Step } from "../src/story.js";
 import { layout, ROOT, RUNTIME, vocabulary } from "./vocabulary.js";
 
@@ -174,6 +180,11 @@ async function storyRuns(): Promise<Runs> {
             newStore,
             runtime: RUNTIME,
             importers: importersNamed(config.importers),
+            // A kit that saves no Bridge output has its downloads converted, as its replay does.
+            performers: {
+              ...PERFORMERS,
+              import: importing(adaptersOfCheckouts),
+            },
           },
           root: { children: new Map() },
         };
