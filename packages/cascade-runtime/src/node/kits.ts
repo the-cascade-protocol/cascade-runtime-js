@@ -13,8 +13,9 @@ import {
 } from "@cascade-runtime/runtime/node";
 import { tablesBeside } from "../index.js";
 import type { Phase } from "../phase.js";
+import type { LoadedBridge } from "../pod.js";
 import { shipped, Tables } from "../tables.js";
-import { installedParts, resolved } from "./resolved.js";
+import { installedParts, resolved, type ResolvedParts } from "./resolved.js";
 import { acceptOptions } from "../options.js";
 
 const KITS = "conformance/";
@@ -152,8 +153,9 @@ export async function setUpTables(pods: string, phase: Phase): Promise<Tables> {
 }
 
 /**
- * A kit's story replayed into a missing or empty folder with the kit's saved Bridge output, through the step named or
- * to the end: the pod keeps the story's address and subject. It is given the tables it is told, by default those of
+ * A kit's story replayed into a missing or empty folder, through the step named or to the end: the pod keeps the
+ * story's address and subject. Each import step is converted with the Bridge and the adapters the package carries, unless
+ * the kit saves its Bridge output. It is given the tables it is told, by default those of
  * the app beside the folder, which `openPod` gives it there, and is recorded as opened with them; the story's own
  * `reference` and `open` steps, which name the kit's own versions, are not performed.
  */
@@ -163,12 +165,14 @@ export async function replayKit(
   options: { through?: string; tables?: Tables } = {},
 ): Promise<readonly KitStep[]> {
   acceptOptions("replayKit", options, { through: true, tables: true });
-  return replayKitFrom(await kitVocabulary(kit), kit, folder, options);
+  const parts = await resolved();
+  await withKit(parts.local, kit);
+  return replayKitFrom(parts, kit, folder, options);
 }
 
-/** `replayKit` from the vocabulary given, which carries the kit. */
+/** `replayKit` from the parts given, whose vocabulary carries the kit. */
 export async function replayKitFrom(
-  local: LocalVocabulary,
+  parts: Pick<ResolvedParts, "local" | "loadBridge">,
   kit: string,
   folder: string,
   options: { through?: string; tables?: Tables } = {},
@@ -179,6 +183,7 @@ export async function replayKitFrom(
   const path = `${KITS}${kit}/${kit}.feature`;
   const through =
     options.through === undefined ? {} : { through: options.through };
+  const { local } = parts;
   const { person } = await featureStory(
     local.files,
     path,
@@ -187,12 +192,19 @@ export async function replayKitFrom(
   );
   const tables = options.tables ?? (await tablesBeside(dirname(target)));
   const references = await tables.references();
+  let bridge: Promise<LoadedBridge> | undefined;
   const { steps } = await featurePod(
     local,
     path,
     new FolderFiles(target, person.address),
-    { ...through, tables: () => Promise.resolve(references) },
-  );
+    {
+      ...through,
+      tables: () => Promise.resolve(references),
+      adapters: async () => (await (bridge ??= parts.loadBridge())).adapters,
+    },
+  ).finally(async () => {
+    await (await bridge?.catch(() => undefined))?.close();
+  });
   await tables.recordOpen(
     person.address,
     shipped(references),

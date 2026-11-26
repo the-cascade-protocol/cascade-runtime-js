@@ -210,9 +210,14 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       });
     });
 
-    it("converts each document to a graph and conversion findings isomorphic to those the kit saves", () => {
+    it("converts each document to a graph and conversion findings isomorphic to those the kit saves", async () => {
       assert.deepEqual(found.differ, []);
-      assert.equal(found.converted, 48);
+      assert.equal(
+        found.converted,
+        (await (await vocabulary()).list("conformance")).filter((path) =>
+          /\/bridge\/.+\/graph\.ttl$/.test(path),
+        ).length,
+      );
     });
 
     it("has no adapter accept the document the kit saves as unaccepted", () => {

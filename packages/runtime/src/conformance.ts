@@ -1,3 +1,4 @@
+import type { AdaptersOf } from "./bridge.js";
 import type { Derive } from "./build.js";
 import { dataset } from "./dataset.js";
 import {
@@ -6,7 +7,7 @@ import {
   featuresOf,
   readFeature,
 } from "./features.js";
-import { type Files, folderOf, readText } from "./files.js";
+import { type Files, folderOf, MemoryFiles, readText } from "./files.js";
 import { Graph } from "./graph.js";
 import type { Importer } from "./importer.js";
 import { keptMatcherJudgments } from "./kept.js";
@@ -31,7 +32,9 @@ import {
 } from "./rdf.js";
 import { referenceIndex, References } from "./references.js";
 import {
+  importing,
   type Performers,
+  PERFORMERS,
   type Proposer,
   Replay,
   type Replayed,
@@ -153,6 +156,8 @@ export interface ConformanceOptions {
   readonly newPod: (address: string) => Files;
   readonly importers?: readonly Importer[];
   readonly performers?: Performers;
+  /** The adapters an import step is converted with when its kit saves no Bridge output for it, loaded when a step first needs them. */
+  readonly adapters?: () => Promise<AdaptersOf>;
   readonly derive?: Derive;
   /**
    * The tools the runtime offers a model, which `When the tools offered a model are listed` lists, or those it offers
@@ -374,9 +379,13 @@ class Run {
     Map<string, Promise<readonly Triple[]>>
   >();
 
+  /** What the replays converted for the import steps whose kits save nothing, where a kit would save it. */
+  readonly converted: Files;
+
   constructor(options: ConformanceOptions, layout: Layout) {
     this.#options = options;
     this.layout = layout;
+    this.converted = new MemoryFiles(options.vocabulary.iri);
   }
 
   compiling(people: ReadonlyMap<string, Person>): Compiling {
@@ -546,9 +555,16 @@ class Run {
           runtime: options.runtime,
           newStore: options.newStore,
           importers: options.importers ?? [],
-          ...(options.performers === undefined
-            ? {}
-            : { performers: options.performers }),
+          ...(options.adapters === undefined
+            ? options.performers === undefined
+              ? {}
+              : { performers: options.performers }
+            : {
+                performers: {
+                  ...(options.performers ?? PERFORMERS),
+                  import: importing(options.adapters, this.converted),
+                },
+              }),
           ...(options.proposer === undefined
             ? {}
             : { proposer: options.proposer }),
@@ -753,6 +769,7 @@ export async function runConformance(
         throw new Error(`${feature.path} tells no story`);
       for (const assertion of await kitChecks({
         vocabulary,
+        converted: run.converted,
         kit: feature.folder,
         folder: person.folder,
         replayed,

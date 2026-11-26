@@ -90,7 +90,7 @@ export async function samplesOf(
   try {
     for (const kit of chosen) {
       const folder = join(replays, kit);
-      const steps = await replayKitFrom(local, kit, folder, {
+      const steps = await replayKitFrom(parts, kit, folder, {
         tables: parts.tables,
       });
       const expected = await refusalsExpected(
