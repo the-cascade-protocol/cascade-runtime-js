@@ -26,8 +26,11 @@ export const REPLY_CONTRACT = `{EXAMPLE}
     "field", the one field of it your point rests on: "value" (its own result), "status", "code", "name", "id",
     "date" (when it happened), "start", "end", "recorded" or "text" (words of its text, such as a note or a report's
     conclusion); with "text", "quote", the words your point rests on, copied exactly from that entry's text. When the
-    entry came from more than one source and your point rests on what one of them says, "source": that source's
-    short name, as the read's legend names it ("S3").
+    point rests on a field none of those names (a dose, how often, a route, a reference limit), also "property": that
+    field's name, as the "field" column of the entry's rows of entry/What it shows gives it (the whole IRI, or just
+    the part after the last "#"); the program then shows that field, and the whole
+    part under it if it links one, as the pod holds it. When the entry came from more than one source and your point
+    rests on what one of them says, "source": that source's short name, as the read's legend names it ("S3").
   - "absences": each thing you say the records lack: "what"; "match", the codes and words a record of it would carry
     ({"codes": [...], "terms": [...]}), with "after": "YYYY-MM-DD" whenever the absence is about a period ("since
     February", "after the stool test", "in the last year"), since only a record from that day on would count against

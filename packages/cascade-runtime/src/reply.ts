@@ -11,17 +11,21 @@ import {
   checkCitation,
   type Citation,
   type DateKind,
+  entryFieldRows,
   entryHeld,
   type Fields,
   fieldsOf,
+  type FieldRow,
   type Held,
   isoDate,
+  ofProperty,
   personHeld,
   podRowsSource,
   type Pointed,
   quoted,
   quoteLongEnough,
   type Ran,
+  shownRows,
   type Source,
   summary,
   type Tie,
@@ -53,6 +57,11 @@ export interface PodReplyFact {
   readonly says: string;
   readonly cite: { readonly entry: string };
   readonly field: FactField;
+  /**
+   * A field's local name as `entry/What it shows` gives it, for a point that rests on a field no kind names (a dose, a
+   * reference limit); with it the fact is held to that field, and `field` is not.
+   */
+  readonly property?: string;
   /** For an entry from several sources, the one whose word the point rests on, by its short name in a read's legend. */
   readonly source?: string;
   /** Words of the entry's text, copied exactly. */
@@ -408,26 +417,49 @@ const bySourceNumber = (a: string, b: string) =>
 /**
  * A fact about a pod against what the pod holds of its entry: the named source is one of the entry's, the named field
  * is held (by that source, when one is named; a value of the entry as a whole is every source's), and a quote is words
- * of its text. What it holds comes back filled, for a reader, whatever the verdict.
+ * of its text. A fact that names a `property` is held to that field, with the part beneath it if it links one, in
+ * place of its kind. What it holds comes back filled, for a reader, whatever the verdict.
  */
 function pointedAt(
   fact: PodReplyFact,
   entry: string,
   held: readonly Held[],
   sources: CompactSources,
+  rows: readonly FieldRow[] = [],
 ): Omit<CheckedFact, "fact"> {
-  const sourceOf = ({ record }: Held) =>
+  const sourceOf = ({ record }: { record?: string }) =>
     record === undefined ? undefined : sources.of(record);
   const named = fact.source;
   const known =
-    named === undefined || held.some((it) => sourceOf(it) === named);
-  const theirs =
-    named === undefined || !known
-      ? held
-      : held.filter((it) => it.record === undefined || sourceOf(it) === named);
+    named === undefined ||
+    held.some((it) => sourceOf(it) === named) ||
+    rows.some((it) => sourceOf(it) === named);
+  const ofNamed = (it: { record?: string }) =>
+    named === undefined ||
+    !known ||
+    it.record === undefined ||
+    sourceOf(it) === named;
+  const theirs = held.filter(ofNamed);
   const fields = fieldsOf(theirs);
   const kind = KIND[fact.field];
-  const values = once(fields[kind]);
+  const ofField =
+    fact.property === undefined
+      ? undefined
+      : ofProperty(
+          rows.filter(ofNamed),
+          fact.property.split(/[#/:]/).pop() ?? "",
+        );
+  const whose = once(ofField?.flatMap((it) => sourceOf(it) ?? []) ?? []);
+  const values =
+    ofField === undefined
+      ? once(fields[kind])
+      : shownRows(
+          ofField,
+          whose.length > 1
+            ? (record) =>
+                record === undefined ? undefined : sources.of(record)
+            : undefined,
+        );
   const value = fields.value[0];
   const dateKind = DATES.includes(kind as DateKind)
     ? (kind as DateKind)
@@ -447,7 +479,10 @@ function pointedAt(
         }),
     ...(date === undefined ? {} : { date, dateKind: dateKind! }),
     held: values,
-    sources: once(theirs.flatMap((it) => sourceOf(it) ?? []))
+    sources: (ofField === undefined
+      ? once(theirs.flatMap((it) => sourceOf(it) ?? []))
+      : whose
+    )
       .sort(bySourceNumber)
       .map((source) =>
         [source, sources.writtenBy(source)].filter(Boolean).join(" "),
@@ -466,7 +501,12 @@ function pointedAt(
           ok: false,
           reason: "no such field",
           missing: [
-            named === undefined ? fact.field : `${fact.field} from ${named}`,
+            [
+              fact.property ?? fact.field,
+              named === undefined ? "" : `from ${named}`,
+            ]
+              .filter(Boolean)
+              .join(" "),
           ],
           shows,
         }
@@ -579,6 +619,7 @@ async function checkReplyUnder(
         rows?.[0]?.entry ?? cited,
         rows === undefined ? personHeld(who!) : entryHeld(rows),
         await named,
+        rows === undefined ? undefined : entryFieldRows(rows),
       );
     }
     const source = pointsAtEntry(fact)

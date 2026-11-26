@@ -101,6 +101,11 @@ export const replySchema = {
           description:
             "The one field of the entry the point rests on: its value, status, code, name, id, a date (when it happened, start, end, recorded) or its text.",
         },
+        property: {
+          type: "string",
+          description:
+            "For a point that rests on a field the kinds above do not name (a dose, how often, a route, a reference limit), that field's name as entry/What it shows gives it (dosageDoseQuantity); the whole part under a field that links one is shown.",
+        },
         source: {
           type: "string",
           description:
