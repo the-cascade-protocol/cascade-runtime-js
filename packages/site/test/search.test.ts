@@ -1,18 +1,7 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
-import { after, before, describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
-import { findRoot } from "@cascade-runtime/runtime/node";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, posix } from "node:path";
+import { before, describe, it } from "node:test";
 import { ADAPTERS_FOLDER } from "../src/adapters.js";
 import {
   agentFiles,
@@ -26,7 +15,7 @@ import { EXPLORER_FILE } from "../src/explorer.js";
 import { SEARCH_SCRIPT } from "../src/search-script.js";
 import { buildTree, type Section } from "../src/sections.js";
 
-const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
+const TREE = process.env["SEARCH_TREE"];
 const text = (what: string) => new TextEncoder().encode(what);
 const read = (tree: ReadonlyMap<string, Uint8Array>, path: string) =>
   new TextDecoder().decode(tree.get(path));
@@ -433,15 +422,13 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
     });
   });
 
-  describe("with the build-pages command, over the hub's own sections", () => {
-    const cli = join(
-      dirname(fileURLToPath(import.meta.url)),
-      "..",
-      "src",
-      "node",
-      "cli.js",
-    );
-    const out = mkdtempSync(join(tmpdir(), "search-pages-"));
+  /** The tree the `docs site` job builds, read where `SEARCH_TREE` names it; run without it, the cases are skipped. */
+  describe("given the built site, in `SEARCH_TREE`", () => {
+    const skip =
+      TREE === undefined
+        ? "SEARCH_TREE is not set: the docs site job builds the tree and names it"
+        : false;
+    const out = TREE ?? "";
     const html: string[] = [];
     const walk = (folder: string): void => {
       for (const name of readdirSync(join(out, folder))) {
@@ -450,135 +437,156 @@ describe("Searching the hub · search.json, search.js, the search box of shell()
         else if (path.endsWith(".html")) html.push(path);
       }
     };
+    /** The folders of the example pods, which the tree holds whole, each with its own pages. */
+    let pods: string[] = [];
+    const inPod = (path: string) => pods.includes(path.split("/")[0] ?? "");
     let rows: SearchRow[];
 
     before(() => {
-      const run = spawnSync(
-        process.execPath,
-        [
-          cli,
-          "build-pages",
-          "--no-kits",
-          "--built",
-          "2026-11-14",
-          "--out",
-          out,
-        ],
-        { encoding: "utf8", cwd: ROOT },
+      if (TREE === undefined) return;
+      pods = readdirSync(out).filter((name) =>
+        existsSync(join(out, name, "pod.json")),
       );
-      assert.equal(run.status, 0, run.stderr);
+      assert.ok(pods.length > 0, `${out} holds no example pod`);
       walk("");
       rows = JSON.parse(
         readFileSync(join(out, SEARCH_FILE), "utf8"),
       ) as SearchRow[];
     });
 
-    after(() => {
-      rmSync(out, { recursive: true, force: true });
-    });
+    it(
+      "answers the words a reader tries as the pages and terms they mean",
+      { skip },
+      () => {
+        const first = (query: string, at: number) =>
+          rank(rows, query)
+            .slice(0, at)
+            .map(({ path }) => path);
+        assert.ok(first("currency", 3).includes("spec/currency.html"));
+        assert.ok(first("naming", 8).includes("spec/naming.html"));
+        assert.deepEqual(rank(rows, "html"), []);
+        for (const query of ["wasDerivedFrom", "prov:wasDerivedFrom"])
+          assert.equal(
+            rank(rows, query)[0]?.path,
+            "terms/prov/properties/wasDerivedFrom.html",
+            query,
+          );
+      },
+    );
 
-    it("answers the words a reader tries as the pages and terms they mean", () => {
-      const first = (query: string, at: number) =>
-        rank(rows, query)
-          .slice(0, at)
-          .map(({ path }) => path);
-      assert.ok(first("currency", 3).includes("spec/currency.html"));
-      assert.ok(first("naming", 8).includes("spec/naming.html"));
-      assert.deepEqual(rank(rows, "html"), []);
-      for (const query of ["wasDerivedFrom", "prov:wasDerivedFrom"])
-        assert.equal(
-          rank(rows, query)[0]?.path,
-          "terms/prov/properties/wasDerivedFrom.html",
-          query,
-        );
-    });
-
-    it("tells every eval page by its kind, titles no page with the site's name and lists no redirect", () => {
-      assert.ok(rows.filter(({ kind }) => kind === "eval").length > 10);
-      assert.ok(
-        rows
-          .filter(({ path }) => path.startsWith("evals/"))
-          .every(({ kind }) => kind === "eval"),
-      );
-      assert.ok(rows.every(({ title }) => !/ [·—] Cascade /.test(title)));
-      assert.ok(!rows.some(({ path }) => path.startsWith("try/")));
-    });
-
-    it("puts the box on every page of the hub, but the evals' own frame, an adapter's explorer with the places it reads, and a page that only redirects", () => {
-      assert.ok(html.length > 30);
-      let boxed = 0;
-      for (const path of html) {
-        const page = readFileSync(join(out, path), "utf8");
-        const folder = posix.dirname(path);
-        const own =
-          path.startsWith("evals/") ||
-          (path.startsWith(ADAPTERS_FOLDER) &&
-            (existsSync(join(out, folder, EXPLORER_FILE)) ||
-              (posix.basename(folder) === "nodes" &&
-                existsSync(
-                  join(out, posix.dirname(folder), EXPLORER_FILE),
-                )))) ||
-          page.includes('http-equiv="refresh"');
-        assert.equal(page.includes('class="sx-find"'), !own, path);
-        if (own) continue;
-        boxed++;
-        const rowsAt = /data-rows="([^"]+)"/.exec(page)?.[1] ?? "";
+    it(
+      "tells every eval page by its kind, titles no page with the site's name and lists no redirect",
+      { skip },
+      () => {
+        assert.ok(rows.filter(({ kind }) => kind === "eval").length > 10);
         assert.ok(
-          existsSync(join(out, posix.join(posix.dirname(path), rowsAt))),
-          `${path}: ${rowsAt} is not a file`,
-        );
-        assert.equal(
-          posix.join(posix.dirname(path), rowsAt),
-          SEARCH_FILE,
-          path,
-        );
-      }
-      assert.ok(boxed > 30);
-    });
-
-    it("lands the name of a term of the vocabulary on its page, first", () => {
-      const terms = rows.filter(({ kind }) => kind === "term");
-      assert.ok(terms.length > 400, `${terms.length} terms`);
-      for (const { path, title } of terms.filter((_, at) => at % 25 === 0)) {
-        const name = title.replace(/^cascade:/, "");
-        const first = rank(rows, name)[0];
-        assert.equal(
-          first?.kind === "term" ? first.title : first?.path,
-          title,
-          name,
-        );
-        assert.match(
-          path,
-          /^terms\/[a-z]+\/(?:properties\/)?[^/]+\.html$/,
-          path,
+          rows
+            .filter(({ path }) => path.startsWith("evals/"))
+            .every(({ kind }) => kind === "eval"),
         );
         assert.ok(
-          readFileSync(join(out, path), "utf8").includes(`<h1 id="${title}">`),
-          path,
+          rows
+            .filter(({ path }) => !inPod(path))
+            .every(({ title }) => !/ [·—] Cascade /.test(title)),
         );
-      }
-    });
+        assert.ok(!rows.some(({ path }) => path.startsWith("try/")));
+      },
+    );
 
-    it("lands the name of a call of the API page on that page, first", () => {
-      const first = rank(rows, "openPod")[0];
-      assert.equal(first?.kind, "call");
-      assert.match(first?.path ?? "", /^api\/index\.html#./);
-    });
+    it(
+      "puts the box on every page of the hub, but the evals' own frame, an adapter's explorer with the places it reads, an example pod's own pages and a page that only redirects",
+      { skip },
+      () => {
+        assert.ok(html.length > 30);
+        let boxed = 0;
+        for (const path of html) {
+          const page = readFileSync(join(out, path), "utf8");
+          const folder = posix.dirname(path);
+          const own =
+            path.startsWith("evals/") ||
+            inPod(path) ||
+            (path.startsWith(ADAPTERS_FOLDER) &&
+              (existsSync(join(out, folder, EXPLORER_FILE)) ||
+                (posix.basename(folder) === "nodes" &&
+                  existsSync(
+                    join(out, posix.dirname(folder), EXPLORER_FILE),
+                  )))) ||
+            page.includes('http-equiv="refresh"');
+          assert.equal(page.includes('class="sx-find"'), !own, path);
+          if (own) continue;
+          boxed++;
+          const rowsAt = /data-rows="([^"]+)"/.exec(page)?.[1] ?? "";
+          assert.ok(
+            existsSync(join(out, posix.join(posix.dirname(path), rowsAt))),
+            `${path}: ${rowsAt} is not a file`,
+          );
+          assert.equal(
+            posix.join(posix.dirname(path), rowsAt),
+            SEARCH_FILE,
+            path,
+          );
+        }
+        assert.ok(boxed > 30);
+      },
+    );
 
-    it("lands every row on a file of the tree, and on an id of it when the row is an anchor", () => {
-      const pages = new Map<string, string>();
-      for (const { path } of rows) {
-        const [file = "", id] = path.split("#");
-        assert.ok(existsSync(join(out, file)), path);
-        if (id === undefined) continue;
-        if (!pages.has(file))
-          pages.set(file, readFileSync(join(out, file), "utf8"));
-        assert.ok(pages.get(file)?.includes(`id="${id}"`), path);
-      }
-      assert.ok(rows.some(({ kind }) => kind === "rule"));
-    });
+    it(
+      "lands the name of a term of the vocabulary on its page, first",
+      { skip },
+      () => {
+        const terms = rows.filter(({ kind }) => kind === "term");
+        assert.ok(terms.length > 400, `${terms.length} terms`);
+        for (const { path, title } of terms.filter((_, at) => at % 25 === 0)) {
+          const name = title.replace(/^cascade:/, "");
+          const first = rank(rows, name)[0];
+          assert.equal(
+            first?.kind === "term" ? first.title : first?.path,
+            title,
+            name,
+          );
+          assert.match(
+            path,
+            /^terms\/[a-z]+\/(?:properties\/)?[^/]+\.html$/,
+            path,
+          );
+          assert.ok(
+            readFileSync(join(out, path), "utf8").includes(
+              `<h1 id="${title}">`,
+            ),
+            path,
+          );
+        }
+      },
+    );
 
-    it("stays under 300 KB", () => {
+    it(
+      "lands the name of a call of the API page on that page, first",
+      { skip },
+      () => {
+        const first = rank(rows, "openPod")[0];
+        assert.equal(first?.kind, "call");
+        assert.match(first?.path ?? "", /^api\/index\.html#./);
+      },
+    );
+
+    it(
+      "lands every row on a file of the tree, and on an id of it when the row is an anchor",
+      { skip },
+      () => {
+        const pages = new Map<string, string>();
+        for (const { path } of rows) {
+          const [file = "", id] = path.split("#");
+          assert.ok(existsSync(join(out, file)), path);
+          if (id === undefined) continue;
+          if (!pages.has(file))
+            pages.set(file, readFileSync(join(out, file), "utf8"));
+          assert.ok(pages.get(file)?.includes(`id="${id}"`), path);
+        }
+        assert.ok(rows.some(({ kind }) => kind === "rule"));
+      },
+    );
+
+    it("stays under 300 KB", { skip }, () => {
       assert.ok(statSync(join(out, SEARCH_FILE)).size < 300_000);
     });
   });

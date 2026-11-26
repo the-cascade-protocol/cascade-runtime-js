@@ -183,10 +183,6 @@ jobs:
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # The checkout-only start step leaves no Python with rdflib, which the search test's hub build needs; the full one
-      # installs the validators' own.
-      - if: ${{ github.event_name == 'pull_request' }}
-        run: python3 -m pip install rdflib==7.6.0
       # Off a pull request: checks the vocabulary and the adapters out beside this repository, and runs the conformance
       # command on them once, on the WebAssembly build: compatibility.json's host is on the native build unless told
       # otherwise, so this step tells it.
@@ -446,8 +442,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
       # The published native build, whose sha256 the runtime checks. After the bridge step, whose tsc built the fetch command.
       - uses: ./cascade-runtime-js/.github/actions/oxigraph-native
-      # The search test builds the hub, whose adapter explorers need Python and rdflib.
-      - run: python3 -m pip install rdflib==7.6.0
       - name: The runtime's tests on the native build
         env:
           CASCADE_OXIGRAPH: native
@@ -563,6 +557,13 @@ jobs:
       - name: Run the hub's search box
         if: ${{ !cancelled() }}
         run: npm run test:search
+      # Search over the tree this job built: the words a reader tries land on their pages, every page of the hub carries the box,
+      # every row lands on a file. The unit suite skips these cases, since it builds no tree.
+      - name: Search the built tree
+        if: ${{ !cancelled() }}
+        run: npm run test:search-tree
+        env:
+          SEARCH_TREE: build/pages
       # The term index's script, run in a browser: a link to a name in a folded group opens it, a shape's old anchor goes to the shapes' page.
       - name: Run the term index
         if: ${{ !cancelled() }}
@@ -1036,8 +1037,6 @@ jobs:
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # The search test builds the hub, whose adapter explorers need Python and rdflib.
-      - run: python3 -m pip install rdflib==7.6.0
       # npm test transpiles its own sources, so it needs no build first.
       - name: The runtime's tests
         shell: bash
