@@ -25,7 +25,6 @@ import {
   releasedBuild,
 } from "./bridge-build.js";
 import { checkout as gitState } from "./git.js";
-import { workerExecArgv } from "./worker-arguments.js";
 import { FolderFiles } from "./folder-files.js";
 import type { Components } from "./components.js";
 import {
@@ -318,7 +317,6 @@ export function inWorker(bridge: CompiledBridge): Spawn {
     counted("bridge.workers");
     const worker = new Worker(new URL("./wasm-worker.js", import.meta.url), {
       workerData: bridge,
-      execArgv: workerExecArgv(),
     });
     worker.unref();
     const waiting = new Waiting();

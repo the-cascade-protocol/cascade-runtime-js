@@ -10,7 +10,6 @@ import {
   DatabaseKeyRefused,
 } from "../database.js";
 import type { BesideDatabase, WholeBuild } from "../pod-database.js";
-import { workerExecArgv } from "./worker-arguments.js";
 
 /** The bytes of a key `openDatabase` seals a database with. */
 export const DATABASE_KEY_BYTES = 32;
@@ -192,7 +191,6 @@ function builtInWorker(job: WholeBuildJob): Promise<void> {
       new URL("./pod-database-worker.js", import.meta.url),
       {
         workerData: { ...job, whole: { ...job.whole, dump } },
-        execArgv: workerExecArgv(),
         transferList: [dump.buffer],
       },
     );

@@ -3,7 +3,7 @@ import { createRequire, syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
 
 /**
- * With `CASCADE_TEST_OFFLINE=1`, a git call that names a URL fails at once, saying so (see offline.ts). It is a module of
+ * With `CASCADE_TEST_OFFLINE=1`, a git call that names a URL fails at once, saying so (see offline-main.ts). It is a module of
  * its own, imported first, so that it is in place before the runtime's `git()` takes hold of `execFile`.
  */
 const url = /^(?:[a-z][a-z0-9+.-]*:\/\/|[\w.-]+@[\w.-]+:)/i;

@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import {
   cp,
   mkdir,
   mkdtemp,
-  readFile,
   rm,
   symlink,
   utimes,
@@ -13,8 +11,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import {
   type AdaptersOf,
   type BridgeDocument,
@@ -241,39 +237,6 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
   after(async () => {
     for (const adapter of adapters) await adapter.free();
     for (const bridge of bridges) bridge.close();
-  });
-
-  describe("given a process started with a preload", () => {
-    it("starts the worker without the preload", async () => {
-      const folder = await mkdtemp(join(tmpdir(), "worker-preload-"));
-      try {
-        const marker = join(folder, "marker");
-        await writeFile(
-          join(folder, "preload.mjs"),
-          `import { appendFileSync } from "node:fs";
-import { isMainThread } from "node:worker_threads";
-appendFileSync(${JSON.stringify(marker)}, isMainThread ? "main\\n" : "worker\\n");
-`,
-        );
-        await writeFile(
-          join(folder, "run.mjs"),
-          `const { compiledBridge, inWorker } = await import(${JSON.stringify(import.meta.resolve("../src/node/wasm.js"))});
-const channel = await inWorker(await compiledBridge(process.argv[2]))();
-await channel.call({ op: "free" }, []);
-channel.end();
-`,
-        );
-        await promisify(execFile)(process.execPath, [
-          "--import",
-          pathToFileURL(join(folder, "preload.mjs")).href,
-          join(folder, "run.mjs"),
-          (await components.bridge()).folder,
-        ]);
-        assert.equal(await readFile(marker, "utf8"), "main\n");
-      } finally {
-        await rm(folder, { recursive: true, force: true });
-      }
-    });
   });
 
   describe("given every import of every kit", () => {
