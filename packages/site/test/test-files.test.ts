@@ -53,7 +53,7 @@ const count = (options: string[], flag: string): string | undefined =>
  * is skipped unless a report is named, which `conformance (native)` writes and asserts on in every CI run.
  */
 describe("Setting how a suite runs · scripts/test-files.mjs", () => {
-  describe("on a machine with some number of processors", () => {
+  describe("given a machine with some number of processors", () => {
     it("runs at most 3 files at once, and one fewer than the processors when that is less", () => {
       const caps = [1, 2, 4, 8, 64].map((processors) =>
         count(suiteOptions([], {}, processors), "--test-concurrency"),
