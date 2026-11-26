@@ -68,6 +68,7 @@ import {
   fixtureNames,
   sqlCheckAssertions,
   sqlFunctionAssertions,
+  unchosenSqlAssertions,
 } from "../sql-check.js";
 
 const RUNTIME = "cascade-runtime-js";
@@ -193,12 +194,15 @@ async function conformance(args: string[]): Promise<number> {
     const whole =
       values.feature === undefined && values.assertions === undefined;
     // Sharded, the SQL check is dealt to runs of its own beside the feature shards; else it runs here, beside the features.
+    const started = performance.now();
     const checked = whole
       ? shards.length > 1
-        ? sqlFunctionAssertions(files)
+        ? sqlChecksBesideTheShards(files)
         : sqlAssertions(files)
       : Promise.resolve([]);
     checked.catch(() => undefined);
+    // Each SQL shard's assertions and the seconds from the start to its end, for the line that says what the check took.
+    const sqlShards: { assertions: number; ended: number }[] = [];
     const assertions =
       shards.length > 1
         ? await shardedRun(
@@ -213,6 +217,13 @@ async function conformance(args: string[]): Promise<number> {
             ],
             values.folder,
             { iri: files.iri, features: await featuresOf(files) },
+            (shard, written) => {
+              if (shard[0] === "--sql")
+                sqlShards.push({
+                  assertions: written,
+                  ended: performance.now() - started,
+                });
+            },
           )
         : await conformed(
             files,
@@ -224,6 +235,10 @@ async function conformance(args: string[]): Promise<number> {
       await writeFile(values.assertions, JSON.stringify(assertions));
       return 0;
     }
+    if (sqlShards.length > 0)
+      log(
+        `the vocabulary's SQL: ${(await checked).length + sqlShards.reduce((sum, { assertions }) => sum + assertions, 0)} assertions in ${seconds(Math.max(...sqlShards.map(({ ended }) => ended)))} s, over ${sqlShards.length} runs beside the features'`,
+      );
     await reported(
       values.feature === undefined
         ? [
@@ -308,22 +323,41 @@ async function kitFindingAssertions(
 }
 
 /**
- * One assertion for each of the six SQL functions, that it gives each vector's output, and one for each fixture, each
- * vocabulary `.sql` and each lens, that the `.sql` gives its `.rq`'s rows over the fixture as this runtime builds it.
+ * One assertion for each of the six SQL functions, that it gives each vector's output, and one for each comparison of a
+ * `.sql` the vocabulary's fixtures choose, that it gives its `.rq`'s rows over the fixture as this runtime builds it.
  */
 async function sqlAssertions(files: FolderFiles): Promise<Assertion[]> {
   const started = performance.now();
   const assertions = [
-    ...(await sqlFunctionAssertions(files)),
+    ...(await sqlChecksBesideTheShards(files)),
     ...(await sqlCheckDealt(files, [0, 1])),
   ];
   log(
-    `the vocabulary's SQL: ${assertions.length} assertions in ${((performance.now() - started) / 1000).toFixed(1)} s`,
+    `the vocabulary's SQL: ${assertions.length} assertions in ${seconds(performance.now() - started)} s`,
   );
   return assertions;
 }
 
-/** The SQL check over the fixtures dealt to the run `index` of `count`: each `count`-th fixture from the `index`-th. */
+/** The SQL check's assertions that no fixture is dealt: each function's vectors, and each `.sql` no fixture chooses. */
+async function sqlChecksBesideTheShards(
+  files: FolderFiles,
+): Promise<Assertion[]> {
+  return [
+    ...(await sqlFunctionAssertions(files)),
+    ...(await unchosenSqlAssertions({
+      vocabulary: files,
+      newStore: () => new OxigraphStore(),
+    })),
+  ];
+}
+
+const seconds = (milliseconds: number): string =>
+  (milliseconds / 1000).toFixed(1);
+
+/**
+ * The SQL check over the fixtures dealt to the run `index` of `count`: each `count`-th fixture from the `index`-th, each
+ * compared on the `.sql` files and lenses its manifest chooses.
+ */
 async function sqlCheckDealt(
   files: FolderFiles,
   [index, count]: readonly [number, number],
@@ -391,12 +425,13 @@ async function shardsOf(files: FolderFiles, jobs: number): Promise<string[][]> {
  * Each shard, its arguments to this command, run as a child of it, beside the others, with the flags this process runs
  * under; the assertions come back in the order of `order`, the vocabulary's feature files, however many shards there
  * are, and those of no feature file after them. When one fails the others are stopped and have ended before the folder
- * they write to is removed.
+ * they write to is removed. `ended` is told each shard's arguments and how many assertions it wrote, as it ends.
  */
 async function shardedRun(
   shards: readonly (readonly string[])[],
   folders: readonly string[],
   order: { readonly iri: string; readonly features: readonly string[] },
+  ended?: (shard: readonly string[], assertions: number) => void,
 ): Promise<Assertion[]> {
   const out = await mkdtemp(join(tmpdir(), "conformance-shards-"));
   const stop = new AbortController();
@@ -426,7 +461,11 @@ async function shardedRun(
             { cause: error },
           );
         }
-        return JSON.parse(await readFile(written, "utf8")) as Assertion[];
+        const found = JSON.parse(
+          await readFile(written, "utf8"),
+        ) as Assertion[];
+        ended?.(shard, found.length);
+        return found;
       }),
     );
     // The first to fail aborted the rest, which reject as aborted: the failure reported is the first that is not that.

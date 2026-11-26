@@ -31,7 +31,6 @@ import {
   sqlTermOf,
   SQL_FUNCTION_VECTORS,
   STATEMENTS_SCHEMA,
-  wholeScope,
   LITERAL,
   BLANK,
   IRI,
@@ -92,8 +91,6 @@ export interface BuiltFixture {
   readonly entries: readonly ManifestEntry[];
   /** Why each ported `.sql` that cannot be answered cannot, by its `.rq`'s path: a screen that failed, or reads one. */
   readonly screens: ReadonlyMap<string, string>;
-  /** Where each view's screen, filled keyed to what a change touched, is not as a whole fill leaves it, by its `.rq`. */
-  readonly keyedFill?: ReadonlyMap<string, readonly string[]>;
   close(): void;
 }
 
@@ -146,16 +143,26 @@ export async function fixtureNames(vocabulary: Files): Promise<string[]> {
   ].sort();
 }
 
-async function manifestEntries(
+/** A fixture's manifest: its entries, and each query file or folder of them it names by ctm:comparesSqlWithSparqlUnderEveryLens. */
+async function manifestOf(
   vocabulary: Files,
   fixture: string,
   store: Store,
-): Promise<ManifestEntry[]> {
+): Promise<{
+  entries: ManifestEntry[];
+  comparesSqlWithSparqlUnderEveryLens: string[];
+}> {
   const path = `${FIXTURES}${fixture}/manifest.ttl`;
   const graph = new Graph(
     await store.parse(await readText(vocabulary, path), vocabulary.iri + path),
   );
   const [head] = graph.subjects(`${RDF}type`, iri(`${MF}Manifest`));
+  const comparesSqlWithSparqlUnderEveryLens =
+    head === undefined
+      ? []
+      : graph
+          .objects(head, `${CTM}comparesSqlWithSparqlUnderEveryLens`)
+          .flatMap(({ value }) => decoded(vocabulary, value) ?? []);
   const found: ManifestEntry[] = [];
   let list: Term | undefined =
     head === undefined ? undefined : graph.objects(head, `${MF}entries`)[0];
@@ -185,7 +192,90 @@ async function manifestEntries(
               .sort(),
     });
   }
-  return found;
+  return { entries: found, comparesSqlWithSparqlUnderEveryLens };
+}
+
+/**
+ * The comparisons the fixtures' manifests choose, by fixture: each ported `.rq` compared with its `.sql` over the
+ * fixture, with the lenses it is compared under. A manifest chooses a `.rq` under each lens where it names the `.rq`, or
+ * a folder holding it, by ctm:comparesSqlWithSparqlUnderEveryLens, and otherwise under the lens of each of its entries that runs the `.rq`.
+ * A fixture that chooses none is left out. Of the fixtures given, or of all of them.
+ */
+export async function sqlComparisons(
+  vocabulary: Files,
+  newStore: StoreFactory,
+  ported?: readonly Ported[],
+  fixtures?: readonly string[],
+): Promise<Map<string, Map<string, string[]>>> {
+  const queries = (ported ?? (await portedQueries(vocabulary))).map(
+    ({ rq }) => rq,
+  );
+  const every = await lenses(vocabulary);
+  const chosen = new Map<string, Map<string, string[]>>();
+  const store = newStore();
+  try {
+    for (const fixture of fixtures ?? (await fixtureNames(vocabulary))) {
+      const { entries, comparesSqlWithSparqlUnderEveryLens } = await manifestOf(
+        vocabulary,
+        fixture,
+        store,
+      );
+      const here = new Map<string, string[]>();
+      for (const rq of queries) {
+        const named = comparesSqlWithSparqlUnderEveryLens.some(
+          (path) => path === rq || (path.endsWith("/") && rq.startsWith(path)),
+        );
+        const under = named
+          ? every
+          : every.filter((lens) =>
+              entries.some(
+                (entry) => entry.query === rq && lensOf(entry.lens) === lens,
+              ),
+            );
+        if (under.length > 0) here.set(rq, under);
+      }
+      if (here.size > 0) chosen.set(fixture, here);
+    }
+  } finally {
+    store.free?.();
+  }
+  return chosen;
+}
+
+/** The test of a `.sql` that no fixture's manifest chooses: the `.sql`, and in its fragment the `.sql` again. */
+const unchosenSqlTest = (vocabulary: Files, rq: string): string =>
+  `${vocabulary.iri}${encodeURI(sqlPath(rq))}#${encodeURI(sqlPath(rq))}`;
+
+/** A failed assertion for each ported `.sql` that no fixture's manifest chooses, so that none goes uncompared. */
+export async function unchosenSqlAssertions(
+  options: Pick<SqlCheckOptions, "vocabulary" | "newStore">,
+): Promise<Assertion[]> {
+  const { vocabulary, newStore } = options;
+  if ((await vocabulary.read(STATEMENTS_SCHEMA)) === undefined) return [];
+  const ported = await portedQueries(vocabulary);
+  return unchosen(
+    vocabulary,
+    ported,
+    await sqlComparisons(vocabulary, newStore, ported),
+  );
+}
+
+function unchosen(
+  vocabulary: Files,
+  ported: readonly Ported[],
+  comparisons: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>,
+): Assertion[] {
+  const chosen = new Set(
+    [...comparisons.values()].flatMap((queries) => [...queries.keys()]),
+  );
+  return ported
+    .filter(({ rq }) => !chosen.has(rq))
+    .map(({ rq }): Assertion => ({
+      test: unchosenSqlTest(vocabulary, rq),
+      name: `${sqlPath(rq)} is compared over no fixture`,
+      outcome: "failed",
+      why: `no fixture's manifest names ${rq}, or a folder holding it, by ctm:comparesSqlWithSparqlUnderEveryLens, or runs it in an entry`,
+    }));
 }
 
 /** A store's dump of the TriG, each of its graphs listed, for `restore`: so its graphs are outside any union. */
@@ -296,24 +386,13 @@ async function builtFixture(
       db.close();
       throw error;
     }
-    const screens = madeScreens(db, context.ported);
-    const keyedFill = new Map<string, string[]>();
-    const views = context.ported.filter(
-      ({ rq, sql }) =>
-        (rq.startsWith(VIEWS) || rq === LABELS) &&
-        sqlParts(sql).size > 0 &&
-        !screens.has(rq),
-    );
-    for (const { view, line } of keyedFillFound(db, views))
-      keyedFill.set(view, [...(keyedFill.get(view) ?? []), line]);
     return {
       name: fixture,
       lens,
       union,
       db,
-      entries: await manifestEntries(vocabulary, fixture, store),
-      screens,
-      keyedFill,
+      entries: (await manifestOf(vocabulary, fixture, store)).entries,
+      screens: madeScreens(db, context.ported),
       close: () => {
         db.close();
         store.free?.();
@@ -511,440 +590,7 @@ export function madeScreens(
   return failed;
 }
 
-const SCHEMA_TABLES = new Set(["term", "quad", "scope", "asked", "ledger"]);
-
-/**
- * The table the schema makes that every screen's finish fills, none making it, which a keyed fill gives as a whole fill
- * does: a row for each record shown in an entry, its second column the entry's type.
- */
-const SCHEMA_SCREEN_TABLES = new Set(["shown_in_entry"]);
-/** The entry type a view's finish gives the rows of `shown_in_entry` for, in the statement that deletes them. */
-const SHOWN_TYPE =
-  /DELETE\s+FROM\s+shown_in_entry\s+WHERE\s+type\s*=\s*'([^']+)'/i;
-
-/** The rows of each table a screen made, by table, each table's rows written and sorted. */
-function screenTables(db: Database): Map<string, string[]> {
-  const names = db
-    .prepare(
-      "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
-    )
-    .all()
-    .map(({ name }) => String(name))
-    .filter((name) => !SCHEMA_TABLES.has(name));
-  return new Map(
-    names.map((name) => [
-      name,
-      db
-        .prepare(`SELECT * FROM "${name}"`)
-        .all()
-        .map((row) =>
-          JSON.stringify(Object.values(row), (_, value: unknown) =>
-            typeof value === "bigint" ? value.toString() : value,
-          ),
-        )
-        .sort(),
-    ]),
-  );
-}
-
 const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
-
-interface KeyedChange {
-  readonly name: string;
-  /** Makes the change to the pod's statements, and gives the terms a keyed run puts in scope. */
-  readonly make: (db: Database) => number[];
-}
-
-function termIds(db: Database, iris: readonly string[]): (number | null)[] {
-  const find = db.prepare("SELECT id FROM term WHERE nt = ?");
-  return iris.map((iri) => {
-    const found = find.get(`<${iri}>`)?.id;
-    return found === undefined ? null : Number(found);
-  });
-}
-
-function made(
-  db: Database,
-  nt: string,
-  kind: number,
-  lex: string,
-  datatype: string | null = kind === LITERAL ? XSD_STRING : null,
-): number {
-  db.prepare(
-    "INSERT OR IGNORE INTO term (nt, kind, lex, datatype) VALUES (?, ?, ?, ?)",
-  ).run(nt, kind, lex, datatype);
-  return Number(db.prepare("SELECT id FROM term WHERE nt = ?").get(nt)?.id);
-}
-
-function renamed(
-  db: Database,
-  subjects: readonly number[],
-  predicates: readonly number[],
-): void {
-  const name = made(db, '"renamed"', LITERAL, "renamed");
-  const update = db.prepare(
-    "UPDATE OR IGNORE quad SET o = ? WHERE s = ? AND p = ?",
-  );
-  for (const subject of subjects)
-    for (const predicate of predicates) update.run(name, subject, predicate);
-}
-
-const idRows = (
-  db: Database,
-  sql: string,
-  ...parameters: unknown[]
-): number[][] =>
-  db
-    .prepare(sql)
-    .all(...parameters)
-    .map((row) => Object.values(row).map(Number));
-
-/**
- * Each change a keyed run may be given over the pod, as the vocabulary's check makes them: each record in an entry,
- * unchanged; each record but the lead of an entry of two or more, moved to an entry of its own; each agent, renamed;
- * each record whose values give a reason condition, its reasons dropped, and given each other condition's record as a
- * reason; each entry those values are of, renamed, the record in scope, and renamed as a new record whose values give
- * no reason is put in it, or, after a whole fill, taken out of it again, that record alone in scope; and each document
- * a record's current revision derives from, retrieved again.
- */
-function keyedChanges(db: Database, views: readonly Ported[]): KeyedChange[] {
-  const [
-    inEntry,
-    lead,
-    member,
-    agent,
-    label,
-    foafName,
-    current,
-    reason,
-    valuesOf,
-    memberValues,
-    rdfType,
-    conditionKind,
-    ...names
-  ] = termIds(db, [
-    `${CASCADE}inEntry`,
-    `${CASCADE}leadMember`,
-    `${CASCADE}entryMember`,
-    "http://www.w3.org/ns/prov#agent",
-    "http://www.w3.org/2000/01/rdf-schema#label",
-    "http://xmlns.com/foaf/0.1/name",
-    "http://purl.org/pav/hasCurrentVersion",
-    `${CASCADE}reasonCondition`,
-    `${CASCADE}valuesOfMember`,
-    `${CASCADE}memberCurrentValues`,
-    `${RDF}type`,
-    `${CASCADE}ProblemOrDiagnosis`,
-    `${CASCADE}drugName`,
-    `${CASCADE}procedureName`,
-    `${CASCADE}vaccineName`,
-  ]);
-  if (inEntry === null || inEntry === undefined) return [];
-  const changes: KeyedChange[] = [];
-  const entries = new Map<number, number[]>();
-  for (const [record = 0, entry = 0] of idRows(
-    db,
-    "SELECT DISTINCT s, o FROM quad WHERE p = ? ORDER BY s, o",
-    inEntry,
-  )) {
-    entries.set(entry, [...(entries.get(entry) ?? []), record]);
-    changes.push({ name: `record ${record} unchanged`, make: () => [record] });
-  }
-  for (const [entry, records] of entries) {
-    if (records.length < 2) continue;
-    const leads = new Set(
-      idRows(db, "SELECT o FROM quad WHERE s = ? AND p = ?", entry, lead).map(
-        ([o]) => o,
-      ),
-    );
-    for (const record of records
-      .filter((one) => !leads.has(one))
-      .sort((a, b) => a - b))
-      changes.push({
-        name: `record ${record} moved out of entry ${entry}`,
-        make: (c) => {
-          const apart = made(
-            c,
-            `<urn:cascade:entry:moved-${record}>`,
-            IRI,
-            `urn:cascade:entry:moved-${record}`,
-          );
-          c.prepare(
-            "UPDATE quad SET o = ? WHERE s = ? AND p = ? AND o = ?",
-          ).run(apart, record, inEntry, entry);
-          c.prepare(
-            "UPDATE quad SET s = ? WHERE s = ? AND p = ? AND o = ?",
-          ).run(apart, entry, member, record);
-          c.prepare(
-            "INSERT OR IGNORE INTO quad (s, p, o, g) SELECT ?, ?, ?, g FROM quad WHERE s = ? AND p = ?",
-          ).run(apart, lead, record, entry, lead);
-          return [record];
-        },
-      });
-  }
-  if (agent !== null && agent !== undefined)
-    for (const [named = 0] of idRows(
-      db,
-      "SELECT DISTINCT o FROM quad WHERE p = ?",
-      agent,
-    ))
-      changes.push({
-        name: `agent ${named} renamed`,
-        make: (c) => {
-          const versions = idRows(
-            c,
-            "SELECT o FROM quad WHERE s = ? AND p = ?",
-            named,
-            current,
-          ).map(([o = 0]) => o);
-          renamed(
-            c,
-            [named],
-            label === null || label === undefined ? [] : [label],
-          );
-          renamed(
-            c,
-            versions,
-            foafName === null || foafName === undefined ? [] : [foafName],
-          );
-          return [named];
-        },
-      });
-  const named = names.filter((name): name is number => name !== null);
-  const given =
-    reason === null ||
-    reason === undefined ||
-    valuesOf === null ||
-    valuesOf === undefined ||
-    memberValues === null ||
-    memberValues === undefined
-      ? []
-      : idRows(
-          db,
-          "SELECT DISTINCT v.o, e.s, v.s FROM quad r JOIN quad v ON v.s = r.s AND v.p = ? " +
-            "JOIN quad e ON e.o = r.s AND e.p = ? WHERE r.p = ?",
-          valuesOf,
-          memberValues,
-          reason,
-        );
-  for (const [record = 0, entry = 0, values = 0] of given) {
-    changes.push({
-      name: `record ${record}'s reasons dropped`,
-      make: (c) => {
-        c.prepare("DELETE FROM quad WHERE s = ? AND p = ?").run(values, reason);
-        return [record];
-      },
-    });
-    changes.push({
-      name: `entry ${entry} its values give reasons for renamed, ${record} in scope`,
-      make: (c) => {
-        renamed(c, [entry], named);
-        return [record];
-      },
-    });
-    for (const [condition = 0] of idRows(
-      db,
-      "SELECT DISTINCT q.s FROM quad q JOIN quad t ON t.s = q.s AND t.p = ? AND t.o = ? WHERE q.p = ? " +
-        "AND q.s NOT IN (SELECT o FROM quad WHERE s = ? AND p = ?)",
-      rdfType,
-      conditionKind,
-      inEntry,
-      values,
-      reason,
-    ))
-      changes.push({
-        name: `record ${record} given condition ${condition} as a reason`,
-        make: (c) => {
-          c.prepare(
-            "INSERT INTO quad (s, p, o, g) SELECT s, p, ?, g FROM quad WHERE s = ? AND p = ? LIMIT 1",
-          ).run(condition, values, reason);
-          return [record];
-        },
-      });
-  }
-  /** A new record, its values giving no reason, put in the entry; its id. */
-  const joined = (c: Database, entry: number): number => {
-    const record = made(
-      c,
-      `<urn:cascade:joined-${entry}>`,
-      IRI,
-      `urn:cascade:joined-${entry}`,
-    );
-    const values = made(
-      c,
-      `<urn:cascade:joined-${entry}-values>`,
-      IRI,
-      `urn:cascade:joined-${entry}-values`,
-    );
-    const graph = c
-      .prepare("SELECT g FROM quad WHERE s = ? AND p = ? LIMIT 1")
-      .get(entry, memberValues)?.g;
-    const put = c.prepare(
-      "INSERT OR IGNORE INTO quad (s, p, o, g) VALUES (?, ?, ?, ?)",
-    );
-    put.run(record, inEntry, entry, graph);
-    put.run(entry, member, record, graph);
-    put.run(entry, memberValues, values, graph);
-    put.run(values, valuesOf, record, graph);
-    return record;
-  };
-  for (const entry of [...new Set(given.map(([, one = 0]) => one))].sort(
-    (a, b) => a - b,
-  )) {
-    changes.push({
-      name: `a record with no reason put in entry ${entry}, which is renamed, it alone in scope`,
-      make: (c) => {
-        const record = joined(c, entry);
-        renamed(c, [entry], named);
-        return [record];
-      },
-    });
-    changes.push({
-      name: `a record with no reason taken out of entry ${entry}, which is renamed, it alone in scope`,
-      make: (c) => {
-        const record = joined(c, entry);
-        wholeScope(c);
-        refilled(c, views);
-        c.prepare("DELETE FROM quad WHERE ? IN (s, o) AND p IN (?, ?, ?)").run(
-          record,
-          inEntry,
-          member,
-          valuesOf,
-        );
-        c.prepare(
-          "DELETE FROM quad WHERE s = ? AND p = ? AND o NOT IN (SELECT s FROM quad WHERE p = ?)",
-        ).run(entry, memberValues, valuesOf);
-        renamed(c, [entry], named);
-        return [record];
-      },
-    });
-  }
-  const [derivedFrom, currentRevision] = termIds(db, [
-    "http://www.w3.org/ns/prov#wasDerivedFrom",
-    `${CASCADE}currentRevision`,
-  ]);
-  const documents =
-    derivedFrom === null ||
-    derivedFrom === undefined ||
-    currentRevision === null ||
-    currentRevision === undefined
-      ? []
-      : idRows(
-          db,
-          "SELECT DISTINCT d.o FROM quad r JOIN quad d ON d.s = r.o AND d.p = ? WHERE r.p = ? ORDER BY d.o",
-          derivedFrom,
-          currentRevision,
-        );
-  for (const [document = 0] of documents)
-    changes.push({
-      name: `document ${document} retrieved again`,
-      make: (c) => {
-        const retrieved = made(
-          c,
-          "<http://purl.org/pav/retrievedOn>",
-          IRI,
-          "http://purl.org/pav/retrievedOn",
-        );
-        const when = made(
-          c,
-          `"2030-01-01T00:00:00Z"^^<${XSD}dateTime>`,
-          LITERAL,
-          "2030-01-01T00:00:00Z",
-          `${XSD}dateTime`,
-        );
-        c.prepare(
-          "INSERT OR IGNORE INTO quad (s, p, o, g) SELECT ?, ?, ?, g FROM quad WHERE o = ? AND p = ? LIMIT 1",
-        ).run(document, retrieved, when, document, derivedFrom);
-        return [document];
-      },
-    });
-  return changes;
-}
-
-/** Each view's `fill`, then the labels from labels.sql where it is among them, then each view's `finish`, for the entries in scope. */
-function refilled(db: Database, views: readonly Ported[]): void {
-  const parts = viewsOf(views).map(({ parts }) => parts);
-  const labels = labelsOf(views);
-  for (const part of ["fill", "finish"]) {
-    for (const found of parts) db.exec(found.get(part) ?? "");
-    if (part === "fill" && labels !== undefined) labelled(db, labels);
-  }
-}
-
-/**
- * Over screens made and filled whole, each change a keyed run may be given, made to the pod's statements, and the
- * screens filled again with scope holding what it touched: where a table then differs from a whole fill of the changed
- * pod from empty tables, the view whose table it is and why. Each change is undone after, leaving the pod as it was.
- */
-function keyedFillFound(
-  db: Database,
-  views: readonly Ported[],
-): { view: string; line: string }[] {
-  if (views.length === 0) return [];
-  const owner = new Map<string, string>();
-  for (const { query, parts } of viewsOf(views))
-    for (const table of tablesOf(parts)) owner.set(table, query.rq);
-  const shownTypes = new Map<string, string>();
-  for (const { query, parts } of viewsOf(views)) {
-    const type = SHOWN_TYPE.exec(parts.get("finish") ?? "")?.[1];
-    if (type !== undefined) shownTypes.set(type, query.rq);
-  }
-  // A row of a table no screen makes is blamed on the view whose finish gives the rows of its entry's type.
-  const shownBy = (rows: readonly string[]): string => {
-    const type = (JSON.parse(rows[0] ?? "[]") as unknown[])[1];
-    return shownTypes.get(String(type)) ?? viewsOf(views)[0]?.query.rq ?? "";
-  };
-  const filled = screenTables(db);
-  const found: { view: string; line: string }[] = [];
-  for (const { name, make } of keyedChanges(db, views)) {
-    db.exec("SAVEPOINT keyed_change");
-    try {
-      const touched = make(db);
-      let wanted = filled;
-      if (!name.endsWith(" unchanged")) {
-        db.exec("SAVEPOINT whole_fill");
-        try {
-          for (const table of filled.keys()) db.exec(`DELETE FROM "${table}"`);
-          wholeScope(db);
-          refilled(db, views);
-          wanted = screenTables(db);
-        } finally {
-          db.exec("ROLLBACK TO whole_fill; RELEASE whole_fill");
-        }
-      }
-      db.exec("DELETE FROM scope");
-      const put = db.prepare("INSERT OR IGNORE INTO scope (term) VALUES (?)");
-      for (const term of touched) put.run(term);
-      refilled(db, views);
-      const kept = screenTables(db);
-      for (const [table, rows] of wanted) {
-        if (!owner.has(table) && !SCHEMA_SCREEN_TABLES.has(table)) continue;
-        const held = kept.get(table) ?? [];
-        if (JSON.stringify(held) === JSON.stringify(rows)) continue;
-        const extra = [...new Set(held)].filter((row) => !rows.includes(row));
-        const lacked = [...new Set(rows)].filter((row) => !held.includes(row));
-        found.push({
-          view: owner.get(table) ?? shownBy([...extra, ...lacked]),
-          line: `${name}: ${table} holds [${extra.join(", ")}] a whole fill does not, and lacks [${lacked.join(", ")}]`,
-        });
-      }
-    } finally {
-      db.exec("ROLLBACK TO keyed_change; RELEASE keyed_change");
-    }
-  }
-  return found;
-}
-
-/**
- * Why each view's screen, filled keyed to what a change touched, is not as a whole fill of the changed pod leaves it,
- * as lines; none when every keyed fill agrees. The vocabulary's tests/test_sql.py makes the same check.
- */
-export function keyedFillFailures(
-  db: Database,
-  views: readonly Ported[],
-): string[] {
-  return keyedFillFound(db, views).map(({ line }) => line);
-}
 
 const CONSTRUCT_FORM = /^\s*CONSTRUCT\b/i;
 
@@ -1302,6 +948,18 @@ export function recordsInEntries(db: Database): string[] {
     .map(({ lex }) => String(lex));
 }
 
+/** Each record the pod holds, as its IRI: those in an entry, and those left out of every view too. */
+export function recordsOfThePod(db: Database): string[] {
+  return db
+    .prepare(
+      "SELECT DISTINCT t.lex FROM quad q JOIN term t ON t.id = q.s " +
+        "WHERE q.p = (SELECT id FROM term WHERE nt = ?) AND q.o = (SELECT id FROM term WHERE nt = ?) " +
+        "AND t.kind = 2 ORDER BY t.lex",
+    )
+    .all(`<${RDF}type>`, `<${CASCADE}Record>`)
+    .map(({ lex }) => String(lex));
+}
+
 /** A record no pod holds, which a question bound to records is also asked of: it gives no rows. */
 const NO_SUCH_RECORD = "urn:cascade:no-such-record";
 
@@ -1426,10 +1084,10 @@ export async function beforeLabels<T>(
 /**
  * Why the `.sql`, over the fixture's pod under its lens, does not give the rows of the `.rq` beside it, as lines: in a
  * whole run, in its order where it has one, a CONSTRUCT's as a set of triples and a view's through its `triples` part;
- * for a question, asked through `asked` of each record a manifest entry binds, for a list question of each record in
- * an entry, and for a `.sql` reading `asked` of a record no pod holds, against the `.rq` bound to it; through each page
- * of a list question; the rows of each manifest entry under that lens that runs it; and, for a view, its screen filled
- * keyed to each change against a whole fill. The vocabulary's tests/test_sql.py makes the same check.
+ * for a question that binds a record, asked through `asked` of each record a manifest entry binds and each record the
+ * pod holds, for a list question of each record in an entry too, and for a `.sql` reading `asked` of a record no pod holds, against the `.rq` bound to it; through each page
+ * of a list question; and the rows of each manifest entry under that lens that runs it. The vocabulary's
+ * tests/test_sql.py makes the same check, and alone checks a view's screen filled keyed to a change against a whole fill.
  */
 export async function sqlFailures(
   vocabulary: Files,
@@ -1479,7 +1137,13 @@ export async function sqlFailures(
   );
   if (!construct && PAGED.test(sql))
     for (const record of recordsInEntries(db)) bound.add(record);
-  if (!construct && /\basked\b/.test(sql)) bound.add(NO_SUCH_RECORD);
+  const asks = ported.rq.startsWith(QUESTIONS)
+    ? bindsARecord(ported.rqText)
+    : /\basked\b/.test(sql);
+  if (!construct && asks) {
+    for (const record of recordsOfThePod(db)) bound.add(record);
+    bound.add(NO_SUCH_RECORD);
+  }
   // A question that gives a ?record column and binds none is never bound to a record: its binding would add the record
   // to each row that names none, as an entry's review would.
   if (
@@ -1543,8 +1207,6 @@ export async function sqlFailures(
           `${fixture}, ${entry.name}, under ${lens}, ${ported.rq}: ${kind}: ${row}`,
         );
   }
-  for (const line of built.keyedFill?.get(ported.rq) ?? [])
-    lines.push(`${where}, filled keyed: ${line}`);
   return lines;
 }
 
@@ -1583,8 +1245,9 @@ export const sqlTest = (
   `${vocabulary.iri}${encodeURI(sqlPath(ported.rq))}#${encodeURI(sqlPath(ported.rq))}/${fixture}/${lens}`;
 
 /**
- * One assertion for each fixture, each `.sql` and each lens: that the `.sql`, over the fixture as the runtime builds it
- * under the lens and loads it into SQLite, gives the rows its `.rq` gives and those the fixture's manifest pins.
+ * One assertion for each comparison the fixtures' manifests choose (`sqlComparisons`), of the fixtures given or of all
+ * of them: that the `.sql`, over the fixture as the runtime builds it under the lens and loads it into SQLite, gives the
+ * rows its `.rq` gives and those the fixture's manifest pins. Over all of them, also one for each `.sql` none chooses.
  */
 export async function sqlCheckAssertions(
   options: SqlCheckOptions,
@@ -1597,8 +1260,18 @@ export async function sqlCheckAssertions(
   const context = await sqlCheckContext(options);
   if (context.ported.length === 0) return [];
   const assertions: Assertion[] = [];
-  for (const fixture of fixtures ?? (await fixtureNames(options.vocabulary)))
+  const chosen = await sqlComparisons(
+    options.vocabulary,
+    options.newStore,
+    context.ported,
+    fixtures,
+  );
+  for (const [fixture, queries] of chosen)
     for (const lens of await lenses(options.vocabulary)) {
+      const compared = context.ported.filter(({ rq }) =>
+        queries.get(rq)?.includes(lens),
+      );
+      if (compared.length === 0) continue;
       let built: BuiltFixture | undefined;
       let why: string | undefined;
       try {
@@ -1607,7 +1280,7 @@ export async function sqlCheckAssertions(
         why = `${fixture}, under ${lens}: the runtime's build or the load fails: ${error instanceof Error ? error.message : String(error)}`;
       }
       try {
-        for (const ported of context.ported) {
+        for (const ported of compared) {
           let lines: string[];
           try {
             lines =
@@ -1635,6 +1308,8 @@ export async function sqlCheckAssertions(
         built?.close();
       }
     }
+  if (fixtures === undefined)
+    assertions.push(...unchosen(options.vocabulary, context.ported, chosen));
   return assertions;
 }
 

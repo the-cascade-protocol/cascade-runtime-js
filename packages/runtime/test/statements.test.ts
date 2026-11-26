@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { earl } from "../src/conformance.js";
-import { MemoryFiles, readText } from "../src/files.js";
+import { type Files, MemoryFiles, readText } from "../src/files.js";
 import { openDatabase } from "../src/node/sqlite.js";
 import { PodDatabase } from "../src/pod-database.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import {
   compared,
+  FIXTURES,
   finalOrder,
-  keyedFillFailures,
   madeScreens,
   sqlCheckAssertions,
   sqlFailures,
@@ -188,33 +188,18 @@ async function heldByOxigraph(): Promise<{ made: Term[]; held: string[] }> {
   }
 }
 
-/** A screen of one table, each entry and its record, whose fill clears the whole table when `clearsAll`. */
-const screen = (
-  name: string,
-  fill: string,
-  clearsAll = false,
-  finish = "",
-): string =>
+/** A screen of one table, each entry and its record. */
+const screen = (name: string, fill: string): string =>
   [
     "-- part: tables",
     `CREATE TABLE ${name} (entry INTEGER PRIMARY KEY, record INTEGER NOT NULL) STRICT;`,
     "-- part: fill",
-    clearsAll
-      ? `DELETE FROM ${name};`
-      : `DELETE FROM ${name} WHERE entry IN (SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope));`,
+    `DELETE FROM ${name} WHERE entry IN (SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope));`,
     fill,
     "-- part: finish",
-    finish,
     "-- part: triples",
     `SELECT NULL AS s, NULL AS p, NULL AS o FROM ${name}`,
   ].join("\n");
-
-const IN_SCOPE = `SELECT o FROM quad WHERE p = (SELECT id FROM term WHERE nt = '${IN_ENTRY}') AND s IN (SELECT term FROM scope)`;
-
-/** A finish that gives each entry in scope its row of `shown_in_entry`, first deleting the rows of those entries unless `keeps`. */
-const SHOWN = (name: string, keeps = false): string =>
-  `${keeps ? "" : `DELETE FROM shown_in_entry WHERE type = '<urn:x:${name}>' AND source IN (${IN_SCOPE});`}
-INSERT INTO shown_in_entry (file, type, entry, label, record, source) SELECT 'urn:x:file', '<urn:x:${name}>', 'urn:x:entry', NULL, record, entry FROM ${name} WHERE entry IN (${IN_SCOPE});`;
 
 /** A question in two parts: its prepare makes, each time it is asked, the table its answer reads, from a tally of the times asked. */
 const ASKED_IN_PARTS = [
@@ -252,7 +237,8 @@ const FILLED = (name: string): string =>
 /**
  * The vocabulary keeps a `.sql` beside each question's `.rq`, over its schema of a pod's statements in SQLite, calling six
  * functions where SQLite has no answer of its own. The runtime loads a pod into that schema, registers the functions,
- * and checks each `.sql` gives its `.rq`'s rows on every fixture, under each lens, as EARL assertions.
+ * and checks each `.sql` gives its `.rq`'s rows on the fixtures, and under the lenses, the fixtures' manifests choose for
+ * it, as EARL assertions.
  */
 describe("Answering the vocabulary's SQL from a pod's statements · loadStatements(), sqlFunctions(), sqlCheckAssertions()", () => {
   let db: Database;
@@ -396,6 +382,115 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     );
     const report = new TextDecoder().decode(earl(found, "cascade-runtime-js"));
     assert.ok(report.includes("<http://www.w3.org/ns/earl#failed>"));
+  });
+
+  it("asserts failed a question's .sql that ignores the record asked, over a fixture whose manifest chooses it, asking it of each record the pod holds", async () => {
+    const files = await vocabulary();
+    const shown = "queries/questions/record/Which entry shows it.rq";
+    const text = await readText(files, shown.replace(/\.rq$/, ".sql"));
+    const ignoring = text.replace(
+      /\sWHERE record IN \(SELECT term FROM asked\)\s+UNION ALL SELECT .*? NOT EXISTS \(SELECT 1 FROM asked\)/s,
+      "",
+    );
+    assert.notEqual(ignoring, text);
+    const options = {
+      vocabulary: files,
+      newStore: () => new OxigraphStore(),
+      layout: await layout(),
+      open: (functions: readonly DatabaseFunction[]) =>
+        openDatabase(":memory:", { functions }),
+    };
+    const sqlName = shown.replace(/\.rq$/, ".sql");
+    const outcomes = async (
+      replacing: Readonly<Record<string, string>>,
+    ): Promise<string[]> =>
+      (await sqlCheckAssertions(options, ["same-and-different"], replacing))
+        .filter(({ name }) => name.startsWith(sqlName))
+        .map(({ outcome }) => outcome);
+    assert.deepEqual(await outcomes({}), ["passed"]);
+    assert.deepEqual(await outcomes({ [shown]: ignoring }), ["failed"]);
+  });
+
+  it("compares each .sql over the fixtures and lenses the fixtures' manifests choose for it and no other, and fails a .sql that none chooses", async () => {
+    const real = await vocabulary();
+    const whether = "queries/questions/judgment/Whether it counts.rq";
+    const kinds = "queries/questions/pod/How many of each kind.rq";
+    const person = "queries/questions/pod/The person this pod is about.rq";
+    const judged = "queries/questions/judgment/Who judged what.rq";
+    const kept = new Set(
+      [JUDGMENTS, whether, kinds, person, judged].map((rq) =>
+        rq.replace(/\.rq$/, ".sql"),
+      ),
+    );
+    const own = new MemoryFiles(real.iri);
+    const manifest = (said: string): Uint8Array =>
+      new TextEncoder().encode(
+        [
+          "@prefix ctm: <https://ns.cascadeprotocol.org/test-manifest#> .",
+          "@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .",
+          `<> a mf:Manifest ${said} ; mf:entries () .`,
+        ].join("\n"),
+      );
+    await own.write(
+      `${FIXTURES}names-a-question/manifest.ttl`,
+      manifest(
+        `; ctm:comparesSqlWithSparqlUnderEveryLens <../../../${encodeURI(kinds)}>`,
+      ),
+    );
+    await own.write(
+      `${FIXTURES}names-a-folder/manifest.ttl`,
+      manifest(
+        `; ctm:comparesSqlWithSparqlUnderEveryLens <../../../queries/questions/judgment/>`,
+      ),
+    );
+    await own.write(`${FIXTURES}names-nothing/manifest.ttl`, manifest(""));
+    const relative = (path: string): string =>
+      path.startsWith(real.iri) ? path.slice(real.iri.length) : path;
+    // The real vocabulary but its fixtures, which-judgments-count kept, and its `.sql` files, five kept.
+    const shown = (path: string): boolean =>
+      path.startsWith(FIXTURES)
+        ? path.startsWith(`${FIXTURES}which-judgments-count/`)
+        : !path.endsWith(".sql") ||
+          path === STATEMENTS_SCHEMA ||
+          kept.has(path);
+    const files: Files = {
+      iri: real.iri,
+      read: async (path) =>
+        (await own.read(path)) ??
+        (shown(relative(path)) ? real.read(path) : undefined),
+      write: (path, bytes) => own.write(path, bytes),
+      list: async (folder) =>
+        [
+          ...new Set([
+            ...(await real.list(folder)).filter(shown),
+            ...(await own.list(folder)),
+          ]),
+        ].sort(),
+    };
+    const found = await sqlCheckAssertions({
+      vocabulary: files,
+      newStore: () => new OxigraphStore(),
+      layout: await layout(),
+      open: (functions) => openDatabase(":memory:", { functions }),
+    });
+    const sql = (rq: string): string => rq.replace(/\.rq$/, ".sql");
+    assert.deepEqual(
+      found.map(({ name, outcome }) => `${outcome}: ${name}`).sort(),
+      [
+        `passed: ${sql(JUDGMENTS)} over which-judgments-count under everyday`,
+        `passed: ${sql(JUDGMENTS)} over which-judgments-count under export`,
+        `passed: ${sql(whether)} over which-judgments-count under everyday`,
+        `passed: ${sql(whether)} over names-a-folder under everyday`,
+        `passed: ${sql(whether)} over names-a-folder under export`,
+        `passed: ${sql(judged)} over names-a-folder under everyday`,
+        `passed: ${sql(judged)} over names-a-folder under export`,
+        `passed: ${sql(judged)} over which-judgments-count under everyday`,
+        `passed: ${sql(kinds)} over names-a-question under everyday`,
+        `passed: ${sql(kinds)} over names-a-question under export`,
+        `failed: ${sql(person)} is compared over no fixture`,
+      ].sort(),
+      found.flatMap(({ why }) => why ?? []).join("\n"),
+    );
   });
 
   it("gives a list question's rows without its trailing page_key, and the key of each row as it was written", () => {
@@ -723,53 +818,6 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     assert.deepEqual(many, few);
     assert.equal(many.writtenAlone, 0);
     assert.equal(many.transactions, 1);
-  });
-
-  it("reports a screen whose fill, keyed to a record, does not give the tables a whole fill gives", async () => {
-    for (const [clearsAll, wanted] of [
-      [false, 0],
-      [true, 2],
-    ] as const) {
-      const pod = await twoEntries();
-      const views = [
-        {
-          rq: "queries/views/s.rq",
-          rqText: "",
-          sql: screen("s", FILLED("s"), clearsAll),
-        },
-      ];
-      assert.deepEqual([...madeScreens(pod, views).keys()], []);
-      const found = keyedFillFailures(pod, views);
-      assert.equal(found.length, wanted, found.join("\n"));
-      for (const line of found)
-        assert.match(
-          line,
-          /record \d+ unchanged: s holds \[\] a whole fill does not, and lacks/,
-        );
-      pod.close();
-    }
-  });
-
-  it("reports a finish whose rows of shown_in_entry, which no screen makes, a keyed run does not give as a whole fill does", async () => {
-    for (const [keeps, wanted] of [
-      [false, 0],
-      [true, 2],
-    ] as const) {
-      const pod = await twoEntries();
-      const views = [
-        {
-          rq: "queries/views/s.rq",
-          rqText: "",
-          sql: screen("s", FILLED("s"), false, SHOWN("s", keeps)),
-        },
-      ];
-      assert.deepEqual([...madeScreens(pod, views).keys()], []);
-      const found = keyedFillFailures(pod, views);
-      assert.equal(found.length, wanted, found.join("\n"));
-      for (const line of found)
-        assert.match(line, /record \d+ unchanged: shown_in_entry holds \[/);
-      pod.close();
-    }
   });
 
   it("asserts failed a manifest entry that runs the query and pins no result", async () => {
