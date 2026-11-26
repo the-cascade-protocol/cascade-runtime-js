@@ -13,13 +13,7 @@ import { KIT_FINDINGS_CHECK } from "../src/kit-findings.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { PERFORMERS } from "../src/replay.js";
 import { Shapes } from "../src/shapes.js";
-import { lenses } from "../src/questions.js";
-import {
-  fixtureNames,
-  portedQueries,
-  sqlFunctionTest,
-  sqlTest,
-} from "../src/sql-check.js";
+import { sqlComparisons, sqlFunctionTest, sqlTest } from "../src/sql-check.js";
 import { SQL_FUNCTION_VECTORS } from "../src/statements.js";
 import { Union } from "../src/store.js";
 import { layout, RUNTIME, ROOT, vocabulary } from "./vocabulary.js";
@@ -659,11 +653,10 @@ describe("Reporting a conformance run · npm run conformance -- --report <file>"
       ) as { functions: Record<string, unknown> };
       for (const name of Object.keys(functions))
         tested.set(sqlFunctionTest(files, name), name);
-      const ported = await portedQueries(files);
-      for (const fixture of await fixtureNames(files))
-        for (const lens of await lenses(files))
-          for (const query of ported)
-            tested.set(sqlTest(files, query, fixture, lens), query.rq);
+      for (const [fixture, queries] of await sqlComparisons(files, newStore))
+        for (const [rq, under] of queries)
+          for (const lens of under)
+            tested.set(sqlTest(files, { rq }, fixture, lens), rq);
     }
 
     /** What a run of one feature file says on stderr, started with the full run so that the two are not one after the other. */
@@ -684,7 +677,7 @@ describe("Reporting a conformance run · npm run conformance -- --report <file>"
       await Promise.all([readReport(), readTested(), listTools()]);
     });
 
-    it("holds one assertion for each example of every feature file, each check of every kit, each SQL function, and each `.sql` over each fixture under each lens, and no other", () => {
+    it("holds one assertion for each example of every feature file, each check of every kit, each SQL function, and each `.sql` over each fixture and lens its manifest chooses, and no other", () => {
       assert.deepEqual([...outcomes.keys()].sort(), [...tested.keys()].sort());
       for (const [test, found] of outcomes) assert.equal(found.length, 1, test);
     });
