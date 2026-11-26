@@ -3,11 +3,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { compiledTests } from "./test-files.mjs";
+import { compiledTests, suiteOptions } from "./test-files.mjs";
 
 /**
  * Runs the compiled tests of every package, `node scripts/test.mjs [--listed | --unlisted] [node:test options]`. The
- * options go to `node --test`. `--listed` runs only the files each package's `test/spec.json` lists as `randomOrder`, the
+ * options go to `node --test`, after the ones `suiteOptions()` adds: a cap on the files run at once, a timeout, and no
+ * run of the conformance command unless `CASCADE_CONFORMANCE_REPORT` names a report. `--listed` runs only the files each package's `test/spec.json` lists as `randomOrder`, the
  * ones proven not to need another test to run first, and `--unlisted` the files it does not: together they are the whole
  * suite once, so CI runs the first with `--test-randomize` and the second as written.
  */
@@ -43,6 +44,7 @@ const run = spawnSync(
       join("packages", "cascade-runtime", "dist", "test", "offline.js"),
     ).href,
     "--test",
+    ...suiteOptions(forwarded),
     ...forwarded,
     ...compiled,
   ],

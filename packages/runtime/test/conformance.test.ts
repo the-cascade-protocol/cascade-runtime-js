@@ -585,7 +585,7 @@ describe("Reporting a conformance run · npm run conformance -- --report <file>"
     /** Each example and check the report must hold, by its IRI, with its name. */
     const tested = new Map<string, string>();
 
-    /** The report of the conformance command, run here unless CASCADE_CONFORMANCE_REPORT names one a run already wrote. */
+    /** The report of the conformance command, run here unless CASCADE_CONFORMANCE_REPORT names one a run already wrote; scripts/test.mjs skips this case when none is named. */
     async function reportFile(): Promise<string> {
       const written = process.env.CASCADE_CONFORMANCE_REPORT;
       if (written) return written;
