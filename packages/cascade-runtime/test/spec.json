@@ -863,6 +863,7 @@
     "stories.test.ts",
     "story-pulls.test.ts",
     "tables.test.ts",
+    "temporary-root.test.ts",
     "terms.test.ts",
     "tools.test.ts",
     "transpile.test.ts",
@@ -882,6 +883,7 @@
     "Breaking changes in a build's notes · breakingOf(), mergedPullRequests(), breakingNotes(), breakingSince()",
     "Dependencies of the packed package · mergedDependencies(), undeclaredImports(), vendored()",
     "Annotating a red run's failures · failure-annotations.ts",
+    "Folders a test run leaves in the temp directory · test/temporary-root.ts",
     "Tripwire: copies of the kits' data kept in other repositories"
   ],
   "randomOrder": [
@@ -913,6 +915,7 @@
     "server-same.test.ts",
     "stories.test.ts",
     "story-pulls.test.ts",
+    "temporary-root.test.ts",
     "terms.test.ts",
     "tools.test.ts",
     "transpile.test.ts",
