@@ -42,7 +42,7 @@ export interface Call {
 export interface StandInOptions {
   /** What the host's `tables()` gives; each ask is a call. */
   tables?: unknown;
-  /** The pod's reads of the reference tables fail with this. */
+  /** The host's `tables()` throws this. */
   tablesFail?: Error;
   compact?: PodHost["compact"];
   hospitals?: PodHost["hospitals"];
@@ -75,6 +75,15 @@ export function standIn(
     waiters: [number, () => void][];
   };
   let release: () => void = () => undefined;
+
+  /**
+   * What `nodeHost` does with words that are blank: it throws a plain `Error`, not an `Unopened`, for none at all and for
+   * spaces given to a pod whose words are not spaces. A pod made with spaces for words opens with them.
+   */
+  const blank = (secret: string, kept: string) => {
+    if (secret === "" || (secret.trim() === "" && kept.trim() !== ""))
+      throw new Error("Password must be specified");
+  };
 
   const told = (entry: PodTable, name: string, method: keyof PodTable) => {
     const answer = entry[method] as Told | undefined;
@@ -126,7 +135,10 @@ export function standIn(
         record("pod.panelResults", [panel], name);
         return (other("panelResults")?.(panel as never) ?? []) as never;
       },
-      agreement: listed("pod.agreement"),
+      agreement: async () => {
+        record("pod.agreement", [], name);
+        return (other("agreement")?.() ?? []) as never;
+      },
       look: async (files: unknown) => (await looked(files)) ?? [],
       import: async (files: unknown, importOptions: unknown) =>
         (await imported(files, importOptions)) ?? {
@@ -155,7 +167,9 @@ export function standIn(
     pods: {
       names: async () => {
         record("pods.names");
-        return Object.keys(table).sort();
+        return Object.keys(table)
+          .filter((name) => !name.startsWith("."))
+          .sort();
       },
       title: async (name: string) => {
         record("pods.title", [name]);
@@ -170,6 +184,15 @@ export function standIn(
           hold.begun += 1;
           for (const [n, done] of hold.waiters) if (n <= hold.begun) done();
           await hold.gate;
+        }
+        const there = table[name];
+        if (opening?.secret !== undefined) {
+          if (there !== undefined && there.secret === undefined)
+            throw new Unopened(
+              "not encrypted",
+              "the stand-in's pod is not encrypted",
+            );
+          blank(opening.secret, there?.secret ?? opening.secret);
         }
         const entry = (table[name] ??= {
           ...(opening?.title !== undefined && { title: opening.title }),
@@ -186,7 +209,14 @@ export function standIn(
       },
       checkSecret: async (name: string, secret: string) => {
         record("pods.checkSecret", [name, secret]);
-        return table[name]?.secret === secret;
+        const kept = table[name]?.secret;
+        if (kept === undefined)
+          throw new Unopened(
+            "not encrypted",
+            "the stand-in's pod is not encrypted",
+          );
+        blank(secret, kept);
+        return kept === secret;
       },
       remove: async (
         names: readonly string[],

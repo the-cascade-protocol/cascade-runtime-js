@@ -15,6 +15,8 @@ import {
 import { checkouts, findRoot } from "@cascade-runtime/runtime/node";
 import { loadHospital } from "@the-cascade-protocol/sandbox/node";
 import {
+  codeStems,
+  terms,
   ConnectionFailure,
   openPod,
   pullFiles,
@@ -34,7 +36,16 @@ import {
   writeStarterCopies,
 } from "../../src/tables.js";
 import { importClaimingEveryProfile } from "../claiming.js";
-import { TILES } from "./fixtures.js";
+import {
+  CLINVAR,
+  DIFFERS,
+  HARBOURLINE,
+  LABELS,
+  NAME,
+  TILES,
+  VARIANT_ANSWERS,
+  VARIANTS_SAID,
+} from "./fixtures.js";
 import {
   type Alter,
   answering,
@@ -450,6 +461,13 @@ const statin = {
   bringing: {} as Output,
   brought: {} as Output,
   connection: 0,
+  /** What the pod's import and matcher were given and did at the bring-in of a second connection, once `on`. */
+  second: {
+    on: false,
+    claims: [] as { named: readonly string[]; returned: readonly string[] }[],
+    wrote: undefined as unknown[] | undefined,
+    matches: 0,
+  },
 };
 /** The instance the real pod is read through, in the process and over HTTP. */
 let inProcess: Api;
@@ -482,19 +500,42 @@ before(async () => {
             );
             return (value as (...a: unknown[]) => unknown).apply(target, args);
           };
+        if (key === "match")
+          return (...args: unknown[]) => {
+            statin.second.matches += statin.second.on ? 1 : 0;
+            return (value as (...a: unknown[]) => unknown).apply(target, args);
+          };
         if (key !== "import")
           return typeof value === "function" ? value.bind(target) : value;
-        return (
+        return async (
           files: unknown,
-          options: { onProgress?: (told: { part: string }) => unknown },
-        ) =>
-          (value as (...a: unknown[]) => unknown).call(target, files, {
+          options: {
+            onProgress?: (told: { part: string }) => unknown;
+            claimProfiles?: (named: readonly string[]) => readonly string[];
+          },
+        ) => {
+          const second = statin.second.on ? statin.second : undefined;
+          const { claimProfiles } = options;
+          const done = await (
+            value as (...a: unknown[]) => Promise<object>
+          ).call(target, files, {
             ...options,
+            ...(claimProfiles !== undefined && {
+              claimProfiles: (named: readonly string[]) => {
+                const returned = claimProfiles(named);
+                second?.claims.push({ named, returned });
+                return returned;
+              },
+            }),
             onProgress: (told: { part: string }) => {
-              statin.parts.push(told.part);
+              if (second === undefined) statin.parts.push(told.part);
               return options.onProgress?.(told);
             },
           });
+          if (second !== undefined)
+            second.wrote = (done as { wrote: unknown[] }).wrote;
+          return done;
+        };
       },
     });
   const real = host();
@@ -1076,6 +1117,91 @@ describe("Asking a pod a named question, and running a tool on it · api.ask(), 
     });
   });
 
+  describe('given tables a stand-in host scripts, api.tool({ pod, tool: "worth_a_look" }) hands `worthALook` what `said` found', () => {
+    const RXNORM = codeStems.RxNorm;
+    const AMLODIPINE = `${RXNORM}17767`;
+    const medication = (entry: string, code: string, name: string) => ({
+      entry,
+      code: RXNORM + code,
+      medication: name,
+      lifecycle: terms.MedicationActive as string,
+    });
+
+    it("says two medications that share an ingredient from the ingredients `about` gives, named by the ingredient's own `about`", async () => {
+      const ingredients = {
+        ingredients: { codes: [AMLODIPINE], origin: "urn:v" },
+      };
+      const said = new Map<string, unknown>([
+        [`${RXNORM}197361`, ingredients],
+        [`${RXNORM}212550`, ingredients],
+        [AMLODIPINE, { name: { label: "amlodipine", altLabels: [] } }],
+      ]);
+      const { over } = local(
+        {
+          p: {
+            answers: {
+              [MEDICATIONS]: [
+                medication("e1", "197361", "Amlodipine 5 MG Oral Tablet"),
+                medication("e2", "212550", "Norvasc 10 MG Oral Tablet"),
+              ],
+            },
+          },
+        },
+        {
+          tables: {
+            ...FAKE,
+            about: async (codes: string[]) =>
+              new Map(
+                codes.flatMap((code): [string, unknown][] =>
+                  said.has(code) ? [[code, said.get(code)]] : [],
+                ),
+              ),
+          },
+        },
+      );
+      assert.deepEqual(
+        (await over.tool({ pod: "p", tool: "worth_a_look" })).value,
+        [
+          {
+            sentence:
+              "Amlodipine 5 MG Oral Tablet and Norvasc 10 MG Oral Tablet share an ingredient, amlodipine, and are shown apart.",
+            entry: entryId("e1"),
+          },
+        ],
+      );
+    });
+
+    it("says a report that differs from ClinVar from the classification `variantClassification` gives and the verdicts the pod's `agreement` gives", async () => {
+      const { over } = local(
+        {
+          p: {
+            answers: VARIANT_ANSWERS,
+            other: { agreement: () => VARIANTS_SAID.verdicts as never },
+          },
+        },
+        {
+          tables: {
+            ...FAKE,
+            variantClassification: async () => VARIANTS_SAID.says.get("v1"),
+            labels: async () => LABELS,
+            about: async () => new Map(),
+            held: async () => [CLINVAR],
+          },
+        },
+      );
+      assert.deepEqual(
+        (await over.tool({ pod: "p", tool: "worth_a_look" })).value,
+        [
+          {
+            sentence: `MLH1 ${NAME}: your 2022 report from ${HARBOURLINE} differs from ClinVar today.`,
+            entry: entryId("v1"),
+            tag: DIFFERS,
+          },
+        ],
+      );
+    });
+  });
+
   describe('given reference tables that say what Worth a look reads of them, api.tool({ pod, tool: "worth_a_look" })', () => {
     /** The statin story's pod with a second atorvastatin of another code, which the tables say share an ingredient. */
     const statins = once(async () => {
@@ -1589,7 +1715,8 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
         const refused = (call: Promise<unknown>) =>
           call.then(
             () => "opened",
-            (error: Error & { outcome?: string }) => error.outcome,
+            (error: Error & { outcome?: string }) =>
+              error.outcome ?? `${error.name}: ${error.message}`,
           );
         return {
           names: await pods.names(),
@@ -1602,8 +1729,12 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
           withOtherWords: await refused(
             pods.open(SEALED, { secret: "not the words at all" }),
           ),
+          withEmptyWords: await refused(pods.open(SEALED, { secret: "" })),
+          withBlankWords: await refused(pods.open(SEALED, { secret: "  " })),
           rightWords: await pods.checkSecret(SEALED, SEALED_WORDS),
           otherWords: await pods.checkSecret(SEALED, "not the words at all"),
+          checkedEmpty: await refused(pods.checkSecret(SEALED, "")),
+          checkedBlank: await refused(pods.checkSecret(SEALED, "  ")),
         };
       };
       const { s, built: standing } = local({
@@ -1615,12 +1746,111 @@ describe("Making, unlocking, locking and deleting pods · api.makePod(), api.wai
         await outcome(nodeHost({ folder }).pods, inProcess),
       );
     });
+
+    it("answers what nodeHost answers to the same edge inputs: blank words, words for a pod that has none, a pod that is not there, names of odd characters, a second opening, a removed pod", async () => {
+      type Pods = ReturnType<typeof nodeHost>["pods"];
+      const OTHER = "not the words at all";
+      const odd = ["Has Space", "UPPER", "ünï", ".hidden"];
+      const steps: [string, (pods: Pods) => Promise<unknown>][] = [
+        ["open blank", (p) => p.open(SEALED, { secret: "  " })],
+        [
+          "open a plain pod with words",
+          (p) => p.open("plain", { secret: OTHER }),
+        ],
+        [
+          "open a plain pod with blank words",
+          (p) => p.open("plain", { secret: "" }),
+        ],
+        ["check a plain pod", (p) => p.checkSecret("plain", SEALED_WORDS)],
+        ["check a plain pod, blank", (p) => p.checkSecret("plain", "")],
+        ["check a pod not there", (p) => p.checkSecret("ghost", OTHER)],
+        ["check a pod not there, blank", (p) => p.checkSecret("ghost", "")],
+        ["title of a pod not there", (p) => p.title("ghost")],
+        ["title of a sealed pod", (p) => p.title(SEALED)],
+        ["open a pod not there", (p) => p.open("ghost")],
+        ["names with it", (p) => p.names()],
+        ["a new sealed pod, blank", (p) => p.open("blank", { secret: "" })],
+        ["names without it", (p) => p.names()],
+        [
+          "open a sealed pod twice",
+          async (p) => {
+            const both = await Promise.all([
+              p.open(SEALED, { secret: SEALED_WORDS }),
+              p.open(SEALED, { secret: SEALED_WORDS }),
+            ]);
+            const encrypted = both.map((pod) => pod.encrypted);
+            await Promise.all(both.map((pod) => pod.close()));
+            return encrypted;
+          },
+        ],
+        ...odd.map((name): [string, (pods: Pods) => Promise<unknown>] => [
+          `open ${name}`,
+          (p) => p.open(name),
+        ]),
+        ["title of an odd name", (p) => p.title(odd[0]!)],
+        ["names with odd names", (p) => p.names()],
+        ["remove the odd names", (p) => p.remove(odd, { all: false })],
+        [
+          "remove what is not there",
+          (p) => p.remove(["nothing-here"], { all: false }),
+        ],
+        ["remove the plain pod", (p) => p.remove(["plain"], { all: false })],
+        ["title once removed", (p) => p.title("plain")],
+        ["check once removed", (p) => p.checkSecret("plain", OTHER)],
+        ["remove the sealed pod", (p) => p.remove([SEALED], { all: false })],
+        ["open it without words once removed", (p) => p.open(SEALED)],
+        ["check it once removed", (p) => p.checkSecret(SEALED, SEALED_WORDS)],
+        ["remove all", (p) => p.remove([], { all: true })],
+        ["names at the end", (p) => p.names()],
+      ];
+      const run = async (pods: Pods) => {
+        const seen: Record<string, unknown> = {};
+        for (const [label, step] of steps)
+          seen[label] = await step(pods).then(
+            async (value) => {
+              if (typeof (value as { close?: unknown })?.close !== "function")
+                return value;
+              await (value as { close(): Promise<void> }).close();
+              return { opened: (value as { encrypted: boolean }).encrypted };
+            },
+            (error: Error & { outcome?: string }) =>
+              error.outcome ?? `${error.name}: ${error.message}`,
+          );
+        return seen;
+      };
+      const at = await mkdtemp(join(tmpdir(), "pod-api-edges-"));
+      folders.push(at);
+      await (await openPod(join(at, SEALED), { secret: SEALED_WORDS })).close();
+      await (await openPod(join(at, "plain"), { title: "Plain" })).close();
+      const { s } = local({
+        plain: { title: "Plain" },
+        [SEALED]: { secret: SEALED_WORDS },
+      });
+      assert.deepEqual(
+        await run(s.host.pods as never),
+        await run(nodeHost({ folder: at }).pods),
+      );
+    });
   });
 
   describe("given an encrypted pod that is not open", () => {
     it('returns `locked: "secret needed"` from `api.pod()`', async () => {
       const { over } = local({ [SEALED]: { secret: SEALED_WORDS } });
       assert.equal((await over.pod({ pod: SEALED })).locked, "secret needed");
+    });
+
+    it("says `encrypted: true` from `api.pod()` of a locked pod, of one unlocked, and of the real one, and `false` of a plain pod", async () => {
+      const { over } = local({
+        [SEALED]: { secret: SEALED_WORDS },
+        plain: {},
+      });
+      assert.equal((await over.pod({ pod: SEALED })).encrypted, true);
+      await over.unlock({ pod: SEALED, secret: SEALED_WORDS });
+      const unlocked = await over.pod({ pod: SEALED });
+      assert.equal(unlocked.locked, undefined);
+      assert.equal(unlocked.encrypted, true);
+      assert.equal((await over.pod({ pod: "plain" })).encrypted, false);
+      assert.equal((await inProcess.pod({ pod: SEALED })).encrypted, true);
     });
 
     it("throws `Unopened` with `secret needed` from `api.answers()`", async () => {
@@ -1963,11 +2193,14 @@ function importing(...script: Imports[]) {
     },
   ) => {
     const step = script[Math.min(at++, script.length - 1)]!;
-    options.claimProfiles?.(step.named ?? []);
+    const named = step.named ?? [];
+    // As the real import: an import that files nothing is not asked which profiles to claim.
+    const asked = options.claimProfiles !== undefined && step.wrote === true;
+    if (asked) assert.deepEqual(options.claimProfiles!(named), named);
     for (const part of ["loading the adapter", "converting", "saving"])
       await options.onProgress?.({ part });
     const claims = (step.claimed ?? []).length;
-    if (options.claimProfiles !== undefined)
+    if (asked)
       await options.onProgress?.({ part: "judging", done: 0, of: claims });
     if (step.throws !== undefined) throw step.throws;
     return {
@@ -2230,7 +2463,7 @@ const matchesOnce = once(async () => {
   const { s, built: first } = local(
     {
       ada: {
-        import: importing(FIRST_TRY, { named: [], wrote: false }),
+        import: importing(FIRST_TRY, { wrote: false }),
         look: () => [{ server: FHIR_BASE() }],
       },
     },
@@ -2335,12 +2568,37 @@ SELECT ?act (COUNT(DISTINCT ?version) AS ?versions) (SAMPLE(?client) AS ?client)
       );
     });
 
-    it("writes no file at a second sign-in when the server says the same of itself", async () => {
+    /** A second connection of the real pod, pulled and brought in, with what its import and matcher were given and did. */
+    const secondOnce = once(async () => {
       const before_ = await filesOf();
       const second = await connectedAndPulled(inProcess, STATIN);
-      assert.deepEqual(await filesOf(), before_);
+      const at = { pod: STATIN, connection: second.connection };
+      statin.second.on = true;
+      try {
+        await inProcess.bring(at);
+        let brought = await inProcess.connection({ ...at, wait: true });
+        for (let tries = 0; !brought.broughtIn && tries < 120; tries++)
+          brought = await inProcess.connection({ ...at, wait: true });
+        return { before_, second, brought, after: await filesOf() };
+      } finally {
+        statin.second.on = false;
+      }
+    });
+
+    it("writes no file at a second sign-in when the server says the same of itself", async () => {
+      const { before_, second, after } = await secondOnce();
+      assert.deepEqual(after, before_);
       assert.equal(second.shown.notRecorded, undefined);
       assert.equal(statin.shown.notRecorded, undefined);
+    });
+
+    it("brings in a second pull of the same records with nothing filed, no profile to claim asked for and no matcher run", async () => {
+      const { brought } = await secondOnce();
+      assert.equal(brought.broughtIn, true, JSON.stringify(brought));
+      assert.equal(brought.failed, undefined);
+      assert.deepEqual(statin.second.wrote, []);
+      assert.deepEqual(statin.second.claims, []);
+      assert.equal(statin.second.matches, 0);
     });
 
     it("says in `notRecorded` that a server answered 404 to `metadata`, and pulls all the same", async () => {
@@ -2497,7 +2755,7 @@ SELECT ?act (COUNT(DISTINCT ?version) AS ?versions) (SAMPLE(?client) AS ?client)
       assert.match(refused.shown.failed, /^Refused: not a record/);
     });
 
-    it("claims no profile its owner said is not them, so the pod is not titled", async () => {
+    it("neither titles the pod nor judges a profile when the import claimed nothing, as when its owner has said the profile is not them", async () => {
       const { disclaimed } = await namedAfterBringIn();
       assert.equal(disclaimed.shown.broughtIn, true);
       assert.deepEqual(disclaimed.judged, []);
