@@ -79,6 +79,30 @@ export async function withKit(
   return local;
 }
 
+/**
+ * The downloads a kit's story imports, each once, in the order it first imports it: the path of each in the vocabulary,
+ * which is a folder for an Apple Health export or a saved pull and a file for a C-CDA document.
+ */
+export async function downloadsImportedBy(
+  local: LocalVocabulary,
+  kit: string,
+): Promise<string[]> {
+  const { person, steps } = await featureStory(
+    local.files,
+    `${KITS}${kit}/${kit}.feature`,
+    () => new OxigraphStore(),
+  );
+  return [
+    ...new Set(
+      steps.flatMap(({ happened }) =>
+        happened.kind === "import"
+          ? [`${person.folder}/${happened.export}`]
+          : [],
+      ),
+    ),
+  ];
+}
+
 async function kitVocabulary(kit: string): Promise<LocalVocabulary> {
   return withKit((await resolved()).local, kit);
 }

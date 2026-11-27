@@ -72,6 +72,11 @@ import {
   Unopened,
 } from "cascade-runtime";
 import { kitDownload, kitStory, replayKit } from "cascade-runtime/fixtures";
+import {
+  loadSample,
+  sampleExport,
+  samplePeople,
+} from "cascade-runtime/samples";
 import { Answers } from "../src/answers.js";
 import { packedFolder } from "./packed.js";
 import { LOOKUPS, lookupsOf, withLookups } from "../src/lookups.js";
@@ -5269,6 +5274,152 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
         /no such step/,
         "a step the story doesn't have",
       );
+    });
+  });
+});
+
+/**
+ * `cascade-runtime/samples` is how an app reaches the made-up people the package carries: who they are, one of their
+ * exports to bring in by a plain name, and a pod made as theirs. An app imports it, where `cascade-runtime/fixtures`
+ * is for tests.
+ */
+describe("Sample people for an app to start from · samplePeople(), sampleExport(), loadSample()", () => {
+  describe("samplePeople()", () => {
+    it("lists each person the package carries, with their own name and a plain name for each export their story brings in, in order", async () => {
+      const people = await samplePeople();
+      const carried = (
+        await readdir(inKit("conformance"), { withFileTypes: true })
+      )
+        .filter((entry) => entry.isDirectory())
+        .map(({ name }) => name);
+      assert.deepEqual(
+        people.map(({ person }) => person).sort(),
+        carried.sort(),
+      );
+      assert.deepEqual(
+        people.find(({ person }) => person === "alex-rivera"),
+        {
+          person: "alex-rivera",
+          title: "Alex Rivera",
+          exports: [
+            "first export",
+            "second export",
+            "third export",
+            "fourth export",
+            "fifth export",
+            "sixth export",
+          ],
+        },
+      );
+    });
+
+    it("gives each person's every export a path that exists, and no two the same path", async () => {
+      for (const { person, exports } of await samplePeople()) {
+        const paths = await Promise.all(
+          exports.map((name) => sampleExport(person, name)),
+        );
+        assert.equal(new Set(paths).size, paths.length, person);
+        for (const path of paths) await stat(path);
+      }
+    });
+
+    it("leaves `configureTables` open, since it makes no tables", async () => {
+      const script = `
+        import { configureTables } from "cascade-runtime";
+        import { sampleExport, samplePeople } from "cascade-runtime/samples";
+        await samplePeople();
+        await sampleExport("alex-rivera", "first export");
+        configureTables({});
+      `;
+      await promisify(execFile)(
+        process.execPath,
+        ["--input-type=module", "-e", script],
+        { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 120_000 },
+      );
+    });
+  });
+
+  describe("sampleExport(person, name)", () => {
+    it("returns what `look` and `import` take: the folder of an Apple Health export, a C-CDA file, or the folder of a saved pull", async () => {
+      assert.equal(
+        await sampleExport("alex-rivera", "first export"),
+        exported("x-e2"),
+      );
+      assert.match(
+        await readFile(
+          await sampleExport("priya-natarajan", "second export"),
+          "utf8",
+        ),
+        /<ClinicalDocument/,
+        "a C-CDA document",
+      );
+      assert.ok(
+        (
+          await readdir(await sampleExport("martin-okafor", "first export"))
+        ).includes("bundle.json"),
+        "a saved pull",
+      );
+    });
+
+    it("throws `Refusal`, naming the people or the exports there are, for a name it doesn't have", async () => {
+      for (const [name, refused, reason] of [
+        [
+          "a person it doesn't carry",
+          () => sampleExport("no-such-person", "first export"),
+          /no sample person no-such-person; there are .*alex-rivera/,
+        ],
+        [
+          "an export beyond the person's last",
+          () => sampleExport("alex-rivera", "seventh export"),
+          /alex-rivera has no export seventh export; alex-rivera has first export, second export/,
+        ],
+        [
+          "a story's name for an export, which is for tests",
+          () => sampleExport("alex-rivera", "x-e2"),
+          /has no export x-e2/,
+        ],
+      ] as const)
+        await assert.rejects(
+          refused(),
+          (error) => error instanceof Refusal && reason.test(error.message),
+          name,
+        );
+    });
+  });
+
+  describe("loadSample(person, folder, { through })", () => {
+    const at = () => join(pods, "samples", "alex-rivera");
+
+    it("makes the person's pod in the folder, performing their story through the step named, and returns the steps", async () => {
+      const steps = await loadSample("alex-rivera", at(), { through: "J1" });
+      assert.deepEqual(
+        [steps[0]?.step, steps[0]?.kind, steps.at(-1)?.step],
+        ["E1", "creation", "J1"],
+      );
+      const loaded = await openPod(at());
+      try {
+        assert.equal(await loaded.opened, undefined);
+        assert.deepEqual(await allergens(loaded), [
+          "Codeine",
+          "Latex",
+          "Penicillin G",
+          "Sulfamethoxazole",
+        ]);
+      } finally {
+        await loaded.close();
+        await settled(join(pods, "samples"));
+      }
+    });
+
+    it("throws `Refusal`, naming the people there are, for a person it doesn't carry, and writes nothing", async () => {
+      const empty = join(pods, "samples", "nobody");
+      await assert.rejects(
+        loadSample("no-such-person", empty),
+        (error) =>
+          error instanceof Refusal &&
+          /there are .*alex-rivera/.test(error.message),
+      );
+      await assert.rejects(stat(empty), { code: "ENOENT" });
     });
   });
 });

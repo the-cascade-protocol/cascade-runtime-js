@@ -195,7 +195,7 @@ To see where the time of a build went, [each build's flame graphs](https://the-c
 
 ### The developer story
 
-There are two, one per epic. `developer-story/allergies.mjs` is what an app would write against the package
+There are three: two, one per epic, and the get-started page's script. `developer-story/allergies.mjs` is what an app would write against the package
 `cascade-runtime`: open a pod, look at Alex's first export, import it as hers
 and print her active allergies. It is the developer story of
 [#20](https://github.com/the-cascade-protocol/cascade-runtime-js/issues/20) and that epic's
@@ -210,6 +210,11 @@ download from Kestrel Harbor Hospital, synthetic, are in her kit's
 and imports it as hers, then prints her active medications: lisinopril, which
 both formats carry, as one entry, and amlodipine, which only the C-CDA has. The
 same test file runs it and checks those rows.
+
+`developer-story/first.mjs` is the get-started page's script for an app of one's own. It takes Alex's `first export`
+from `cascade-runtime/samples`, looks at it, imports it as hers and prints her four active allergies, each with the
+record it came from. The same test file runs it, on the installed package in CI, and checks the source and the
+allergies it prints; the page copies the script, so a change to what it prints is a change to the page.
 
 ### The package
 

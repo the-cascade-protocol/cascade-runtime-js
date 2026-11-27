@@ -157,10 +157,10 @@ const AMLODIPINE = {
 };
 
 /**
- * The two scripts the README walks a developer through, run as that developer runs them: from a folder outside the
- * repository, on a kit's downloads, with the real Bridge.
+ * The scripts the README and the get-started page walk a developer through, run as that developer runs them: from a
+ * folder outside the repository, on a kit's downloads, with the real Bridge.
  */
-describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs", () => {
+describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs, developer-story/first.mjs", () => {
   describe("when `allergies.mjs` is run on Alex's first export", () => {
     let printed: StoryRow[];
     let expected: StoryRow[];
@@ -221,22 +221,35 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
       printed = await printedBy("first.mjs", "pods", []);
     });
 
-    it("prints one source, Meridian Health System, then Codeine, Latex, Penicillin G and Sulfamethoxazole", (t) => {
+    it("prints one source, Meridian Health System", (t) => {
       t.diagnostic(printed);
-      const at = (text: string) => printed.indexOf(text);
-      assert.equal(printed.split("Meridian Health System").length, 2);
-      const order = [
-        "Meridian Health System",
-        "Codeine",
-        "Latex",
-        "Penicillin G",
-        "Sulfamethoxazole",
-      ].map(at);
       assert.deepEqual(
-        order,
-        [...order].sort((a, b) => a - b),
+        [...printed.matchAll(/^\s+name: '(.+)',$/gm)].map(([, name]) => name),
+        ["Meridian Health System"],
       );
-      assert.ok(!order.includes(-1), `the script printed ${printed}`);
+    });
+
+    it("prints Codeine, Latex, Penicillin G and Sulfamethoxazole, each with the records it came from, all written by Meridian Health System", () => {
+      const allergies = [
+        ...printed.matchAll(
+          /^(.+?) (\S+) \[\r?\n((?:\s+'.*',?\r?\n)+)\]\r?$/gm,
+        ),
+      ].map(([, allergen, , records]) => ({
+        allergen,
+        records: (records ?? "").trim().split(/\r?\n/),
+      }));
+      assert.deepEqual(
+        allergies.map(({ allergen }) => allergen),
+        ["Codeine", "Latex", "Penicillin G", "Sulfamethoxazole"],
+      );
+      for (const { allergen, records } of allergies)
+        assert.ok(
+          records.length > 0 &&
+            records.every((record) =>
+              record.includes("written by Meridian Health System"),
+            ),
+          `${allergen}: ${records.join()}`,
+        );
     });
   });
 
