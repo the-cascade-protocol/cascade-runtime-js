@@ -35,6 +35,7 @@ import {
   type TextRow,
   textRow,
 } from "cascade-runtime";
+import { shipped } from "../pack/notes.js";
 import { settled } from "./settled.js";
 
 const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
@@ -714,18 +715,17 @@ async function showPerson(shown) {
       assert.deepEqual(wrong, []);
     });
 
-    it("gives, as the line that installs cascade-reference-tables, the build this repository tests with", async () => {
-      const { devDependencies } = JSON.parse(
-        await readFile(join(ROOT, "package.json"), "utf8"),
-      ) as { devDependencies: Record<string, string> };
-      const pinned = devDependencies["cascade-reference-tables"];
-      assert.ok(pinned);
-      assert.ok(
-        (await readFile(GUIDE, "utf8")).includes(
-          `npm install --save-exact ${pinned}`,
-        ),
-        `the guide does not install ${pinned}`,
-      );
+    it("gives, packed, as the line that installs cascade-reference-tables, the build the package was tested with", async () => {
+      const address =
+        "https://github.com/the-cascade-protocol/cascade-reference-tables/releases/download/package-builds/cascade-reference-tables-0.0.0-commit-1.tgz";
+      const packed = shipped(
+        await readFile(GUIDE, "utf8"),
+        "https://example.org/cascade-runtime.tgz",
+        [{ name: "cascade-reference-tables", address, file: "" }],
+      ).split("\n");
+      const install = packed.indexOf(`npm install --save-exact ${address}`);
+      assert.ok(install > 0, "the packed guide does not install the tables");
+      assert.match(packed.slice(0, install).join("\n"), /\bbuilders\b[^#]*$/);
     });
   });
 });

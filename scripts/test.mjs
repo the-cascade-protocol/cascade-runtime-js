@@ -36,6 +36,19 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+// A plain `npm install` puts the committed builds of the tables and the sandbox back over the picked ones without a
+// word, so every run says which it is on.
+try {
+  const { testedLine } = await import(
+    pathToFileURL(
+      join("packages", "cascade-runtime", "dist", "pack", "tested.js"),
+    ).href
+  );
+  process.stdout.write(`${await testedLine(process.cwd())}\n`);
+} catch (error) {
+  process.stdout.write(`Builds under test: not read: ${error.message}\n`);
+}
+
 const run = spawnSync(
   process.execPath,
   [

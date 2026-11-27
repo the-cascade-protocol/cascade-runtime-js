@@ -421,8 +421,8 @@ ${html}</article>
   }).text;
 }
 
-/** The README's marker where the package's install line goes, which a page has no install line for. */
-const INSTALL_MARKER = /^<!-- INSTALL -->\r?\n(?:\r?\n)?/m;
+/** The markers where the pack writes the package's install line and the tables build's, which a page has neither of. */
+const INSTALL_MARKERS = /^<!-- (?:INSTALL|TABLES) -->\r?\n(?:\r?\n)?/gm;
 
 /**
  * The API page and the package page: the guide an agent reads and the package's README, rendered as they are. The guide
@@ -455,7 +455,7 @@ export function apiPages(
           "guide",
           markup`<p class="about">This page is the guide a coding agent reads, <a href="../${AGENTS_FILE}">${AGENTS_FILE}</a>, as a page. What the package is and holds: <a href="package.html">the package</a>.</p>
 `,
-          guide,
+          guide.replace(INSTALL_MARKERS, ""),
           true,
           anchors,
         ),
@@ -470,7 +470,7 @@ export function apiPages(
           "package",
           markup`<p class="about">The calls are on <a href="index.html">the guide</a>.</p>
 `,
-          readme.replace(INSTALL_MARKER, ""),
+          readme.replace(INSTALL_MARKERS, ""),
         ),
       ),
     ],

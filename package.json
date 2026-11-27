@@ -39,6 +39,7 @@
     "test:launcher": "tsc -b && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./packages/cascade-runtime/dist/test-launcher/failure-annotations.js --test-reporter-destination=stdout packages/cascade-runtime/dist/test-launcher/launcher.test.js",
     "conformance": "tsc -b packages/runtime packages/cascade-runtime && node packages/runtime/dist/src/node/cli.js conformance",
     "bridge": "tsc -b packages/runtime && node packages/runtime/dist/src/node/cli.js bridge",
+    "builds": "node scripts/builds.mjs",
     "oxigraph:fetch": "tsc -b packages/runtime && node packages/runtime/dist/src/node/cli.js fetch-oxigraph",
     "build:example-pod": "tsc -b && node packages/runtime/dist/src/node/cli.js build-example-pod",
     "kit:bridge": "tsc -b && node packages/runtime/dist/src/node/cli.js kit-bridge",
@@ -60,6 +61,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@the-cascade-protocol/sandbox": "https://github.com/the-cascade-protocol/cascade-sandbox/releases/download/build-f7e9c651d130e8409db0f679954aa6f6e757c6c3/the-cascade-protocol-sandbox-0.0.0-commit-f7e9c651d130e8409db0f679954aa6f6e757c6c3.tgz",
     "@types/node": "22.20.5",
     "cascade-reference-tables": "https://github.com/the-cascade-protocol/cascade-reference-tables/releases/download/package-builds/cascade-reference-tables-0.0.0-commit-abcb8bd9a99f3f2d9b33351b97416fc0b81f7bab.tgz",
     "eslint": "10.12.0",

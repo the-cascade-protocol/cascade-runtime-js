@@ -96,9 +96,10 @@ describe("The API page · apiSection", () => {
       api = readPage(read(tree, "api/index.html"));
     });
 
-    it("shows the guide under the guide's own title", () => {
+    it("shows the guide under the guide's own title, without the marker the pack writes the tables' install line at", () => {
       assert.equal(apiSection.path, "api/index.html");
       assert.equal(api.h1, guide.first);
+      assert.ok(!read(tree, "api/index.html").includes("TABLES --"));
     });
 
     it("shows every `##` heading of the guide", () => {
