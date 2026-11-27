@@ -1,9 +1,42 @@
 // What `cascade-runtime/app` gives on every target: PodApi over a host, the inputs each operation takes, the tools a model
-// reaches it by, the client of a server's `/api/`, and what any app showing a pod says the same way (`said.ts`).
+// reaches it by, the client of a server's `/api/`, what any app showing a pod says the same way (`said.ts`), and what
+// any page of an app does, framework-free: its state on the body, the engine's warming, the idle lock and the model context.
 export * from "./inputs.js";
 export * from "./pod-api.js";
 export * from "./remote.js";
 export * from "./tools.js";
+export {
+  engineWarming,
+  warmEngine,
+  type Warmable,
+  whenNamed,
+} from "./page-engine.js";
+export { idleCounted, revalidateWhenIdle } from "./page-idle.js";
+export {
+  type Committed,
+  firstScreenDrawn,
+  isPageBusy,
+  onSaying,
+  pageBusy,
+  pageCommitted,
+  pageFailed,
+  pageReady,
+  pageSettled,
+  type RouterLike,
+  type RouterState,
+  sayingNow,
+  watchRouter,
+} from "./page-state.js";
+export {
+  type Asking,
+  type Confirm,
+  offerTools,
+  type ReadTool,
+  type ToolsNow,
+  type ToolsOffered,
+  type ToolSteps,
+  toolsNow,
+} from "./web-tools.js";
 export {
   PAGE_TOOLS,
   type PageDoor,

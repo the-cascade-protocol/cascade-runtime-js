@@ -14,7 +14,8 @@ runtime behind it, in Node and in the page (in the page it carries its own
 `Refusal`, so tell a refusal by its `name`, never `instanceof`). `cascade-runtime/vite` is
 `cascadeRuntime()`, a Vite plugin (`vite` is an optional peer) that keeps the
 runtime out of an app's browser bundle and serves its browser build beside it,
-under the base, with the import map that loads it. `terms`, from each entry and from
+under the base, with the import map that loads it; given `{ app: true }` it also carries an app's About box and, in the
+browser build, its demo hospitals. `terms`, from each entry and from
 `cascade-runtime/terms` with nothing of the runtime behind it, holds the IRIs the starter
 names, keyed by the term's local name in the vocabulary's one namespace, and `codeStems`
 each code system's IRI stem, keyed by the system's local name. `cascade-runtime/tools`

@@ -256,16 +256,12 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
         "Sources disagree on how severe the Sulfamethoxazole allergy is.";
       const influenza =
         "Influenza, injectable, quadrivalent, preservative free was matched in two different ways.";
-      const said = printed.map(({ sentence }) => String(sentence)).sort();
-      // A fresh folder holds no tables, so it says only the first; the installed app holds the package's.
-      if (APP === undefined) assert.deepEqual(said, [sulfamethoxazole]);
-      else
-        assert.ok(
-          [[sulfamethoxazole], [influenza, sulfamethoxazole]].some(
-            (lines) => JSON.stringify(lines) === JSON.stringify(said),
-          ),
-          JSON.stringify(said),
-        );
+      // A fresh folder holds no tables, so it says only the first; the installed app holds the package's, which join the
+      // second. The lines are in the order the question gives them, which the script keeps.
+      assert.deepEqual(
+        printed.map(({ sentence }) => String(sentence)),
+        APP === undefined ? [sulfamethoxazole] : [influenza, sulfamethoxazole],
+      );
       assert.ok(printed.every(({ tag }) => tag === "Needs review"));
     });
   });
