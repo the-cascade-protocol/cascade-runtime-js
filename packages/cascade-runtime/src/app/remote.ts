@@ -49,9 +49,11 @@ async function answer<K extends Operation>(
   throw new Error(`${operation}: the server answered ${response.status}`);
 }
 
-/** Every operation of PodApi at the server whose app is at `base`. */
+/** Every operation of PodApi at the server whose app is at `base`: its path is kept, its query and fragment are not. */
 export function remoteApi(base: string, options: RemoteOptions = {}) {
-  const root = base.endsWith("/") ? base : `${base}/`;
+  const root = new URL(base);
+  root.search = root.hash = "";
+  if (!root.pathname.endsWith("/")) root.pathname += "/";
   const send = <K extends Operation>(operation: K, json: In<K>) =>
     answer(
       operation,

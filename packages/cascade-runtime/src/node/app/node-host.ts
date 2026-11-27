@@ -4,7 +4,13 @@ import { join } from "node:path";
 import type { PodHost } from "../../app/pod-api.js";
 import { checkSecret, openPod, tablesBeside } from "../../index.js";
 import { podReads } from "../pod-reads.js";
-import { deletePod, podNames, podTitle, restoreKits } from "./pods.js";
+import {
+  deletePod,
+  podNames,
+  podTitle,
+  restoreKits,
+  titleInManifest,
+} from "./pods.js";
 
 /**
  * The pods in `folder` and their tables, for `podApi`. With `opensEncrypted` false, an encrypted pod is refused rather
@@ -22,7 +28,8 @@ export function nodeHost({
   return {
     pods: {
       names: () => podNames(folder),
-      title: (name) => podTitle(name, folder),
+      title: async (name) =>
+        (await podTitle(name, folder)) ?? titleInManifest(name, folder),
       open: (name, options) => openPod(join(folder, name), options),
       checkSecret: (name, secret) => checkSecret(join(folder, name), secret),
       async remove(names, { all = false } = {}) {

@@ -3,12 +3,13 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { Refusal, Unopened } from "@cascade-runtime/runtime";
+import { podStated, Refusal, Unopened } from "@cascade-runtime/runtime";
 import { notOpenedHere } from "../../app/pod-api.js";
 import { openPod } from "../../index.js";
 import { seconds } from "../../phase.js";
 import type { Pod } from "../../pod.js";
 import { loadSample } from "../../samples.js";
+import { resolved } from "../resolved.js";
 
 /** The kits whose pods the app was made with. */
 export const KITS = [
@@ -77,6 +78,23 @@ export async function podTitle(
       await readFile(join(answersFolder(name, folder), "pod.json"), "utf8"),
     ) as { title?: unknown };
     return typeof kept.title === "string" ? kept.title : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The title the pod's manifest holds, for the pod that keeps no `pod.json` (a runtime run from a checkout writes none);
+ * undefined where it was never titled, or where the pod is sealed.
+ */
+export async function titleInManifest(
+  name: string,
+  folder: string,
+): Promise<string | undefined> {
+  try {
+    const parts = await resolved();
+    const { files } = parts.folder(join(folder, name));
+    return (await podStated(files, parts.layout, parts.newStore())).title;
   } catch {
     return undefined;
   }

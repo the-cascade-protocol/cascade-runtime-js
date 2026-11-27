@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import {
+  canonical,
+  MemoryFiles,
+  ntriples,
+  OxigraphStore,
+} from "@cascade-runtime/runtime";
+import { checkouts, findRoot } from "@cascade-runtime/runtime/node";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
   ConnectionFailure,
@@ -15,7 +23,11 @@ import {
   timelineIn,
   Unopened,
 } from "cascade-runtime";
+import { loadSample } from "cascade-runtime/samples";
 import { trendOf } from "cascade-runtime/tools";
+import { partsOf } from "../../src/node/resolved.js";
+import { openPodWith } from "../../src/pod.js";
+import { Tables, versionName, writeStarterCopies } from "../../src/tables.js";
 import { importClaimingEveryProfile } from "../claiming.js";
 import {
   type Alter,
@@ -25,7 +37,7 @@ import {
   routed,
   rowOf,
 } from "../hospitals.js";
-import { removed } from "../settled.js";
+import { removed, settled } from "../settled.js";
 
 type Input = Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +136,7 @@ const EMPTY = "empty";
 const SEALED = "sealed";
 const LDL = "18262-6";
 const ATORVASTATIN = "617310";
+const SECOND_ATORVASTATIN = "617314";
 const LABS = "pod/My lab results";
 const IMPORTS = "pod/What each import brought in";
 const MEDICATIONS = "pod/My medication history";
@@ -522,6 +535,85 @@ const brokenApi = () =>
       throw new Error("tables are broken");
     },
   });
+
+const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
+const CLINVAR_FEED = "https://tables.example/feed.ttl";
+const CLINVAR_PREFIXES = `@prefix cascade: <${CASCADE}> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix pav: <http://purl.org/pav/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix spdx: <http://spdx.org/rdf/terms#> .
+`;
+
+/**
+ * The reference tables an app starts from when the one series they hold is ClinVar's, whose one row, found by the coding
+ * expression `NM_000249.3:c.2042C>T`, classifies the variation Pathogenic; and the parts a pod is opened with over them.
+ */
+async function clinvarTables() {
+  const series = "urn:uuid:0a1e2c3d-4b5a-4c6d-8e7f-a1b2c3d4e5f6";
+  const url = "https://tables.example/rows/clinvar.nq.gz";
+  const found = await partsOf(
+    await checkouts(findRoot(dirname(fileURLToPath(import.meta.url)))),
+  );
+  const rows = await new OxigraphStore().parse(
+    `${CLINVAR_PREFIXES}<https://identifiers.org/clinvar:90011> cascade:hgvsExpression <https://ns.cascadeprotocol.org/codes/hgvs/NM_000249.3%3Ac.2042C%3ET> ; cascade:clinvarClassification cascade:Pathogenic .`,
+    "urn:test:rows",
+  );
+  const version = await versionName(series, undefined, rows);
+  const bytes = new Uint8Array(
+    await new Response(
+      new Blob([
+        (await canonical(rows))
+          .split("\n")
+          .filter((line) => line.trim() !== "")
+          .map((line) => `${line.replace(/\s*\.\s*$/, "")} <${version}> .`)
+          .sort()
+          .join("\n"),
+      ])
+        .stream()
+        .pipeThrough(new CompressionStream("gzip")),
+    ).arrayBuffer(),
+  );
+  const checksum = [
+    ...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+  ]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const catalog = await new OxigraphStore().parse(
+    `${CLINVAR_PREFIXES}<${series}> a cascade:ReferenceSeries ; rdfs:label "ClinVar" ;
+  cascade:tableKind cascade:VariantClassifications ; dct:bibliographicCitation "ClinVar, NCBI." ;
+  dcat:hasCurrentVersion <${version}> .
+<${version}> prov:specializationOf <${series}> ; pav:version "1" ; cascade:coversGene "MLH1" ;
+  dcat:distribution [ dcat:downloadURL <${url}> ; spdx:checksum [ spdx:checksumValue "${checksum}" ] ] .`,
+    CLINVAR_FEED,
+  );
+  const served: typeof fetch = async (input) =>
+    String(input) === CLINVAR_FEED
+      ? new Response(new TextDecoder().decode(ntriples(catalog)))
+      : String(input) === url
+        ? new Response(bytes.slice())
+        : new Response(null, { status: 404 });
+  const starter = new MemoryFiles("urn:test:starter/");
+  await writeStarterCopies(
+    {
+      feeds: [CLINVAR_FEED],
+      vocabulary: found.vocabulary,
+      newStore: found.newStore,
+      fetch: served,
+    },
+    (path, bytes) => starter.write(path, bytes),
+  );
+  const tables = new Tables({
+    files: new MemoryFiles("urn:test:app/"),
+    feeds: [CLINVAR_FEED],
+    vocabulary: found.vocabulary,
+    newStore: found.newStore,
+    starter,
+  });
+  return { tables, parts: { ...found, tables } };
+}
 
 /** A stub pod `reviewed`: one thing that needs review, and one table version the app does not hold. */
 const reviewing = () => {
@@ -938,6 +1030,127 @@ describe("Asking a pod a named question, and running a tool on it · api.ask(), 
       assert.deepEqual(
         (await overHttp.tool({ pod: STATIN, tool: "worth_a_look" })).value,
         [],
+      );
+    });
+  });
+
+  describe('given reference tables that say what Worth a look reads of them, api.tool({ pod, tool: "worth_a_look" })', () => {
+    /** The statin story's pod with a second atorvastatin of another code, which the tables say share an ingredient. */
+    const statins = once(async () => {
+      const at = await mkdtemp(join(tmpdir(), "pod-api-statins-"));
+      folders.push(at);
+      const { pull } = await pulled(north, STATIN);
+      const files = pullFiles(pull, "north");
+      const bundle = JSON.parse(
+        new TextDecoder().decode(files.get("north/bundle.json")),
+      );
+      const [first] = bundle.entry.filter(
+        ({ resource }: Output) =>
+          resource.resourceType === "MedicationRequest" &&
+          resource.medicationCodeableConcept.coding[0].code === ATORVASTATIN,
+      );
+      const [coding] = first.resource.medicationCodeableConcept.coding;
+      bundle.entry.push({
+        ...first,
+        fullUrl: first.fullUrl.replace("med-1", "med-3"),
+        resource: {
+          ...first.resource,
+          id: "story-statin-med-3",
+          medicationCodeableConcept: {
+            coding: [
+              {
+                ...coding,
+                code: SECOND_ATORVASTATIN,
+                display: "atorvastatin 40 MG Oral Tablet",
+              },
+            ],
+            text: "Atorvastatin 40 mg tablet",
+          },
+        },
+      });
+      const pod = await openPod(join(at, "two-atorvastatins"));
+      const imported = await importClaimingEveryProfile(
+        pod,
+        new Map([
+          ...files,
+          [
+            "north/bundle.json",
+            new TextEncoder().encode(JSON.stringify(bundle)),
+          ],
+        ]),
+      );
+      assert.equal(imported.refused, undefined);
+      await pod.close();
+      await settled(at);
+      const rxnorm = "https://ns.cascadeprotocol.org/codes/rxnorm/";
+      const ingredient = `${rxnorm}83367`;
+      const about = (code: string): object | undefined =>
+        code === ingredient
+          ? named("atorvastatin")
+          : code.startsWith(rxnorm)
+            ? {
+                ingredients: {
+                  codes: [ingredient],
+                  origin: "urn:test:ingredients",
+                },
+              }
+            : undefined;
+      const tables = {
+        held: async () => [],
+        about: async (codes: string[]) =>
+          new Map(
+            codes.flatMap((code): [string, object][] => {
+              const said = about(code);
+              return said === undefined ? [] : [[code, said]];
+            }),
+          ),
+      };
+      const through = api({
+        ...nodeHost({ folder: at }),
+        tables: async () => tables,
+      });
+      return async () =>
+        (await through.tool({ pod: "two-atorvastatins", tool: "worth_a_look" }))
+          .value as Output[];
+    });
+
+    /** Martin's sample pod, opened over the ClinVar series, whose 2022 report of his MLH1 variant is of uncertain significance. */
+    const martin = once(async () => {
+      const at = await mkdtemp(join(tmpdir(), "pod-api-martin-"));
+      folders.push(at);
+      const { tables, parts } = await clinvarTables();
+      await loadSample("martin-okafor", join(at, "martin-okafor"), { tables });
+      const given = nodeHost({ folder: at });
+      const through = api({
+        ...given,
+        tables: async () => tables,
+        pods: {
+          ...given.pods,
+          open: (name: string) => openPodWith(parts, join(at, name)),
+        },
+      });
+      return async () =>
+        (await through.tool({ pod: "martin-okafor", tool: "worth_a_look" }))
+          .value as Output[];
+    });
+
+    it("says two medications that share an ingredient, with the ingredient's name", async () => {
+      const lines = await (await statins())();
+      assert.ok(
+        lines.some(({ sentence }) =>
+          /share an ingredient, atorvastatin/.test(sentence),
+        ),
+        JSON.stringify(lines),
+      );
+    });
+
+    it("says a report that differs from ClinVar today", async () => {
+      const lines = await (await martin())();
+      const differing = lines.filter(({ tag }) => tag === "Differs");
+      assert.ok(differing.length > 0, JSON.stringify(lines));
+      assert.match(
+        differing[0]!.sentence,
+        /2022 report.* differs from ClinVar today\.$/,
       );
     });
   });
