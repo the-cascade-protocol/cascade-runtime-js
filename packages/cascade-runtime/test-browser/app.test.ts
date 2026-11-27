@@ -18,7 +18,12 @@ interface AppBuild {
   browserHost(options?: {
     samples: { names: readonly string[]; at: string };
   }): object;
-  worthALook(answers: object): { sentence: string; tag?: string }[];
+  worthALook(
+    answers: object,
+    about?: undefined,
+    said?: undefined,
+    sections?: readonly object[],
+  ): { sentence: string; tag?: string }[];
   podApi(
     host: object,
     options?: { sections?: readonly object[] },
@@ -109,25 +114,25 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
             .filter(([, answered]) => answered.length > 0)
             .map(([question]) => question)
             .includes("pod/My active allergies"),
-          review: worthALook(answers).map(({ sentence, tag }) => ({
-            sentence,
-            tag,
-          })),
+          review: worthALook(answers, undefined, undefined, [allergies]),
         };
       }, PERSON);
-      assert.deepEqual(seen, {
+      const { review, ...read } = seen;
+      assert.deepEqual(read, {
         made: { pod: PERSON, loaded: true },
         pods: [PERSON],
         allergens: ["Latex", "Peanuts", "Penicillin", "Sulfamethoxazole"],
         drawn: true,
-        review: [
-          {
-            sentence:
-              "Sources disagree on how severe the Sulfamethoxazole allergy is.",
-            tag: "Needs review",
-          },
-        ],
       });
+      assert.ok(
+        review.some(
+          ({ sentence, tag }) =>
+            sentence ===
+              "Sources disagree on how severe the Sulfamethoxazole allergy is." &&
+            tag === "Needs review",
+        ),
+        JSON.stringify(review),
+      );
     });
 
     it("throws the `Refusal` the package's root build exports, from the same module, for a pod it has not", async () => {

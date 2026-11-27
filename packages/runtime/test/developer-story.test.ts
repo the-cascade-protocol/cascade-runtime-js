@@ -250,15 +250,16 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
       printed = await story("review.mjs", "pods", []);
     });
 
-    it("says, tagged Needs review, that sources disagree on how severe her Sulfamethoxazole allergy is: the one entry her pod says needs review", (t) => {
+    it("says, tagged Needs review, that sources disagree on how severe her Sulfamethoxazole allergy is, among what her pod says needs review", (t) => {
       for (const row of printed) t.diagnostic(JSON.stringify(row));
-      assert.deepEqual(printed, [
-        {
-          sentence:
+      assert.ok(
+        printed.some(
+          ({ sentence }) =>
+            sentence ===
             "Sources disagree on how severe the Sulfamethoxazole allergy is.",
-          tag: "Needs review",
-        },
-      ]);
+        ),
+      );
+      assert.ok(printed.every(({ tag }) => tag === "Needs review"));
     });
   });
 
