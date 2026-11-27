@@ -807,7 +807,7 @@ function withoutLimit(clause: string): string {
   return kept.trim();
 }
 
-const FIRST_BOUND =/COALESCE\s*\(\s*(\?\w+(?:\s*,\s*\?\w+)*)\s*\)/;
+const FIRST_BOUND = /COALESCE\s*\(\s*(\?\w+(?:\s*,\s*\?\w+)*)\s*\)/;
 
 /**
  * The keys the query's rows are ordered by, after its last brace, one for each condition of its ORDER BY, each the

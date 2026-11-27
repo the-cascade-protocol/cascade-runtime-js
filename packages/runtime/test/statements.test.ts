@@ -1082,10 +1082,9 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
       "DESC($a) ?b",
     ])
       assert.deepEqual(
-        finalOrder(`SELECT ?a ?b WHERE { } ORDER BY ${tail}`, [
-          "a",
-          "b",
-        ])?.map(({ columns }) => columns),
+        finalOrder(`SELECT ?a ?b WHERE { } ORDER BY ${tail}`, ["a", "b"])?.map(
+          ({ columns }) => columns,
+        ),
         tail.startsWith("DESC") ? [[0], [1]] : [[0]],
         tail,
       );

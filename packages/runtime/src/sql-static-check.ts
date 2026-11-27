@@ -298,26 +298,23 @@ export function sqlWholeRunAssertions(
     ? Object.keys(KEYED_KINDS).filter((kind) => !kept.has(kind))
     : [];
   return [
-    named(
-      "each-query-gives-a-row",
-      [
-        ...(silent.length === 0
-          ? []
-          : [
-              `each gives no row on any fixture it is compared on, so is compared with nothing: ${silent.join(", ")}`,
-            ]),
-        ...(unfilled.length === 0
-          ? []
-          : [
-              `no fixture whose screens are filled keyed gives its screen a row: ${unfilled.join(", ")}`,
-            ]),
-        ...(unaddressed.length === 0
-          ? []
-          : [
-              `no fixture whose screen holds entries was filled with the view at two addresses: ${unaddressed.join(", ")}`,
-            ]),
-      ],
-    ),
+    named("each-query-gives-a-row", [
+      ...(silent.length === 0
+        ? []
+        : [
+            `each gives no row on any fixture it is compared on, so is compared with nothing: ${silent.join(", ")}`,
+          ]),
+      ...(unfilled.length === 0
+        ? []
+        : [
+            `no fixture whose screens are filled keyed gives its screen a row: ${unfilled.join(", ")}`,
+          ]),
+      ...(unaddressed.length === 0
+        ? []
+        : [
+            `no fixture whose screen holds entries was filled with the view at two addresses: ${unaddressed.join(", ")}`,
+          ]),
+    ]),
     named(
       "each-kind-of-keyed-change",
       missing.length === 0
