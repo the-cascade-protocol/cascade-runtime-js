@@ -15,7 +15,9 @@ const PERSON = "alex-rivera";
 
 /** What the page of the app imports from the browser build, as much of it as the cases use. */
 interface AppBuild {
-  browserHost(options: { base: URL; samples: readonly string[] }): object;
+  browserHost(options?: {
+    samples: { names: readonly string[]; at: string };
+  }): object;
   podApi(host: object): {
     makePod(input: { person: string }): Promise<unknown>;
     pods(): Promise<{ pods: { name: string }[] }>;
@@ -74,8 +76,7 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
         const { browserHost, podApi } = (await import(url)) as AppBuild;
         const api = podApi(
           browserHost({
-            base: new URL("/app/", location.href),
-            samples: [person],
+            samples: { names: [person], at: new URL("/", location.href).href },
           }),
         );
         const made = await api.makePod({ person });
@@ -89,7 +90,7 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
         return {
           made,
           pods: pods.map(({ name }) => name),
-          allergens: rows.map((row) => String(row.allergenLabel)).sort(),
+          allergens: rows.map((row) => String(row.allergenName)).sort(),
           drawn: Object.entries(answers)
             .filter(([, answered]) => answered.length > 0)
             .map(([question]) => question)
@@ -99,7 +100,7 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
       assert.deepEqual(seen, {
         made: { pod: PERSON, loaded: true },
         pods: [PERSON],
-        allergens: ["Codeine", "Latex", "Penicillin G", "Sulfamethoxazole"],
+        allergens: ["Latex", "Peanuts", "Penicillin", "Sulfamethoxazole"],
         drawn: true,
       });
     });
@@ -112,9 +113,7 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
         const { Refusal } = (await import(root)) as {
           Refusal: new (...rest: never[]) => Error;
         };
-        const api = podApi(
-          browserHost({ base: new URL("/app/", location.href), samples: [] }),
-        );
+        const api = podApi(browserHost());
         try {
           await api.pod({ pod: "nobody" });
         } catch (error) {

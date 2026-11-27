@@ -66,8 +66,9 @@ async function components(folder: string): Promise<string[]> {
 
 /**
  * A Vite plugin that serves the runtime's browser build beside an app's bundle. The app's bundle keeps
- * `cascade-runtime` external; the build copies the package's browser build and the components it reads under the
- * base, and an import map in the page loads the entry from there, so the runtime keeps its own `import.meta.url`.
+ * `cascade-runtime` and `cascade-runtime/app` external; the build copies the package's browser build and the components
+ * it reads under the base, and an import map in the page loads each entry from there, so the runtime keeps its own
+ * `import.meta.url` and the two entries share one copy of it.
  */
 export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
   acceptOptions("cascadeRuntime", options, {
@@ -83,7 +84,13 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
     name: "cascade-runtime",
     config: () =>
       browser
-        ? { build: { rolldownOptions: { external: ["cascade-runtime"] } } }
+        ? {
+            build: {
+              rolldownOptions: {
+                external: ["cascade-runtime", "cascade-runtime/app"],
+              },
+            },
+          }
         : {},
     configResolved(config) {
       base = config.base;
@@ -96,7 +103,12 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
         {
           tag: "script",
           attrs: { type: "importmap" },
-          children: JSON.stringify({ imports: { "cascade-runtime": entry } }),
+          children: JSON.stringify({
+            imports: {
+              "cascade-runtime": entry,
+              "cascade-runtime/app": `${base}${folder}app.js`,
+            },
+          }),
           injectTo: "head-prepend",
         },
         {

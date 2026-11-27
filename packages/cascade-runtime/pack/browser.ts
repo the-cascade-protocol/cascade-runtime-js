@@ -34,21 +34,38 @@ export interface BrowserBuild {
   readonly bridge: string;
 }
 
+/**
+ * The entries a page imports, which are bundled together with their shared code in chunks, so that the page has one copy
+ * of each module: `cascade-runtime` and `cascade-runtime/app` throw the one `Refusal` and keep the one set of tables.
+ */
+const PAGE_ENTRIES = {
+  index: join(ENTRY, "index.js"),
+  app: join(ENTRY, "app.js"),
+};
+
 /** The bundled browser build's code, without its version: what tells one uncommitted build from another. */
-async function codeOf(entry: string): Promise<string> {
+async function codeOf(): Promise<string> {
   const { outputFiles } = await build({
     ...BUNDLED,
-    entryPoints: [entry],
+    entryPoints: PAGE_ENTRIES,
+    splitting: true,
     write: false,
     outdir: "out",
   });
-  const [code] = outputFiles;
-  if (code === undefined) throw new Error(`${entry} bundled to nothing`);
-  return documentName(code.contents);
+  if (outputFiles.length === 0)
+    throw new Error("the page's entries bundled to nothing");
+  const code = new TextEncoder().encode(
+    outputFiles
+      .toSorted((a, b) => a.path.localeCompare(b.path))
+      .map((file) => file.text)
+      .join("\0"),
+  );
+  return documentName(code);
 }
 
 /**
- * Writes the browser build into `out`: the entry, the input checker, the tables' worker, Argon2's and the Bridge's, the Bridge's glue
+ * Writes the browser build into `out`: the entries a page imports, `cascade-runtime` and `cascade-runtime/app`, bundled
+ * with their shared code in chunks, the input checker, the tables' worker, Argon2's and the Bridge's, the Bridge's glue
  * bundled into its worker, with Oxigraph's module and the Bridge's beside them. Gives the build's version, fixed in
  * it here: the commit's package version, or for an uncommitted build that and its code's name, with the components.
  */
@@ -57,28 +74,36 @@ export async function bundleBrowser(
   packing: BrowserBuild,
 ): Promise<string> {
   await rm(out, { recursive: true, force: true });
-  const entry = join(ENTRY, "index.js");
   const code = packing.dirty
-    ? `${packageVersion(packing.commit)}+${await codeOf(entry)}`
+    ? `${packageVersion(packing.commit)}+${await codeOf()}`
     : packageVersion(packing.commit);
   const version = await documentName(
     new TextEncoder().encode(JSON.stringify([code, packing.components])),
   );
-  await build({
-    ...BUNDLED,
-    entryPoints: {
-      index: entry,
-      check: join(WORKSPACE, "dist", "src", "check.js"),
-      "tables-worker": join(ENTRY, "tables-worker.js"),
-      "argon2-worker": join(WEB, "argon2-worker.js"),
-    },
-    outdir: out,
-    define: {
-      CASCADE_BROWSER_BUILD_VERSION: JSON.stringify(version),
-      CASCADE_RUNTIME_COMMIT: JSON.stringify(packing.commit),
-      CASCADE_RUNTIME_DIRTY: JSON.stringify(packing.dirty),
-    },
-  });
+  const define = {
+    CASCADE_BROWSER_BUILD_VERSION: JSON.stringify(version),
+    CASCADE_RUNTIME_COMMIT: JSON.stringify(packing.commit),
+    CASCADE_RUNTIME_DIRTY: JSON.stringify(packing.dirty),
+  };
+  await Promise.all([
+    build({
+      ...BUNDLED,
+      entryPoints: PAGE_ENTRIES,
+      splitting: true,
+      outdir: out,
+      define,
+    }),
+    build({
+      ...BUNDLED,
+      entryPoints: {
+        check: join(WORKSPACE, "dist", "src", "check.js"),
+        "tables-worker": join(ENTRY, "tables-worker.js"),
+        "argon2-worker": join(WEB, "argon2-worker.js"),
+      },
+      outdir: out,
+      define,
+    }),
+  ]);
   const glue = join(packing.bridge, BRIDGE_GLUE).replaceAll("\\", "/");
   await build({
     ...BUNDLED,

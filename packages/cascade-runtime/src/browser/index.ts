@@ -62,6 +62,7 @@ import {
   type TextRow,
 } from "../pod.js";
 import { IN_THIS_THREAD, type RowsWork } from "../rows.js";
+import { ANSWERS_DATABASE, DATABASE } from "./databases.js";
 import type { RowsAnswer, RowsCall } from "./tables-worker.js";
 import { type Checked, Tables } from "../tables.js";
 
@@ -139,10 +140,6 @@ export type {
   WhatClinVarSays,
 } from "../tables.js";
 
-/** What names a pod's IndexedDB database, before the pod's name. */
-const DATABASE = "cascade-pod:";
-/** What names the IndexedDB database a pod's answers are kept in, before the pod's name. */
-const ANSWERS_DATABASE = "cascade-answers:";
 /** What names the tables' IndexedDB database, after the app's name. */
 const TABLES_DATABASE = "cascade-tables";
 /** The folder of `components/` holding the package's starter copies of the feeds' series. */

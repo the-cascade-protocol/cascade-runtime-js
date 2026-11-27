@@ -68,6 +68,10 @@
       "default": "./dist/src/node/published.js"
     },
     "./app": {
+      "browser": {
+        "types": "./dist/src/browser/app.d.ts",
+        "default": "./dist/browser/app.js"
+      },
       "types": "./dist/src/node/app.d.ts",
       "default": "./dist/src/node/app.js"
     }
