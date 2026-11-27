@@ -2082,7 +2082,11 @@ export function entryOf(
   );
   const rows =
     section === undefined ? [] : ofEntry(sectionRows(section, answers, said));
-  const found = variantReports(answers, said, held).get(entry);
+  const found =
+    rowsOf(answers, VARIANTS).length === 0 &&
+    rowsOf(answers, REPORTS).length === 0
+      ? undefined
+      : variantReports(answers, said, held).get(entry);
   const variant =
     found === undefined
       ? undefined

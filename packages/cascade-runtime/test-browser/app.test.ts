@@ -125,9 +125,7 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
         drawn: true,
       });
       assert.deepEqual(
-        review
-          .map(({ sentence, tag }) => ({ sentence, tag }))
-          .sort((a, b) => a.sentence.localeCompare(b.sentence)),
+        review.map(({ sentence, tag }) => ({ sentence, tag })),
         [
           {
             sentence:
