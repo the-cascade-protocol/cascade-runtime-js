@@ -47,6 +47,7 @@
     "scoped-runs.test.ts",
     "shapes.test.ts",
     "snapshots.test.ts",
+    "sql-checks.test.ts",
     "sql-only.test.ts",
     "stems.test.ts",
     "oxigraph-engine.test.ts",
