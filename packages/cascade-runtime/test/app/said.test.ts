@@ -2158,20 +2158,20 @@ describe("Saying what the reference tables hold of a code · freshness(), status
 
 /** The small words every page uses: lists, a capital, the tags, an import's progress, a day, a failure. */
 describe("Saying the small things every page says · listed(), capitalised(), TAGS, importPart(), dayOrAsWritten(), dayAtInWords(), onDaySaid(), failureSaid(), byFamily()", () => {
-  it("lists, capitalises, and names a demo hospital as a person says it", () => {
+  it("lists and capitalises, and capitalises nothing as nothing", () => {
     assert.equal(said.listed([]), "");
     assert.equal(said.listed(["a"]), "a");
     assert.equal(said.listed(["a", "b", "c"]), "a, b and c");
     assert.equal(said.capitalised("sources disagree"), "Sources disagree");
     assert.equal(said.capitalised(""), "");
-    assert.equal(
-      said.hospitalName("Cascade North Demo Hospital"),
-      "Cascade North",
-    );
   });
 
   it("gives the words of the tags a line, a row and an entry share, in the order they are drawn, and no more", () => {
     assert.deepEqual(said.TAGS, ["Differs", "Needs review", "Retired code"]);
+    assert.deepEqual(
+      [said.DIFFERS, said.NEEDS_REVIEW, said.RETIRED_CODE],
+      said.TAGS,
+    );
   });
 
   it("says an import's part, with how many documents or steps are done when it knows", () => {

@@ -250,15 +250,22 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
       printed = await story("review.mjs", "pods", []);
     });
 
-    it("says, tagged Needs review, that sources disagree on how severe her Sulfamethoxazole allergy is, among what her pod says needs review", (t) => {
+    it("says, tagged Needs review, that sources disagree on how severe her Sulfamethoxazole allergy is, and that her influenza vaccine was matched in two ways when the tables that match it are held, and nothing else", (t) => {
       for (const row of printed) t.diagnostic(JSON.stringify(row));
-      assert.ok(
-        printed.some(
-          ({ sentence }) =>
-            sentence ===
-            "Sources disagree on how severe the Sulfamethoxazole allergy is.",
-        ),
-      );
+      const sulfamethoxazole =
+        "Sources disagree on how severe the Sulfamethoxazole allergy is.";
+      const influenza =
+        "Influenza, injectable, quadrivalent, preservative free was matched in two different ways.";
+      const said = printed.map(({ sentence }) => String(sentence)).sort();
+      // A fresh folder holds no tables, so it says only the first; the installed app holds the package's.
+      if (APP === undefined) assert.deepEqual(said, [sulfamethoxazole]);
+      else
+        assert.ok(
+          [[sulfamethoxazole], [influenza, sulfamethoxazole]].some(
+            (lines) => JSON.stringify(lines) === JSON.stringify(said),
+          ),
+          JSON.stringify(said),
+        );
       assert.ok(printed.every(({ tag }) => tag === "Needs review"));
     });
   });

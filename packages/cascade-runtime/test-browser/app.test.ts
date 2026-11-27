@@ -124,14 +124,22 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
         allergens: ["Latex", "Peanuts", "Penicillin", "Sulfamethoxazole"],
         drawn: true,
       });
-      assert.ok(
-        review.some(
-          ({ sentence, tag }) =>
-            sentence ===
-              "Sources disagree on how severe the Sulfamethoxazole allergy is." &&
-            tag === "Needs review",
-        ),
-        JSON.stringify(review),
+      assert.deepEqual(
+        review
+          .map(({ sentence, tag }) => ({ sentence, tag }))
+          .sort((a, b) => a.sentence.localeCompare(b.sentence)),
+        [
+          {
+            sentence:
+              "Influenza, injectable, quadrivalent, preservative free was matched in two different ways.",
+            tag: "Needs review",
+          },
+          {
+            sentence:
+              "Sources disagree on how severe the Sulfamethoxazole allergy is.",
+            tag: "Needs review",
+          },
+        ],
       );
     });
 

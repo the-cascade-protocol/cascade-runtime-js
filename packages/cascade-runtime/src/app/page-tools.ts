@@ -27,7 +27,7 @@ const TREND_VIEW = {
 export type PageToolInput = Readonly<Record<string, string | undefined>>;
 
 /** The PodApi operations the tools a page runs call, each as PodApi answers it. */
-export interface PageToolsApi {
+interface PageToolsApi {
   pod(input: { pod: string }): Promise<unknown>;
   trend(input: {
     pod: string;
