@@ -58,6 +58,7 @@ layout says). Each step of `runtime/steps.md` is implemented once, in
 and a failed example's report names its rule and the step that failed.
 `--folder <repository>=<folder>` hands in a folder for a repository, and
 `--feature <path>` runs only that feature file of the vocabulary.
+`--sql-only <fixture or .sql path>` (repeatable) makes only the SQL comparisons of that fixture, or of that query, as a vocabulary's author checks one `.sql` against its `.rq`: it prints each, writes no report, and exits 1 when one fails or a name chooses none.
 
 `npm test` does not run the command: the cases that assert on a conformance report are skipped. With
 `CASCADE_CONFORMANCE_REPORT=<report>` they run against that report; CI's `conformance (native)` job does that on every

@@ -67,7 +67,9 @@ import { openDatabase } from "./sqlite.js";
 import {
   fixtureNames,
   sqlCheckAssertions,
+  type SqlCheckOptions,
   sqlFunctionAssertions,
+  sqlNamedAssertions,
   unchosenSqlAssertions,
 } from "../sql-check.js";
 
@@ -156,8 +158,19 @@ async function conformance(args: string[]): Promise<number> {
       assertions: { type: "string" },
       // Set by a run that shards: the share of the fixtures this run checks the vocabulary's SQL over, as index/count.
       sql: { type: "string" },
+      // The fixtures, or the `.sql` or `.rq` paths, whose SQL comparison is the only thing this run does.
+      "sql-only": { type: "string", multiple: true },
     },
   });
+  if (values["sql-only"] !== undefined) {
+    const clash = (["sql", "feature", "assertions", "report", "jobs"] as const)
+      .filter((option) => values[option] !== undefined)
+      .map((option) => `--${option}`);
+    if (clash.length > 0)
+      throw new Error(
+        `--sql-only runs the named SQL comparisons and nothing else, so it is not given with ${clash.join(", ")}`,
+      );
+  }
   const root = findRoot(dirname(fileURLToPath(import.meta.url)));
   const config = await readConfig(root);
   const report = absolute(
@@ -167,6 +180,11 @@ async function conformance(args: string[]): Promise<number> {
   if (values.assertions === undefined)
     log(`conformance: on Oxigraph's ${usedOxigraph().name} build`);
   const vocabulary = await resolveVocabulary(root, config, folders, log);
+  if (values["sql-only"] !== undefined)
+    return sqlOnly(
+      new FolderFiles(vocabulary.folder, vocabulary.iri),
+      values["sql-only"],
+    );
   const options = {
     siblingsIn: await siblingsOf(root),
     folders,
@@ -354,6 +372,15 @@ async function sqlChecksBesideTheShards(
 const seconds = (milliseconds: number): string =>
   (milliseconds / 1000).toFixed(1);
 
+async function sqlCheckOptions(files: FolderFiles): Promise<SqlCheckOptions> {
+  return {
+    vocabulary: files,
+    newStore: () => new OxigraphStore(),
+    layout: await Layout.read(files, () => new OxigraphStore()),
+    open: (functions) => openDatabase(":memory:", { functions }),
+  };
+}
+
 /**
  * The SQL check over the fixtures dealt to the run `index` of `count`: each `count`-th fixture from the `index`-th, each
  * compared on the `.sql` files and lenses its manifest chooses.
@@ -363,14 +390,32 @@ async function sqlCheckDealt(
   [index, count]: readonly [number, number],
 ): Promise<Assertion[]> {
   return sqlCheckAssertions(
-    {
-      vocabulary: files,
-      newStore: () => new OxigraphStore(),
-      layout: await Layout.read(files, () => new OxigraphStore()),
-      open: (functions) => openDatabase(":memory:", { functions }),
-    },
+    await sqlCheckOptions(files),
     (await fixtureNames(files)).filter((_, at) => at % count === index),
   );
+}
+
+/**
+ * The comparisons the names choose and nothing else, each said as it ends; the exit code is 1 when one fails, unlike a
+ * conformance run's, which reports in the EARL file, for an author asking about one `.sql` has no report to read.
+ */
+async function sqlOnly(
+  files: FolderFiles,
+  names: readonly string[],
+): Promise<number> {
+  const started = performance.now();
+  const assertions = await sqlNamedAssertions(
+    await sqlCheckOptions(files),
+    names,
+  );
+  for (const { name, outcome, why } of assertions)
+    console.error(
+      `${outcome}: ${name}${why === undefined ? "" : `\n  ${why.replaceAll("\n", "\n  ")}`}`,
+    );
+  console.error(
+    `${summary(assertions)} in ${seconds(performance.now() - started)} s`,
+  );
+  return assertions.some(({ outcome }) => outcome !== "passed") ? 1 : 0;
 }
 
 function dealOf(given: string): [number, number] {
