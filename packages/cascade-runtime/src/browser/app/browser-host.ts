@@ -25,6 +25,8 @@ export interface BrowserHostOptions {
   };
   /** Told what a page should say while a deletion waits for the pods to close in the person's other tabs. */
   readonly busy?: (said: string) => void;
+  /** Told when the tables cannot say what a page would name, as `nodeHost`'s is. */
+  readonly unsaid?: (kind: string, error: Error) => void;
   /** The hospitals the app signs in at, with `popupSignIns().signIn` for how a sign-in reaches the person. */
   readonly hospitals?: Hospitals;
   /** The world's date the demo hospitals answer as of. */
@@ -47,6 +49,7 @@ async function databases(prefix: string): Promise<string[]> {
 export function browserHost({
   samples,
   busy = () => {},
+  unsaid = () => {},
   hospitals,
   world,
 }: BrowserHostOptions = {}): PodHost {
@@ -82,6 +85,7 @@ export function browserHost({
       openPod(name, { from: new URL(`${name}/pod/`, published).href }),
     tables: (pod) => appTables(pod),
     checkTables: () => checkTables(),
+    unsaid,
     opensEncrypted: true,
     ...(hospitals !== undefined && { hospitals }),
     ...(world !== undefined && { world }),

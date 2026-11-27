@@ -1,5 +1,5 @@
-import { copyFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, rm, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, type BuildOptions } from "esbuild";
 import {
@@ -13,6 +13,8 @@ const WORKSPACE = fileURLToPath(new URL("../../", import.meta.url));
 const ENTRY = join(WORKSPACE, "dist", "src", "browser");
 const WEB = join(WORKSPACE, "..", "runtime", "dist", "src", "web");
 const WASM = "web_bg.wasm";
+/** The file beside the entries that lists the files a page loads with each: the Vite plugin preloads them. */
+const PRELOADS = "preloads.json";
 
 const BUNDLED: BuildOptions = {
   bundle: true,
@@ -38,10 +40,64 @@ export interface BrowserBuild {
  * The entries a page imports, which are bundled together with their shared code in chunks, so that the page has one copy
  * of each module: `cascade-runtime` and `cascade-runtime/app` throw the one `Refusal` and keep the one set of tables.
  */
-const PAGE_ENTRIES = {
+const PAGE_ENTRIES: Record<string, string> = {
   index: join(ENTRY, "index.js"),
   app: join(ENTRY, "app.js"),
 };
+
+/**
+ * Bundles the entries into `out` with their shared code in chunks. Gives, for each entry, the files a page loads with it
+ * at once, its own and the chunks it imports statically, as paths under `out`. Writes no output that no entry reaches,
+ * statically or by an `import()` an emitted file keeps: bundling writes the chunks of an `import()` in a module the
+ * entries tree-shake, which nothing loads.
+ */
+export async function bundlePages(
+  out: string,
+  entries: Record<string, string> = PAGE_ENTRIES,
+  define: Record<string, string> = {},
+): Promise<Record<string, string[]>> {
+  const { metafile } = await build({
+    ...BUNDLED,
+    entryPoints: entries,
+    splitting: true,
+    outdir: out,
+    define,
+    metafile: true,
+  });
+  const graph = new Map(
+    Object.entries(metafile.outputs).map(([path, { imports }]) => [
+      basename(path),
+      imports
+        .filter(({ external }) => !external)
+        .map(({ path, kind }) => ({ file: basename(path), kind })),
+    ]),
+  );
+  const reached = new Set<string>();
+  const walk = (file: string): void => {
+    if (reached.has(file)) return;
+    reached.add(file);
+    for (const { file: next } of graph.get(file) ?? []) walk(next);
+  };
+  const closures: Record<string, string[]> = {};
+  for (const name of Object.keys(entries)) {
+    const loaded = new Set<string>();
+    const load = (file: string): void => {
+      if (loaded.has(file)) return;
+      loaded.add(file);
+      for (const { file: next, kind } of graph.get(file) ?? [])
+        if (kind === "import-statement") load(next);
+    };
+    load(`${name}.js`);
+    closures[name] = [...loaded];
+    walk(`${name}.js`);
+  }
+  await Promise.all(
+    [...graph.keys()]
+      .filter((file) => !reached.has(file))
+      .map((file) => rm(join(out, file))),
+  );
+  return closures;
+}
 
 /** The bundled browser build's code, without its version: what tells one uncommitted build from another. */
 async function codeOf(): Promise<string> {
@@ -85,14 +141,8 @@ export async function bundleBrowser(
     CASCADE_RUNTIME_COMMIT: JSON.stringify(packing.commit),
     CASCADE_RUNTIME_DIRTY: JSON.stringify(packing.dirty),
   };
-  await Promise.all([
-    build({
-      ...BUNDLED,
-      entryPoints: PAGE_ENTRIES,
-      splitting: true,
-      outdir: out,
-      define,
-    }),
+  const [closures] = await Promise.all([
+    bundlePages(out, PAGE_ENTRIES, define),
     build({
       ...BUNDLED,
       entryPoints: {
@@ -104,6 +154,7 @@ export async function bundleBrowser(
       define,
     }),
   ]);
+  await writeFile(join(out, PRELOADS), JSON.stringify(closures));
   const glue = join(packing.bridge, BRIDGE_GLUE).replaceAll("\\", "/");
   await build({
     ...BUNDLED,
