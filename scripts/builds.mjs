@@ -58,10 +58,14 @@ async function read(path) {
 async function buildsOf({ repository, file, release }) {
   const assets = [];
   if (release === undefined) {
-    for (const { tag_name: tag, assets: held } of await read(
-      `repos/${repository}/releases?per_page=100`,
-    ))
-      if (tag.startsWith("build-")) assets.push(...held);
+    for (let page = 1; ; page += 1) {
+      const held = await read(
+        `repos/${repository}/releases?per_page=100&page=${page}`,
+      );
+      for (const { tag_name: tag, assets: files } of held)
+        if (tag.startsWith("build-")) assets.push(...files);
+      if (held.length < 100) break;
+    }
   } else {
     const { id } = await read(`repos/${repository}/releases/tags/${release}`);
     for (let page = 1; ; page += 1) {

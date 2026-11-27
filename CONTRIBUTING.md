@@ -22,7 +22,9 @@ Dependencies are pinned exactly in [`package.json`](package.json) and `package-l
 `npm install`, so your run measures what CI measures. Two are not pinned: the reference tables and the sandbox. The
 builds the lock names for them are only what `npm ci` installs so that the repository builds; `npm run builds` installs
 the newest build of each default branch over them, as CI does, and `npm run builds -- --tables <commit> --sandbox
-<commit>` (or a `.tgz` file for either) installs another. Run it again after every `npm ci`, which removes it.
+<commit>` (or a `.tgz` file for either) installs another. Run it again after every `npm ci`, which removes it, and after
+any `npm install`, which puts the committed builds back without a word: `npm test` opens with a line naming the tables
+and sandbox builds it runs on and whether they are the committed defaults or picked ones.
 
 ## Run the tests
 

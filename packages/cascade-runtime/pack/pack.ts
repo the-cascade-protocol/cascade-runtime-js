@@ -49,12 +49,8 @@ import {
   vendored,
 } from "./dependencies.js";
 import { bundleBrowser } from "./browser.js";
-import {
-  releaseNotes,
-  shipped,
-  testedBuilds,
-  type TestedBuild,
-} from "./notes.js";
+import { releaseNotes, shipped } from "./notes.js";
+import { testedBuilds, type TestedBuild } from "./tested.js";
 
 const WORKSPACE = fileURLToPath(new URL("../../", import.meta.url));
 const ROOT = findRoot(WORKSPACE);

@@ -104,9 +104,9 @@ function world(
         asset(sandboxFile(at), sandboxAddress(at), digestOf(sandboxBuild(at))),
       ],
     }));
-    const path = `repos/${SANDBOX_REPOSITORY}/releases?per_page=100`;
-    if (index === 0) answers[path] = releases;
-    answers[`${path}&page=${index + 1}`] = releases;
+    answers[
+      `repos/${SANDBOX_REPOSITORY}/releases?per_page=100&page=${index + 1}`
+    ] = releases;
     for (const at of commits)
       answers[sandboxAddress(at)] = sandboxBuild(at).toString("base64");
   });
@@ -213,6 +213,17 @@ describe("Installing the newest builds of the tables and the sandbox · scripts/
       "the newest build of its default branch",
     );
     assert.equal(run.record?.[SANDBOX]?.address, sandboxAddress(commit("4")));
+    const { packages } = JSON.parse(
+      await readFile(
+        join(run.workspace, "node_modules", ".package-lock.json"),
+        "utf8",
+      ),
+    ) as { packages: Record<string, { integrity: string }> };
+    assert.equal(
+      packages[`node_modules/${TABLES}`]?.integrity,
+      run.record?.[TABLES]?.integrity,
+      "the integrity recorded is the one npm wrote, which the pack compares it with",
+    );
   });
 
   it("finds a sandbox build named by its commit among more releases than one page holds", async () => {
@@ -280,7 +291,7 @@ describe("Installing the newest builds of the tables and the sandbox · scripts/
           delete answers[tablesAddress(commit("2"))];
           return answers;
         })(),
-        /answered 404/,
+        /releases\/download\/\S+ answered 404/,
       ],
       [
         "--install with no folder",
