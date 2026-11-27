@@ -87,6 +87,8 @@ function options(argv) {
   }
   if (found.site === undefined)
     throw new Error("give --site <url>, the address the site is served at");
+  if (!/^https?:\/\/[^/\s]+(\/\S*)?$/.test(found.site))
+    throw new Error(`--site is ${found.site}, not an http(s) address`);
   if (
     found.onlyExternal === undefined &&
     (found.tree === undefined) === (found.crawl === undefined)

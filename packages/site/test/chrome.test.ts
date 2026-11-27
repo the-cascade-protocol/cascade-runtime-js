@@ -277,10 +277,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           footer.includes("is a trademark of Cascade Agentic Labs"),
           path,
         );
-        assert.ok(
-          subbar(html).includes(`<span aria-current="page">Reference ↗</span>`),
-          path,
-        );
+        assert.ok(subbar(html).includes(`<span>Reference ↗</span>`), path);
       }
     });
 
@@ -517,8 +514,10 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         assert.equal(withWebsite.status, 0, withWebsite.stderr);
         const linked = readFileSync(join(websiteOut, "index.html"), "utf8");
         assert.ok(linked.includes(`<li>Reference</li>`));
+        assert.ok(linked.includes(`<span>Reference ↗</span>`));
         assert.ok(
-          linked.includes(`<span aria-current="page">Reference ↗</span>`),
+          !linked.includes(`<span aria-current`),
+          "a label that links nowhere is not the current page",
         );
       } finally {
         rmSync(out, { recursive: true, force: true });

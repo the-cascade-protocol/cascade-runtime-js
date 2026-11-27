@@ -111,7 +111,7 @@ const subnavLinks = ({ website, hub }: Chrome) =>
           ? undefined
           : website + path;
     return href === undefined
-      ? markup`<span${current}>${label}</span>`
+      ? markup`<span>${label}</span>`
       : markup`<a href="${href}"${current}>${label}</a>`;
   });
 
