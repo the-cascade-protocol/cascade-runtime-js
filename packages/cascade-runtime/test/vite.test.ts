@@ -34,8 +34,15 @@ describe("Importing the package in a web page · browserBuildVersion(), cascadeR
           name: "cascade-runtime",
           version: "1.2.3",
         }),
-        "dist/browser/index.js": "export const here = import.meta.url;",
-        "dist/browser/app.js": "export const podApi = () => {};",
+        "dist/browser/index.js": `export { here } from "./chunk-A.js"; export const lazy = () => import("./chunk-LAZY.js");`,
+        "dist/browser/app.js": `import { here } from "./chunk-A.js"; export const podApi = () => here;`,
+        "dist/browser/chunk-A.js": `import { base } from "./chunk-B.js"; export const here = import.meta.url + base;`,
+        "dist/browser/chunk-B.js": "export const base = '';",
+        "dist/browser/chunk-LAZY.js": "export const later = 1;",
+        "dist/browser/preloads.json": JSON.stringify({
+          index: ["index.js", "chunk-A.js", "chunk-B.js"],
+          app: ["app.js", "chunk-A.js", "chunk-B.js"],
+        }),
         "dist/browser/tables-worker.js": "",
         "components/cascade-runtime.json": "{}",
         "components/packed.json": JSON.stringify({
@@ -94,6 +101,19 @@ describe("Importing the package in a web page · browserBuildVersion(), cascadeR
       assert.match(bundle, /from\s*["']cascade-runtime["']/);
       assert.match(bundle, /from\s*["']cascade-runtime\/app["']/);
       assert.doesNotMatch(bundle, /import\.meta\.url/);
+    });
+
+    it("preloads every file of each entry the app imports, and no lazy chunk", async () => {
+      const page = await readFile(join(out, "index.html"), "utf8");
+      const preloaded = [
+        ...page.matchAll(/<link rel="modulepreload"[^>]*href="([^"]+)"/g),
+      ].map((match) => match[1]);
+      assert.deepEqual(preloaded.toSorted(), [
+        "/made/cascade-runtime/app.js",
+        "/made/cascade-runtime/chunk-A.js",
+        "/made/cascade-runtime/chunk-B.js",
+        "/made/cascade-runtime/index.js",
+      ]);
     });
 
     it("writes an import map that points `cascade-runtime` and `cascade-runtime/app` at the copies under the base", async () => {

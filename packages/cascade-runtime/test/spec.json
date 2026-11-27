@@ -13,6 +13,7 @@
     "Transpiling before the tests · scripts/transpile.mjs",
     "Breaking changes in a build's notes · breakingOf(), mergedPullRequests(), breakingNotes(), breakingSince()",
     "Dependencies of the packed package · mergedDependencies(), undeclaredImports(), vendored()",
+    "The browser build's entries and their chunks · bundlePages()",
     "Annotating a red run's failures · failure-annotations.ts",
     "Folders a test run leaves in the temp directory · test/temporary-root.ts",
     "Tripwire: copies of the kits' data kept in other repositories"
@@ -32,6 +33,7 @@
     "options.test.ts",
     "outcomes.test.ts",
     "pack-breaking.test.ts",
+    "pack-browser.test.ts",
     "pack-dependencies.test.ts",
     "people-copies.test.ts",
     "perf-report.test.ts",
