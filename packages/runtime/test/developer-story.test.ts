@@ -145,6 +145,55 @@ async function kits() {
       );
 }
 
+let throughJ1: Promise<StoryRow[]> | undefined;
+
+/**
+ * The rows "My active allergies" answers on the replay of Alex's kit through step J1, each entry as its path in the pod;
+ * made once.
+ */
+function allergiesThroughJ1(): Promise<StoryRow[]> {
+  throughJ1 ??= (async () => {
+    const vocabulary = await kits();
+    const replayed = await featurePod(
+      vocabulary,
+      ALEX,
+      new MemoryFiles("https://pod.example/"),
+      { through: "J1" },
+    );
+    const matched = replayed.steps.find(({ step }) => step.name === "M5");
+    assert.ok(matched, "the replay through J1 has no matcher run M5");
+    assert.equal(matched.refused, undefined, "M5 was refused");
+    assert.equal(
+      matched.wrote.filter((path) => !path.startsWith("provenance/")).length,
+      0,
+      "M5 wrote more than its act, so the replay, which claims after the matcher run, may no longer answer as the script, which claims at the import",
+    );
+    const last = replayed.steps.at(-1);
+    assert.ok(last, `the replay of ${ALEX} through J1 performed no step`);
+    const { store } = await podDataset(
+      replayed.pod,
+      vocabulary.layout,
+      vocabulary.build,
+      vocabulary.config.lens,
+      new OxigraphStore(),
+      { title: replayed.title, at: last.step.when },
+    );
+    const query = (await questions(vocabulary.files)).get(QUESTION);
+    assert.ok(query, `the vocabulary has no question ${QUESTION}`);
+    return (await store.select(query.text)).rows.map((row) =>
+      inPod(
+        withLists(
+          Object.fromEntries(
+            [...row].map(([column, term]) => [column, term.value]),
+          ),
+          query.lists,
+        ),
+      ),
+    );
+  })();
+  return throughJ1;
+}
+
 const LISINOPRIL = {
   medication: "lisinopril 10 MG Oral Tablet",
   code: "https://ns.cascadeprotocol.org/codes/rxnorm/314076",
@@ -160,52 +209,32 @@ const AMLODIPINE = {
  * The scripts the README and the get-started page walk a developer through, run as that developer runs them: from a
  * folder outside the repository, on a kit's downloads, with the real Bridge.
  */
-describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs, developer-story/first.mjs", () => {
+describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs, developer-story/first.mjs, developer-story/app.mjs", () => {
   describe("when `allergies.mjs` is run on Alex's first export", () => {
     let printed: StoryRow[];
     let expected: StoryRow[];
 
     before(async () => {
-      const vocabulary = await kits();
-      const replayed = await featurePod(
-        vocabulary,
-        ALEX,
-        new MemoryFiles("https://pod.example/"),
-        { through: "J1" },
-      );
-      const matched = replayed.steps.find(({ step }) => step.name === "M5");
-      assert.ok(matched, "the replay through J1 has no matcher run M5");
-      assert.equal(matched.refused, undefined, "M5 was refused");
-      assert.equal(
-        matched.wrote.filter((path) => !path.startsWith("provenance/")).length,
-        0,
-        "M5 wrote more than its act, so the replay, which claims after the matcher run, may no longer answer as the script, which claims at the import",
-      );
-      const last = replayed.steps.at(-1);
-      assert.ok(last, `the replay of ${ALEX} through J1 performed no step`);
-      const { store } = await podDataset(
-        replayed.pod,
-        vocabulary.layout,
-        vocabulary.build,
-        vocabulary.config.lens,
-        new OxigraphStore(),
-        { title: replayed.title, at: last.step.when },
-      );
-      const query = (await questions(vocabulary.files)).get(QUESTION);
-      assert.ok(query, `the vocabulary has no question ${QUESTION}`);
-      expected = (await store.select(query.text)).rows.map((row) =>
-        inPod(
-          withLists(
-            Object.fromEntries(
-              [...row].map(([column, term]) => [column, term.value]),
-            ),
-            query.lists,
-          ),
-        ),
-      );
+      expected = await allergiesThroughJ1();
+      const { files } = await kits();
       printed = await story("allergies.mjs", "alex-pod", [
-        join(vocabulary.files.folder, FIRST_EXPORT),
+        join(files.folder, FIRST_EXPORT),
       ]);
+    });
+
+    it('prints the rows that "My active allergies" answers on the kit\'s replay through step J1', (t) => {
+      for (const row of printed) t.diagnostic(JSON.stringify(row));
+      assert.deepEqual(multiset(printed.map(inPod)), multiset(expected));
+    });
+  });
+
+  describe("when `app.mjs` loads Alex's sample pod through step J1 and asks it through `podApi` of `cascade-runtime/app`", () => {
+    let printed: StoryRow[];
+    let expected: StoryRow[];
+
+    before(async () => {
+      expected = await allergiesThroughJ1();
+      printed = await story("app.mjs", "pods", []);
     });
 
     it('prints the rows that "My active allergies" answers on the kit\'s replay through step J1', (t) => {
