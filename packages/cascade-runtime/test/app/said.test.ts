@@ -482,6 +482,58 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
       );
     });
 
+    describe("given a variant entry, whatever builds its tile's rows", () => {
+      type Tile = (typeof TILES)[number];
+      const variantTile = TILES.find(({ rows }) => rows !== undefined)!;
+      const page = (sections: readonly Tile[]) =>
+        said.entryOf(VARIANT_ANSWERS, "v1", {
+          said: VARIANTS_SAID,
+          held: [CLINVAR],
+          sections,
+        });
+      const standard = page(TILES);
+
+      it("gives its genes and expressions, its ClinVar sentence and the tag `Differs`", () => {
+        assert.deepEqual(standard.tags, [DIFFERS]);
+        assert.deepEqual(
+          standard.what.map(({ head }: { head: string }) => head),
+          ["Gene", "Expressions"],
+        );
+        assert.ok(
+          standard.known.some(({ sentence }: { sentence: string }) =>
+            sentence.startsWith("ClinVar today says pathogenic"),
+          ),
+          JSON.stringify(standard.known),
+        );
+      });
+
+      it("gives the same page when its tile's rows wrap `variantRows`", () => {
+        const wrapped = TILES.map((tile) =>
+          tile.rows === undefined
+            ? tile
+            : {
+                ...tile,
+                rows: (answers: never, said?: never) =>
+                  tile.rows!(answers, said).filter(() => true),
+              },
+        );
+        assert.deepEqual(page(wrapped), standard);
+      });
+
+      it("gives the same page when two tiles show variants", () => {
+        assert.deepEqual(
+          page([...TILES, { ...variantTile, one: "variant again" }]),
+          standard,
+        );
+      });
+
+      it("gives the same page when no tile shows variants, named and kinded as it is", () => {
+        const none = TILES.filter(({ rows }) => rows === undefined);
+        assert.deepEqual(page(none), standard);
+        assert.deepEqual(page([]), standard);
+      });
+    });
+
     it("says a pair's sentence among what is known of each of its two view entries", () => {
       assert.deepEqual(
         sharedOf("e2", [RXNORM_SERIES]).map(({ sentence }) => sentence),
@@ -2104,17 +2156,22 @@ describe("Saying what the reference tables hold of a code · freshness(), status
   });
 });
 
-/** The small words every page uses: lists, a capital, a hospital's name, an import's progress, a day, a failure. */
-describe("Saying the small things every page says · listed(), capitalised(), hospitalName(), importPart(), dayOrAsWritten(), dayAtInWords(), onDaySaid(), failureSaid(), byFamily()", () => {
+/** The small words every page uses: lists, a capital, the tags, an import's progress, a day, a failure. */
+describe("Saying the small things every page says · listed(), capitalised(), TAGS, importPart(), dayOrAsWritten(), dayAtInWords(), onDaySaid(), failureSaid(), byFamily()", () => {
   it("lists, capitalises, and names a demo hospital as a person says it", () => {
     assert.equal(said.listed([]), "");
     assert.equal(said.listed(["a"]), "a");
     assert.equal(said.listed(["a", "b", "c"]), "a, b and c");
     assert.equal(said.capitalised("sources disagree"), "Sources disagree");
+    assert.equal(said.capitalised(""), "");
     assert.equal(
       said.hospitalName("Cascade North Demo Hospital"),
       "Cascade North",
     );
+  });
+
+  it("gives the words of the tags a line, a row and an entry share, in the order they are drawn, and no more", () => {
+    assert.deepEqual(said.TAGS, ["Differs", "Needs review", "Retired code"]);
   });
 
   it("says an import's part, with how many documents or steps are done when it knows", () => {
