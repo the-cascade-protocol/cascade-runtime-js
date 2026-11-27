@@ -46,4 +46,4 @@ decide about: use a model that runs on their machine, or leave that pod out.
 npx --no-install cascade-mcp --pods <folder> --settings
 ```
 
-Add it to `claude_desktop_config.json` (Settings, Developer, Edit Config), then quit Claude Desktop and start it again.
+Paste it into `claude_desktop_config.json` (Settings, Developer, Edit Config); if the file already has `mcpServers`, add only the `cascade` entry inside it. Then quit Claude Desktop and start it again. The block names this Node by its full path: print it again after changing Node versions.
