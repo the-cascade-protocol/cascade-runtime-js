@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./dist/browser/*"
+  ],
   "description": "What an app imports: a pod it opens, looks into an export with, imports, enters, judges, matches and asks.",
   "license": "Apache-2.0",
   "repository": {

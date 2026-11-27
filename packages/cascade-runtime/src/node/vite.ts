@@ -3,6 +3,7 @@ import { cp, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HtmlTagDescriptor, Plugin } from "vite";
+import type { Section } from "../app/said.js";
 import { acceptOptions } from "../options.js";
 import type { Pod } from "../pod.js";
 import type { Tables } from "../tables.js";
@@ -12,11 +13,16 @@ import { devOptions, under } from "./app/dev-options.js";
 export { DEMO_WORKER, devOptions, under };
 
 /**
- * What the pod's page asks the tables of it, asked as the page asks it, through PodApi, for `samplesToPublish`'s
- * `lookups`: the names a first visit draws before the engine. A lookup PodApi swallows fails the build.
+ * What the pod's page asks the tables of it, asked as the page asks it, through PodApi with the app's tiles as
+ * `sections`, for `samplesToPublish`'s `lookups`: the names a first visit draws before the engine. A lookup PodApi
+ * swallows fails the build. An app with its own tiles gives `(pod, tables) => looks(pod, tables, { sections })`.
  */
-export async function looks(pod: Pod, tables: Tables): Promise<void> {
-  return (await import("./app/first-paint.js")).looks(pod, tables);
+export async function looks(
+  pod: Pod,
+  tables: Tables,
+  options: { sections?: readonly Section[] } = {},
+): Promise<void> {
+  return (await import("./app/first-paint.js")).looks(pod, tables, options);
 }
 
 /** Where the runtime's files go under the base, as `configureRuntime({ base })` names them. */
@@ -97,7 +103,11 @@ async function components(folder: string): Promise<string[]> {
  * A Vite plugin that serves the runtime's browser build beside an app's bundle. The app's bundle keeps
  * `cascade-runtime` and `cascade-runtime/app` external; the build copies the package's browser build and the components
  * it reads under the base, and an import map in the page loads each entry from there, so the runtime keeps its own
- * `import.meta.url` and the two entries share one copy of it.
+ * `import.meta.url` and the two entries share one copy of it. A build that is not the browser's, for a page whose pods
+ * are at its server, bundles what the page uses of `cascade-runtime/app`, from the package's compiled modules, none of
+ * the engine; it writes no `.wasm` file that no chunk or page names, as Vite writes the file a module names even when
+ * the bundle drops the code that names it, as it does Oxigraph's. A development server, and whatever resolves the
+ * package without this plugin (another bundler), gets the package's browser build for both entries, one copy.
  */
 export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
   acceptOptions("cascadeRuntime", options, {
@@ -128,6 +138,22 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
             },
           }
         : {},
+    resolveId: {
+      order: "pre",
+      handler(id) {
+        // A build only: a development server's optimizer pre-bundles the package's browser build, one copy for both entries.
+        if (
+          !browser &&
+          id === "cascade-runtime/app" &&
+          this.environment.config.command === "build"
+        )
+          return join(source, "dist", "src", "app", "index.js").replaceAll(
+            "\\",
+            "/",
+          );
+        return undefined;
+      },
+    },
     configResolved(config) {
       base = config.base;
       root = config.root;
@@ -181,10 +207,29 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
       ];
       return app ? { html: about, tags } : tags;
     },
-    async generateBundle() {
-      if (!app || !browser) return;
-      for (const [fileName, source] of await demoFiles(folder))
-        this.emitFile({ type: "asset", fileName, source });
+    generateBundle: {
+      // After Vite's own, which writes the page's HTML into the bundle.
+      order: "post",
+      async handler(_, bundle) {
+        if (!browser) {
+          const code = Object.values(bundle).flatMap((file) =>
+            file.type === "chunk"
+              ? [file.code]
+              : typeof file.source === "string"
+                ? [file.source]
+                : [],
+          );
+          for (const name of Object.keys(bundle))
+            if (
+              name.endsWith(".wasm") &&
+              !code.some((text) => text.includes(name.split("/").at(-1)!))
+            )
+              delete bundle[name];
+        }
+        if (!app || !browser) return;
+        for (const [fileName, source] of await demoFiles(folder))
+          this.emitFile({ type: "asset", fileName, source });
+      },
     },
     async writeBundle() {
       if (!browser) return;

@@ -1,6 +1,7 @@
 // What `cascade-runtime/app` gives on every target: PodApi over a host, the inputs each operation takes, the tools a model
 // reaches it by, the client of a server's `/api/`, what any app showing a pod says the same way (`said.ts`), and what
 // any page of an app does, framework-free: its state on the body, the engine's warming, the idle lock and the model context.
+export { Refusal } from "@cascade-runtime/runtime/refusal";
 export * from "./inputs.js";
 export * from "./pod-api.js";
 export * from "./remote.js";

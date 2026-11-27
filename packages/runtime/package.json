@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/src/node/index.js"
+  ],
   "description": "Files arrivals, names things, runs the matcher and the views.",
   "license": "Apache-2.0",
   "exports": {

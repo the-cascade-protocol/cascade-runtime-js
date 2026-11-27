@@ -1,5 +1,5 @@
-// The packed package's `cascade-runtime/app` under its `browser` condition, opened in Chromium by a page with nothing
-// installed: `npm run build:package`, then `npm run test:pod-browser`.
+// The packed package's browser build of `cascade-runtime/app`, as `cascadeRuntime()` serves it beside a page, opened in
+// Chromium by a page with nothing installed: `npm run build:package`, then `npm run test:pod-browser`.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import type { Server } from "node:http";
@@ -15,6 +15,7 @@ const PERSON = "alex-rivera";
 
 /** What the page of the app imports from the browser build, as much of it as the cases use. */
 interface AppBuild {
+  Refusal: new (...rest: never[]) => Error;
   browserHost(options?: {
     samples: { names: readonly string[]; at: string };
   }): object;
@@ -141,19 +142,22 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
       );
     });
 
-    it("throws the `Refusal` the package's root build exports, from the same module, for a pod it has not", async () => {
+    it("throws the `Refusal` it exports, the one the package's root build exports, for a pod it has not", async () => {
       const seen = await page.evaluate(async () => {
         const app = "/dist/browser/app.js";
         const root = "/dist/browser/index.js";
-        const { browserHost, podApi } = (await import(app)) as AppBuild;
-        const { Refusal } = (await import(root)) as {
-          Refusal: new (...rest: never[]) => Error;
-        };
+        const { browserHost, podApi, Refusal } = (await import(
+          app
+        )) as AppBuild;
+        const { Refusal: rootRefusal } = (await import(root)) as Pick<
+          AppBuild,
+          "Refusal"
+        >;
         const api = podApi(browserHost());
         try {
           await api.pod({ pod: "nobody" });
         } catch (error) {
-          return error instanceof Refusal;
+          return Refusal === rootRefusal && error instanceof Refusal;
         }
         return "took it";
       });
