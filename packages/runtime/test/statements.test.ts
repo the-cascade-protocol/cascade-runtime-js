@@ -898,7 +898,7 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           ],
           screens: new Map(),
           screensFilled: false,
-          refill: () => undefined,
+          refill: () => [],
           close: () => undefined,
         },
         {
@@ -1021,7 +1021,7 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           ],
           screens: new Map(),
           screensFilled: false,
-          refill: () => undefined,
+          refill: () => [],
           close: () => undefined,
         },
         {

@@ -108,8 +108,11 @@ export interface BuiltFixture {
   readonly screens: ReadonlyMap<string, string>;
   /** Whether the manifest names `queries/views/`, so that the screens are filled keyed over the fixture too. */
   readonly screensFilled: boolean;
-  /** Fills every screen again for the entries in scope: each view's fill, the labels, then each view's finish. */
-  refill(): void;
+  /**
+   * Fills every screen again for the entries in scope: each view's fill, the labels, then each view's finish. Gives each
+   * part that made or dropped a table, view or index, as `<its .sql>: its <part> part`.
+   */
+  refill(): readonly string[];
   close(): void;
 }
 
@@ -662,28 +665,49 @@ export function madeScreens(
 }
 
 /**
+ * The versions of the schema of the connection's database and of its temporary one: a statement that makes or drops a
+ * table, view or index moves one, and SQLite then compiles again each statement compiled on the connection.
+ */
+const SCHEMA_VERSIONS = [
+  "PRAGMA main.schema_version",
+  "PRAGMA temp.schema_version",
+];
+
+/**
  * Fills each view's screen again for the entries in scope: every view's fill, then the labels, then every view's finish,
- * each statement compiled once in `compiled`, as a runtime that fills keyed runs often does.
+ * each statement compiled once in `compiled`, as a runtime that fills keyed runs often does; gives each part that made or
+ * dropped a table, view or index, which would have that runtime compile every statement again.
  */
 function refilled(
   db: Database,
   ported: readonly Ported[],
   compiled: Map<string, Statement>,
-): void {
+): string[] {
   const views = viewsOf(ported);
   const labels = labelsOf(ported);
+  const statement = (text: string): Statement => {
+    let found = compiled.get(text);
+    if (found === undefined) compiled.set(text, (found = db.prepare(text)));
+    return found;
+  };
   const run = (script: string): void => {
-    for (const text of sqlStatements(script)) {
-      let statement = compiled.get(text);
-      if (statement === undefined)
-        compiled.set(text, (statement = db.prepare(text)));
-      statement.run();
-    }
+    for (const text of sqlStatements(script)) statement(text).run();
+  };
+  const schema = (): string =>
+    SCHEMA_VERSIONS.map((text) => JSON.stringify(statement(text).get())).join();
+  const remade: string[] = [];
+  const watched = (rq: string, part: string, work: () => void): void => {
+    const was = schema();
+    work();
+    if (schema() !== was) remade.push(`${sqlPath(rq)}: its ${part} part`);
   };
   for (const part of ["fill", "finish"]) {
-    for (const { parts } of views) run(parts.get(part) ?? "");
-    if (part === "fill" && labels !== undefined) labelled(db, labels, run);
+    for (const { query, parts } of views)
+      watched(query.rq, part, () => run(parts.get(part) ?? ""));
+    if (part === "fill" && labels !== undefined)
+      watched(LABELS, part, () => labelled(db, labels, run));
   }
+  return remade;
 }
 
 const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
@@ -1460,6 +1484,7 @@ export function keyedFillFailures(
     .map(({ rq }) => rq);
   const lines: string[] = [];
   const kinds = new Set<string>();
+  const remade = new Set<string>();
   for (const { name, make } of keyedChanges(db, () => built.refill())) {
     const kind = keyedKind(name);
     if (kind === undefined)
@@ -1471,7 +1496,13 @@ export function keyedFillFailures(
         db.exec("DELETE FROM scope");
         const put = db.prepare("INSERT INTO scope (term) VALUES (?)");
         for (const term of touched) put.run(term);
-        built.refill();
+        for (const part of built.refill())
+          if (!remade.has(part)) {
+            remade.add(part);
+            lines.push(
+              `${fixture}, under ${lens}, ${name}: ${part}, run again, makes or drops a table, view or index, so that SQLite compiles every statement compiled on the connection again: make each IF NOT EXISTS and empty it rather than drop it`,
+            );
+          }
         return screenTables(db);
       });
       let wanted = filled;

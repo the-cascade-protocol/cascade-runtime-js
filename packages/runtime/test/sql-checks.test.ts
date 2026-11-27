@@ -83,7 +83,7 @@ async function podOf(
       entries: [],
       screens: new Map(),
       screensFilled: false,
-      refill: () => undefined,
+      refill: () => [],
       close: () => undefined,
     },
     close: () => {
@@ -312,7 +312,7 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
         refill: () => {
           refills += 1;
           if (failing !== undefined) throw failing;
-          built.refill();
+          return built.refill();
         },
       };
       const checked = new Set<string>();
