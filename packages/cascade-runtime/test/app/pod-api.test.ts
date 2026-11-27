@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import {
+  canonical,
+  MemoryFiles,
+  ntriples,
+  OxigraphStore,
+} from "@cascade-runtime/runtime";
+import { checkouts, findRoot } from "@cascade-runtime/runtime/node";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
 import {
   ConnectionFailure,
@@ -15,7 +23,11 @@ import {
   timelineIn,
   Unopened,
 } from "cascade-runtime";
+import { loadSample } from "cascade-runtime/samples";
 import { trendOf } from "cascade-runtime/tools";
+import { partsOf } from "../../src/node/resolved.js";
+import { openPodWith } from "../../src/pod.js";
+import { Tables, versionName, writeStarterCopies } from "../../src/tables.js";
 import { importClaimingEveryProfile } from "../claiming.js";
 import {
   type Alter,
@@ -25,7 +37,7 @@ import {
   routed,
   rowOf,
 } from "../hospitals.js";
-import { removed } from "../settled.js";
+import { removed, settled } from "../settled.js";
 
 type Input = Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,7 +103,7 @@ const {
         input: RequestInfo | URL,
         init?: RequestInit,
       ) => Promise<Response>;
-      headers: Record<string, string>;
+      headers?: Record<string, string>;
     },
   ) => Api;
   nodeHost: (options: { folder: string; opensEncrypted?: boolean }) => Host & {
@@ -112,13 +124,6 @@ const { entryId, testsIn, IDLE_LOCK_MS } = (await import(
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
 };
-/**
- * Why a case that reads a pod's title after PodApi is made again does not run here: `nodeHost` reads the title from the
- * `pod.json` kept beside the pod, which a packed runtime keeps and a runtime run from a checkout does not. The kit's
- * copy of each such case runs on the packed runtime until PodApi's tests run on a stand-in host.
- */
-const KEPT_TITLES =
-  "a runtime run from a checkout keeps no pod.json, which nodeHost's title reads";
 /** What answers a request: the stand-in for the Node server's `/api/` routes. */
 interface App {
   request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -131,6 +136,7 @@ const EMPTY = "empty";
 const SEALED = "sealed";
 const LDL = "18262-6";
 const ATORVASTATIN = "617310";
+const SECOND_ATORVASTATIN = "617314";
 const LABS = "pod/My lab results";
 const IMPORTS = "pod/What each import brought in";
 const MEDICATIONS = "pod/My medication history";
@@ -529,6 +535,85 @@ const brokenApi = () =>
       throw new Error("tables are broken");
     },
   });
+
+const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
+const CLINVAR_FEED = "https://tables.example/feed.ttl";
+const CLINVAR_PREFIXES = `@prefix cascade: <${CASCADE}> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix pav: <http://purl.org/pav/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix spdx: <http://spdx.org/rdf/terms#> .
+`;
+
+/**
+ * The reference tables an app starts from when the one series they hold is ClinVar's, whose one row, found by the coding
+ * expression `NM_000249.3:c.2042C>T`, classifies the variation Pathogenic; and the parts a pod is opened with over them.
+ */
+async function clinvarTables() {
+  const series = "urn:uuid:0a1e2c3d-4b5a-4c6d-8e7f-a1b2c3d4e5f6";
+  const url = "https://tables.example/rows/clinvar.nq.gz";
+  const found = await partsOf(
+    await checkouts(findRoot(dirname(fileURLToPath(import.meta.url)))),
+  );
+  const rows = await new OxigraphStore().parse(
+    `${CLINVAR_PREFIXES}<https://identifiers.org/clinvar:90011> cascade:hgvsExpression <https://ns.cascadeprotocol.org/codes/hgvs/NM_000249.3%3Ac.2042C%3ET> ; cascade:clinvarClassification cascade:Pathogenic .`,
+    "urn:test:rows",
+  );
+  const version = await versionName(series, undefined, rows);
+  const bytes = new Uint8Array(
+    await new Response(
+      new Blob([
+        (await canonical(rows))
+          .split("\n")
+          .filter((line) => line.trim() !== "")
+          .map((line) => `${line.replace(/\s*\.\s*$/, "")} <${version}> .`)
+          .sort()
+          .join("\n"),
+      ])
+        .stream()
+        .pipeThrough(new CompressionStream("gzip")),
+    ).arrayBuffer(),
+  );
+  const checksum = [
+    ...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+  ]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const catalog = await new OxigraphStore().parse(
+    `${CLINVAR_PREFIXES}<${series}> a cascade:ReferenceSeries ; rdfs:label "ClinVar" ;
+  cascade:tableKind cascade:VariantClassifications ; dct:bibliographicCitation "ClinVar, NCBI." ;
+  dcat:hasCurrentVersion <${version}> .
+<${version}> prov:specializationOf <${series}> ; pav:version "1" ; cascade:coversGene "MLH1" ;
+  dcat:distribution [ dcat:downloadURL <${url}> ; spdx:checksum [ spdx:checksumValue "${checksum}" ] ] .`,
+    CLINVAR_FEED,
+  );
+  const served: typeof fetch = async (input) =>
+    String(input) === CLINVAR_FEED
+      ? new Response(new TextDecoder().decode(ntriples(catalog)))
+      : String(input) === url
+        ? new Response(bytes.slice())
+        : new Response(null, { status: 404 });
+  const starter = new MemoryFiles("urn:test:starter/");
+  await writeStarterCopies(
+    {
+      feeds: [CLINVAR_FEED],
+      vocabulary: found.vocabulary,
+      newStore: found.newStore,
+      fetch: served,
+    },
+    (path, bytes) => starter.write(path, bytes),
+  );
+  const tables = new Tables({
+    files: new MemoryFiles("urn:test:app/"),
+    feeds: [CLINVAR_FEED],
+    vocabulary: found.vocabulary,
+    newStore: found.newStore,
+    starter,
+  });
+  return { tables, parts: { ...found, tables } };
+}
 
 /** A stub pod `reviewed`: one thing that needs review, and one table version the app does not hold. */
 const reviewing = () => {
@@ -945,6 +1030,127 @@ describe("Asking a pod a named question, and running a tool on it · api.ask(), 
       assert.deepEqual(
         (await overHttp.tool({ pod: STATIN, tool: "worth_a_look" })).value,
         [],
+      );
+    });
+  });
+
+  describe('given reference tables that say what Worth a look reads of them, api.tool({ pod, tool: "worth_a_look" })', () => {
+    /** The statin story's pod with a second atorvastatin of another code, which the tables say share an ingredient. */
+    const statins = once(async () => {
+      const at = await mkdtemp(join(tmpdir(), "pod-api-statins-"));
+      folders.push(at);
+      const { pull } = await pulled(north, STATIN);
+      const files = pullFiles(pull, "north");
+      const bundle = JSON.parse(
+        new TextDecoder().decode(files.get("north/bundle.json")),
+      );
+      const [first] = bundle.entry.filter(
+        ({ resource }: Output) =>
+          resource.resourceType === "MedicationRequest" &&
+          resource.medicationCodeableConcept.coding[0].code === ATORVASTATIN,
+      );
+      const [coding] = first.resource.medicationCodeableConcept.coding;
+      bundle.entry.push({
+        ...first,
+        fullUrl: first.fullUrl.replace("med-1", "med-3"),
+        resource: {
+          ...first.resource,
+          id: "story-statin-med-3",
+          medicationCodeableConcept: {
+            coding: [
+              {
+                ...coding,
+                code: SECOND_ATORVASTATIN,
+                display: "atorvastatin 40 MG Oral Tablet",
+              },
+            ],
+            text: "Atorvastatin 40 mg tablet",
+          },
+        },
+      });
+      const pod = await openPod(join(at, "two-atorvastatins"));
+      const imported = await importClaimingEveryProfile(
+        pod,
+        new Map([
+          ...files,
+          [
+            "north/bundle.json",
+            new TextEncoder().encode(JSON.stringify(bundle)),
+          ],
+        ]),
+      );
+      assert.equal(imported.refused, undefined);
+      await pod.close();
+      await settled(at);
+      const rxnorm = "https://ns.cascadeprotocol.org/codes/rxnorm/";
+      const ingredient = `${rxnorm}83367`;
+      const about = (code: string): object | undefined =>
+        code === ingredient
+          ? named("atorvastatin")
+          : code.startsWith(rxnorm)
+            ? {
+                ingredients: {
+                  codes: [ingredient],
+                  origin: "urn:test:ingredients",
+                },
+              }
+            : undefined;
+      const tables = {
+        held: async () => [],
+        about: async (codes: string[]) =>
+          new Map(
+            codes.flatMap((code): [string, object][] => {
+              const said = about(code);
+              return said === undefined ? [] : [[code, said]];
+            }),
+          ),
+      };
+      const through = api({
+        ...nodeHost({ folder: at }),
+        tables: async () => tables,
+      });
+      return async () =>
+        (await through.tool({ pod: "two-atorvastatins", tool: "worth_a_look" }))
+          .value as Output[];
+    });
+
+    /** Martin's sample pod, opened over the ClinVar series, whose 2022 report of his MLH1 variant is of uncertain significance. */
+    const martin = once(async () => {
+      const at = await mkdtemp(join(tmpdir(), "pod-api-martin-"));
+      folders.push(at);
+      const { tables, parts } = await clinvarTables();
+      await loadSample("martin-okafor", join(at, "martin-okafor"), { tables });
+      const given = nodeHost({ folder: at });
+      const through = api({
+        ...given,
+        tables: async () => tables,
+        pods: {
+          ...given.pods,
+          open: (name: string) => openPodWith(parts, join(at, name)),
+        },
+      });
+      return async () =>
+        (await through.tool({ pod: "martin-okafor", tool: "worth_a_look" }))
+          .value as Output[];
+    });
+
+    it("says two medications that share an ingredient, with the ingredient's name", async () => {
+      const lines = await (await statins())();
+      assert.ok(
+        lines.some(({ sentence }) =>
+          /share an ingredient, atorvastatin/.test(sentence),
+        ),
+        JSON.stringify(lines),
+      );
+    });
+
+    it("says a report that differs from ClinVar today", async () => {
+      const lines = await (await martin())();
+      const differing = lines.filter(({ tag }) => tag === "Differs");
+      assert.ok(differing.length > 0, JSON.stringify(lines));
+      assert.match(
+        differing[0]!.sentence,
+        /2022 report.* differs from ClinVar today\.$/,
       );
     });
   });
@@ -2476,17 +2682,11 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.ok(after.sources.length > 0);
     });
 
-    it(
-      "titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file",
-      {
-        skip: KEPT_TITLES,
-      },
-      async () => {
-        const { untitled, titled } = await namedAfterBringIn();
-        assert.equal(untitled.title, "Ines Calloway");
-        assert.equal(titled.title, "Ada");
-      },
-    );
+    it("titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file", async () => {
+      const { untitled, titled } = await namedAfterBringIn();
+      assert.equal(untitled.title, "Ines Calloway");
+      assert.equal(titled.title, "Ada");
+    });
 
     it("leaves the title of a pod when the import is refused", async () => {
       const { refused } = await namedAfterBringIn();
@@ -2501,18 +2701,12 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(disclaimed.title, "rowan-ellery-marsh");
     });
 
-    it(
-      "claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing",
-      {
-        skip: KEPT_TITLES,
-      },
-      async () => {
-        const { retried, untitled } = await namedAfterBringIn();
-        assert.match(retried.failedFirst ?? "", /^Not brought in: /);
-        assert.equal(retried.title, "Ines Calloway");
-        assert.equal(retried.medications, untitled.medications);
-      },
-    );
+    it("claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing", async () => {
+      const { retried, untitled } = await namedAfterBringIn();
+      assert.match(retried.failedFirst ?? "", /^Not brought in: /);
+      assert.equal(retried.title, "Ines Calloway");
+      assert.equal(retried.medications, untitled.medications);
+    });
 
     it("claims on a retry only the profiles its own pull's import filed, leaving another pull's of the same hospital for the person to answer", async () => {
       const { retriedBesideAnotherPull, retried } = await namedAfterBringIn();
@@ -2958,6 +3152,44 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
         );
       } finally {
         quiet.mock.restore();
+      }
+    });
+  });
+
+  describe("given a server's answer the client reads on its own", () => {
+    const sent = (answer: Response, base = "http://h/app/") => {
+      const urls: string[] = [];
+      const client = remoteApi(base, {
+        fetch: async (input: RequestInfo | URL) => {
+          urls.push(String(input));
+          return answer;
+        },
+      });
+      return { client, urls };
+    };
+
+    it("throws an error carrying the server's sentence, and not a `Refusal`, for a 403, which the page's own refusals are not", async () => {
+      const sentence =
+        "Open the address the app printed, which holds this launch's cookie.";
+      const { client } = sent(
+        Response.json({ refused: sentence }, { status: 403 }),
+      );
+      const error = await caught(client.pods({}));
+      assert.equal(error.name, "Error");
+      assert.equal(error.message, sentence);
+    });
+
+    it("posts to `api/<operation>` under the base address's path, whatever query or fragment the base carries", async () => {
+      for (const base of [
+        "http://h/app",
+        "http://h/app/",
+        "http://h/app?x=1",
+        "http://h/app/#f",
+        "http://h/app/?x=1#f",
+      ]) {
+        const { client, urls } = sent(Response.json({}), base);
+        await client.pod({ pod: "x" });
+        assert.deepEqual(urls, ["http://h/app/api/pod"], base);
       }
     });
   });
