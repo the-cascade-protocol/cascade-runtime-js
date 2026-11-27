@@ -34,6 +34,7 @@ import {
   writeStarterCopies,
 } from "../../src/tables.js";
 import { importClaimingEveryProfile } from "../claiming.js";
+import { TILES } from "./fixtures.js";
 import {
   type Alter,
   answering,
@@ -78,9 +79,10 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-/** What `podApi` takes besides the host: the clock the idle lock reads, in milliseconds. */
+/** What `podApi` takes besides the host: the clock the idle lock reads, in milliseconds, and the app's tiles. */
 interface Clocked {
   clock?: () => number;
+  sections?: typeof TILES;
 }
 /** The entry point an app imports, read as loosely as the tests call it. */
 const APP: string = "cascade-runtime/app";
@@ -90,13 +92,19 @@ const {
   notOpenedHere,
   WAIT_MS,
   IDLE_CHECK_MS,
+  IDLE_LOCK_MS,
   remoteApi,
   nodeHost,
   INPUT_SCHEMAS,
   refusalOf,
+  entryId,
+  testsIn,
 } = (await import(APP)) as {
   WAIT_MS: number;
   IDLE_CHECK_MS: number;
+  IDLE_LOCK_MS: number;
+  entryId: (entry: string) => string;
+  testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
   podApi: (host: Host, options?: Clocked) => Api;
   maps: (output: Output) => Output;
   notOpenedHere: (name: string) => string;
@@ -121,13 +129,6 @@ const {
     { safeParse(value: unknown): { success: boolean; error?: unknown } }
   >;
   refusalOf: (error: unknown) => string;
-};
-const { entryId, testsIn, IDLE_LOCK_MS } = (await import(
-  new URL("../../src/app/said.js", import.meta.url).href
-)) as {
-  IDLE_LOCK_MS: number;
-  entryId: (entry: string) => string;
-  testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
 };
 /** What answers a request: the stand-in for the Node server's `/api/` routes. */
 interface App {
@@ -434,7 +435,7 @@ function crossing(built: Api): Api {
   return over;
 }
 function api(given: Host = host(), options?: Clocked) {
-  const built = podApi(given, options);
+  const built = podApi(given, { sections: TILES, ...options });
   made.push(built);
   const checked = {} as Api;
   for (const [name, operation] of Object.entries(built))

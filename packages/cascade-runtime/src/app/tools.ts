@@ -16,7 +16,7 @@ import {
   type ToolTier,
 } from "../pod-tools.js";
 import { POD_TOOLS, type PodApi } from "./pod-api.js";
-import { PAGE_TOOLS, type PageDoor, type PageTool } from "./said.js";
+import { PAGE_TOOLS, type PageDoor, type PageTool } from "./page-tools.js";
 
 /** What a door gives the tools: the builders of its own addresses it has, and `open`, where it moves its app. */
 export interface Door {

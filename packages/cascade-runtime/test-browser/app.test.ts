@@ -18,7 +18,11 @@ interface AppBuild {
   browserHost(options?: {
     samples: { names: readonly string[]; at: string };
   }): object;
-  podApi(host: object): {
+  worthALook(answers: object): { sentence: string; tag?: string }[];
+  podApi(
+    host: object,
+    options?: { sections?: readonly object[] },
+  ): {
     makePod(input: { person: string }): Promise<unknown>;
     pods(): Promise<{ pods: { name: string }[] }>;
     pod(input: { pod: string }): Promise<unknown>;
@@ -70,14 +74,24 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
   });
 
   describe("given Alex Rivera's sample published beside the app", () => {
-    it("copies it into IndexedDB and answers Alex's active allergies and the pod's questions", async () => {
+    it("copies it into IndexedDB, answers Alex's active allergies and the question of the app's one tile, and says what needs review", async () => {
       const seen = await page.evaluate(async (person) => {
         const url = "/dist/browser/app.js";
-        const { browserHost, podApi } = (await import(url)) as AppBuild;
+        const { browserHost, podApi, worthALook } = (await import(
+          url
+        )) as AppBuild;
+        const allergies = {
+          one: "allergy",
+          question: "pod/My active allergies",
+          field: "allergenName",
+          codes: ["code"],
+          columns: [],
+        };
         const api = podApi(
           browserHost({
             samples: { names: [person], at: new URL("/", location.href).href },
           }),
+          { sections: [allergies] },
         );
         const made = await api.makePod({ person });
         const { pods } = await api.pods();
@@ -95,6 +109,10 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
             .filter(([, answered]) => answered.length > 0)
             .map(([question]) => question)
             .includes("pod/My active allergies"),
+          review: worthALook(answers).map(({ sentence, tag }) => ({
+            sentence,
+            tag,
+          })),
         };
       }, PERSON);
       assert.deepEqual(seen, {
@@ -102,6 +120,13 @@ describe("Opening a sample pod in a browser through cascade-runtime/app · brows
         pods: [PERSON],
         allergens: ["Latex", "Peanuts", "Penicillin", "Sulfamethoxazole"],
         drawn: true,
+        review: [
+          {
+            sentence:
+              "Sources disagree on how severe the Sulfamethoxazole allergy is.",
+            tag: "Needs review",
+          },
+        ],
       });
     });
 
