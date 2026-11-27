@@ -228,51 +228,18 @@ jobs:
       # scripts/test.mjs skips the cases that read it unless CASCADE_CONFORMANCE_REPORT names one, as it does here off a
       # pull request.
       - name: Tests in random order
-        id: listed
         if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
         shell: bash
         run: |
           node scripts/transpile.mjs
-          node scripts/test.mjs --listed --test-randomize \
-            --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-listed.xml" \
-            --test-reporter=spec --test-reporter-destination=stdout
-      # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite and keeps its report:
-      # once a night, not twice. The JUnit reports of the two parts are read for the test page's shape below, as the
-      # `runtime-tests` job reads its own.
+          node scripts/test.mjs --listed --test-randomize --test-reporter=spec --test-reporter-destination=stdout
+      # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite: once a night, not twice.
       - name: The tests not listed as randomOrder
-        id: suite
         if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
         shell: bash
-        run: |
-          node scripts/test.mjs --unlisted \
-            --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$RUNNER_TEMP/junit-unlisted.xml" \
-            --test-reporter=spec --test-reporter-destination=stdout
+        run: node scripts/test.mjs --unlisted --test-reporter=spec --test-reporter-destination=stdout
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # A case outside a listed capability, nested too deep, or with a leaf that is no verb fails here, named. The files
-      # a package's test/spec.json lists as `shaped` are held to it; a package that lists no `capabilities` is skipped.
-      - name: The test results read as a specification
-        if: ${{ !cancelled() && steps.suite.conclusion != 'skipped' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          reports=()
-          for part in listed unlisted; do
-            if [ -f "$RUNNER_TEMP/junit-$part.xml" ]; then reports+=("$RUNNER_TEMP/junit-$part.xml"); fi
-          done
-          if [ "${#reports[@]}" -eq 0 ]; then
-            echo "::warning::the runtime's tests wrote no JUnit report, so there is nothing to check"
-            exit 0
-          fi
-          node scripts/spec-shape.mjs "${reports[@]}" packages/cascade-runtime/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/apple-health/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/fhir-pull/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/ccda-download/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/graphdb/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/mcp/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/runtime/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/site/test/spec.json
-          node scripts/spec-shape.mjs "${reports[@]}" packages/evals/test/spec.json
 
   # The conformance command on Oxigraph's native build, the production engine: the build the oxigraph-native workflow
   # published for Linux, fetched and checked against its committed sha256, or, on a pull request that changes
@@ -543,7 +510,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - run: npx playwright install --only-shell chromium
         if: ${{ !cancelled() }}
-      # The tests page's script, run in a browser: expand and collapse all, failures only, the glossary filter.
+      # The tests page's script, run in a browser: expand and collapse all, failures only.
       - name: Run the tests page's script
         if: ${{ !cancelled() }}
         run: npm run test:tests-page
@@ -1052,26 +1019,6 @@ jobs:
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$kept/run.json"
           npm test -- --test-reporter=./scripts/junit-reporter.mjs --test-reporter-destination="$kept/junit.xml" \
             --test-reporter=spec --test-reporter-destination=stdout
-      # The test page's shape, over the report just written: see the `tests and conformance` job.
-      - name: The test results read as a specification
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          kept="$RUNNER_TEMP/runtime-tests"
-          if [ ! -f "$kept/junit.xml" ]; then
-            echo "::warning::the runtime's tests wrote no JUnit report, so there is nothing to check"
-            exit 0
-          fi
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/cascade-runtime/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/apple-health/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/fhir-pull/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/ccda-download/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/graphdb/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/mcp/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/runtime/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/site/test/spec.json
-          node scripts/spec-shape.mjs "$kept/junit.xml" packages/evals/test/spec.json
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:

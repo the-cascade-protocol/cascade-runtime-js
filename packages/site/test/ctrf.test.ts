@@ -8,18 +8,16 @@ import {
   ctrfOf,
   ctrfPath,
   DESCRIBED,
-  GLOSSARY,
   GROUPED,
   pageWith,
   R,
   RUN,
   unmeasuredCtrf,
-  WITH_GLOSSARY,
 } from "./tests-page.js";
 
 /**
  * Beside each page the site writes the same results as CTRF, a JSON format for test reports, for an agent that would
- * rather read data than a page. It holds what the page shows: levels, descriptions, rule links and the glossary.
+ * rather read data than a page. It holds what the page shows: levels, descriptions and rule links.
  */
 describe("Test results for an agent · <repository>.ctrf.json", () => {
   describe("with a run's report", () => {
@@ -162,27 +160,6 @@ describe("Test results for an agent · <repository>.ctrf.json", () => {
           description: "A patient nobody claimed.",
         },
       ]);
-    });
-  });
-
-  describe("with a glossary", () => {
-    it("carries each package's glossary, and nothing for a package with none", async () => {
-      const withGlossary = await pageWith({
-        runtime: { report: WITH_GLOSSARY, ...RUN },
-      });
-      const glossary = ctrfOf(withGlossary.tree).extra?.glossary?.[
-        "cascade-runtime"
-      ];
-      assert.equal(glossary?.length, GLOSSARY.length);
-      assert.deepEqual(glossary?.[0], {
-        id: "glossary-cascade-runtime-claim",
-        ...GLOSSARY[0],
-      });
-
-      const without = await pageWith({
-        runtime: { report: GROUPED, ...RUN },
-      });
-      assert.equal(ctrfOf(without.tree).extra, undefined);
     });
   });
 });

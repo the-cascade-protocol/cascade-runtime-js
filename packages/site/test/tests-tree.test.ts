@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import type { Suite } from "../src/hub/context.js";
-import { described, FILE, leafOf, report } from "./report.js";
+import { described, FILE, leafOf, packageProperty, report } from "./report.js";
 import { NODE, NODE_UNLISTED, PYTEST, VITEST } from "./runner-reports.js";
 import {
   barOf,
@@ -28,7 +28,6 @@ import {
   verdictOf,
   versioned,
   WIDE_PACKAGE,
-  WITH_GLOSSARY,
 } from "./tests-page.js";
 import { SCRIPT } from "../src/hub/tests.js";
 
@@ -36,8 +35,8 @@ const A = FILE("cascade-runtime", "a.test");
 const BASE = `https://github.com/the-cascade-protocol/cascade-runtime-js/blob/${RUN.commit}/packages/cascade-runtime/test/`;
 
 /**
- * A page reads top to bottom as a specification: each package, its capabilities in the order its `test/spec.json` gives,
- * the situations under each, and the cases. Build checks come last, closed, since they are not part of the specification.
+ * A page reads top to bottom as a specification: each package, its capabilities in the order they are written, the
+ * situations under each, and the cases. Build checks come last, closed, since they are not part of the specification.
  */
 describe("Packages, capabilities and situations as a tree · testsSection, spec.json", () => {
   describe("with cases in several packages", () => {
@@ -121,7 +120,7 @@ describe("Packages, capabilities and situations as a tree · testsSection, spec.
       assert.match(rows[1]?.cases ?? "", /^4$/);
     });
 
-    it("links each capability, in the order the package's spec gives, to its id on the page", () => {
+    it("links each capability, in the order they are written, to its id on the page", () => {
       assert.deepEqual(
         rows[1]?.capabilities.map((one) => one.label),
         ["Reading a record", "Writing a record"],
@@ -270,19 +269,101 @@ describe("Packages, capabilities and situations as a tree · testsSection, spec.
       );
     });
 
-    it("orders the capabilities as `capabilities` lists them", () => {
-      assert.ok(
-        placeOfCapability("Looking up a term") <
-          placeOfCapability("Importing a health export"),
-        "the report writes them the other way round",
+    it("orders the capabilities as they are written, by file and then line, not as the report lists them or by name", () => {
+      const written = [
+        "Importing a health export",
+        "Zebra capability",
+        "Looking up a term",
+        "Apple capability",
+      ];
+      assert.ok(written.every((name) => placeOfCapability(name) >= 0));
+      assert.deepEqual(
+        [...written].sort(
+          (a, b) => placeOfCapability(a) - placeOfCapability(b),
+        ),
+        written,
+        levels.join("\n"),
       );
     });
 
-    it("puts a capability the list lacks after the listed ones, by name", () => {
-      const listed = placeOfCapability("Importing a health export");
-      const apple = placeOfCapability("Apple capability");
-      const zebra = placeOfCapability("Zebra capability");
-      assert.ok(listed < apple && apple < zebra, levels.join("\n"));
+    it("orders headings by the line of the case that comes first where the report gives a line only to cases", async () => {
+      const { markup: lined } = await pageWith({
+        runtime: {
+          report: report(
+            "",
+            described("Zebra heading", {}, leafOf("stripes", A, 5)) +
+              described(
+                "Apple heading",
+                {},
+                leafOf("is first alphabetically", A, 40),
+              ),
+          ),
+          ...RUN,
+        },
+      });
+      const shown = levelsOf(lined, R);
+      assert.deepEqual(
+        shown.map((level) => level.split(" ")[0]),
+        ["Zebra", "Apple"],
+        shown.join("\n"),
+      );
+    });
+
+    it("puts the files a package's `spec.json` lists in `order` first, in that order, and ignores one that is not there", async () => {
+      const first = FILE("cascade-runtime", "z-first.test");
+      const second = FILE("cascade-runtime", "y-second.test");
+      const { markup: ordered } = await pageWith({
+        runtime: {
+          report: report(
+            packageProperty("cascade-runtime", "cascade-runtime", "0.0.0", {
+              order: ["z-first.test.ts", "absent.test.ts", "y-second.test.ts"],
+            }),
+            described("Apple heading", { line: 1 }, leafOf("a", A, undefined)) +
+              described(
+                "Second heading",
+                { line: 1 },
+                leafOf("b", second, undefined),
+              ) +
+              described(
+                "First heading",
+                { line: 1 },
+                leafOf("c", first, undefined),
+              ),
+          ),
+          ...RUN,
+        },
+      });
+      assert.deepEqual(
+        levelsOf(ordered, R).map((level) => level.split(" ")[0]),
+        ["First", "Second", "Apple"],
+      );
+    });
+
+    it("shows a top-level heading, a situation and a case however they are worded", async () => {
+      const { markup: worded } = await pageWith({
+        runtime: {
+          report: report(
+            "",
+            described(
+              "A heading no list names",
+              {},
+              described(
+                "under Node's permission model",
+                {},
+                leafOf("the widget", A, 3),
+              ),
+            ),
+          ),
+          ...RUN,
+        },
+      });
+      const shown = levelsOf(worded, R).join("\n");
+      assert.match(shown, /A heading no list names/);
+      assert.match(shown, /under Node's permission model/);
+      assert.deepEqual(
+        casesOf(worded, R).map(([name]) => name),
+        ["the widget"],
+      );
     });
 
     it("puts the capabilities `build` names last, in a section that starts closed", () => {
@@ -898,7 +979,7 @@ describe("The summary bar and its controls · testsSection", () => {
       }
     });
 
-    it("hides only the three controls, where the package has no glossary", () => {
+    it("hides only the three controls", () => {
       assert.doesNotMatch(
         partOf(markup, R).replace(/<span class="controls"[\s\S]*?<\/span>/, ""),
         /\shidden[\s>]/,
@@ -926,12 +1007,11 @@ describe("The summary bar and its controls · testsSection", () => {
   });
 
   describe("with a run that holds no failure", () => {
-    it("opens no capability, situation or glossary", async () => {
+    it("opens no capability or situation", async () => {
       const { markup } = await pageWith({
-        runtime: { report: WITH_GLOSSARY, ...RUN },
+        runtime: { report: GROUPED, ...RUN },
       });
       const part = partOf(markup, R);
-      assert.match(part, /<details class="glossary">/);
       assert.match(part, /<li class="capability"/);
       assert.doesNotMatch(part, /<details[^>]* open[ >]/);
     });
@@ -1027,15 +1107,15 @@ describe("The summary bar and its controls · testsSection", () => {
       scrollIntoView?: () => void;
     }
     const run = (hash: string) => {
-      const glossary: Node = {
+      const closed: Node = {
         tagName: "DETAILS",
         open: false,
         parentElement: null,
       };
       let scrolled = 0;
       const entry: Node = {
-        tagName: "DT",
-        parentElement: glossary,
+        tagName: "LI",
+        parentElement: closed,
         scrollIntoView: () => {
           scrolled++;
         },
@@ -1055,26 +1135,26 @@ describe("The summary bar and its controls · testsSection", () => {
           },
         },
       );
-      return { glossary, heard, location, scrolled: () => scrolled };
+      return { closed, heard, location, scrolled: () => scrolled };
     };
 
     it("opens every closed part around a link's target on load", () => {
       const loaded = run("#entry");
-      assert.equal(loaded.glossary.open, true);
+      assert.equal(loaded.closed.open, true);
       assert.equal(loaded.scrolled(), 1);
     });
 
     it("opens them again when the hash changes", () => {
       const loaded = run("");
-      assert.equal(loaded.glossary.open, false);
+      assert.equal(loaded.closed.open, false);
       loaded.location.hash = "#entry";
       assert.ok(loaded.heard["hashchange"], "listens for hashchange");
       loaded.heard["hashchange"]?.();
-      assert.equal(loaded.glossary.open, true);
+      assert.equal(loaded.closed.open, true);
     });
 
     it("does nothing for a hash that names nothing", () => {
-      assert.equal(run("#missing").glossary.open, false);
+      assert.equal(run("#missing").closed.open, false);
     });
   });
 });
