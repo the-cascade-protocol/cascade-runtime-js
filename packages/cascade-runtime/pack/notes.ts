@@ -43,6 +43,11 @@ export interface Release {
   readonly tested: readonly TestedBuild[];
 }
 
+/** The name `npm pack` gives the file of a package at a version. */
+function packedName(name: string, version: string): string {
+  return `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
+}
+
 async function json(path: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
 }
@@ -70,7 +75,7 @@ export async function testedBuilds(root: string): Promise<TestedBuild[]> {
     )) as { version: string };
     const recorded = record[name];
     const locked = packages[`node_modules/${name}`];
-    if (recorded?.file.endsWith(`-${version}.tgz`)) {
+    if (recorded?.file === packedName(name, version)) {
       tested.push({ name, ...recorded });
     } else if (recorded === undefined && locked?.version === version) {
       tested.push({

@@ -138,14 +138,44 @@ describe("A build's release notes and the builds it was tested with · releaseNo
     });
 
     it("refuses a package node_modules holds at a build neither the record nor package-lock.json names", async () => {
-      await assert.rejects(
-        testedBuilds(await checkout(TABLES, "e".repeat(40), RECORDED)),
-        /node_modules holds @the-cascade-protocol\/sandbox 0\.0\.0-commit-e{40}, which is neither the build .* records nor the one package-lock\.json names/,
-      );
-      await assert.rejects(
-        testedBuilds(await checkout(TABLES, LOCKED)),
-        /node_modules holds cascade-reference-tables 0\.0\.0-commit-a{40}, which is neither/,
-      );
+      const refused: [string, string, string, unknown][] = [
+        [
+          "a sandbox the record does not name",
+          TABLES,
+          "e".repeat(40),
+          RECORDED,
+        ],
+        [
+          "tables installed with no record, unlike the lock's",
+          TABLES,
+          LOCKED,
+          undefined,
+        ],
+        [
+          "a record naming the sandbox's file for the tables",
+          SANDBOX,
+          SANDBOX,
+          {
+            ...RECORDED,
+            "cascade-reference-tables": {
+              ...RECORDED["cascade-reference-tables"],
+              file: SANDBOX_FILE,
+            },
+          },
+        ],
+        [
+          "a record with no file",
+          TABLES,
+          SANDBOX,
+          { ...RECORDED, "cascade-reference-tables": { commit: TABLES } },
+        ],
+      ];
+      for (const [why, tables, sandbox, record] of refused)
+        await assert.rejects(
+          testedBuilds(await checkout(tables, sandbox, record)),
+          /node_modules holds \S+ 0\.0\.0-commit-[0-9a-f]{40}, which is neither the build .* records nor the one package-lock\.json names/,
+          why,
+        );
     });
   });
 

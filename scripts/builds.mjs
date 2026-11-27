@@ -126,11 +126,12 @@ async function picked(name, named) {
   let commit;
   let how;
   if (named !== undefined) {
-    commit = [...built.keys()].find((one) => one.startsWith(named));
-    if (commit === undefined)
+    const matching = [...built.keys()].filter((one) => one.startsWith(named));
+    if (matching.length !== 1)
       throw new Error(
-        `${producer.repository} has no build of a commit ${named}`,
+        `${producer.repository} has ${matching.length} builds of a commit starting ${named}, where one is wanted`,
       );
+    [commit] = matching;
     how = "the build named";
   } else {
     const commits = (
@@ -162,12 +163,15 @@ async function picked(name, named) {
 
 function npm(args) {
   const cli = process.env.npm_execpath;
+  // npm is npm.cmd on Windows, which spawn starts only through a shell, so an argument is quoted there.
   const result = cli
     ? spawnSync(process.execPath, [cli, ...args], { stdio: "inherit" })
-    : spawnSync("npm", args, {
-        stdio: "inherit",
-        shell: process.platform === "win32",
-      });
+    : process.platform === "win32"
+      ? spawnSync(["npm", ...args.map((one) => `"${one}"`)].join(" "), {
+          stdio: "inherit",
+          shell: true,
+        })
+      : spawnSync("npm", args, { stdio: "inherit" });
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new Error(`npm ${args[0]} exited ${result.status}`);
@@ -190,7 +194,10 @@ function install(picks) {
         "utf8",
       ),
     );
-    if (!one.file.endsWith(`-${version}.tgz`))
+    if (
+      !PRODUCERS[name]?.file.test(one.file) ||
+      !one.file.endsWith(`-${version}.tgz`)
+    )
       throw new Error(`node_modules holds ${name} ${version}, not ${one.file}`);
     record[name] = { ...one, integrity: one.integrity ?? integrityOf(path) };
     process.stdout.write(`${name}: ${one.file}, ${one.how}\n`);
@@ -238,5 +245,5 @@ async function main(argv) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)
   await main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`builds: ${error.message}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   });
