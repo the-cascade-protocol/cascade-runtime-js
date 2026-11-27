@@ -1,10 +1,11 @@
+import assert from "node:assert/strict";
+import { before, describe, it } from "node:test";
+import { NEVER, TOOLS } from "cascade-runtime/app";
 import {
   QUESTIONS,
   TIER_OF_KIND,
   TOOLS as RUNTIME,
 } from "cascade-runtime/tools";
-import { beforeAll, describe, expect, it } from "vitest";
-import { NEVER, TOOLS } from "../tools.ts";
 
 /** What each tool is given, and the PodApi operations it may call. A tool added to `TOOLS` needs a row. */
 const RUNS: Record<string, [Record<string, unknown>, string[]]> = {
@@ -42,9 +43,9 @@ const ANSWERS: Record<string, unknown> = {
 const address = () => "/";
 
 /**
- * `TOOLS` in `tools.ts` is the one list of tools the chat, the MCP server and a browser's agent are offered. Each tool has a
- * tier: `free` reads, `ask` changes the app and waits for the person. `NEVER` lists the PodApi operations no tool may call. A
- * tool you add needs a row in `RUNS`.
+ * `TOOLS` of `cascade-runtime/app` is the one list of tools the chat, the MCP server and a browser's agent are offered.
+ * Each tool has a tier: `free` reads, `ask` changes the app and waits for the person. `NEVER` lists the PodApi
+ * operations no tool may call. A tool you add needs a row in `RUNS`.
  */
 describe("The tool list a model is offered · TOOLS, NEVER", () => {
   describe("TOOLS", () => {
@@ -54,7 +55,7 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
       { called: [string, Record<string, unknown>][] }
     >();
 
-    beforeAll(async () => {
+    before(async () => {
       for (const tool of TOOLS) {
         const [input] = RUNS[tool.name] ?? [{}];
         const called: [string, Record<string, unknown>][] = [];
@@ -85,51 +86,56 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
     });
 
     it("holds exactly the tools `RUNS` has a row for", () => {
-      expect(TOOLS.map(({ name }) => name).sort()).toEqual(
+      assert.deepEqual(
+        TOOLS.map(({ name }) => name).sort(),
         Object.keys(RUNS).sort(),
       );
     });
 
     it("gives every tool the tier of its kind, free or ask", () => {
       for (const { name, kind, tier } of TOOLS) {
-        expect(tier, name).toBe(TIER_OF_KIND[kind]);
-        expect(["free", "ask"], name).toContain(tier);
+        assert.equal(tier, TIER_OF_KIND[kind], name);
+        assert.ok(["free", "ask"].includes(tier), name);
       }
     });
 
     it("gives each tool the kind of act it takes", () => {
       for (const { name, kind } of TOOLS)
-        expect(kind, name).toBe(
+        assert.equal(
+          kind,
           name.startsWith("open_")
             ? "MovingTheAppsView"
             : (OTHER_KINDS[name] ?? "ReadingPodsOrTables"),
+          name,
         );
     });
 
     it("calls from each tool only the PodApi operations its row names", () => {
       for (const [name, { called }] of ran)
-        expect(
+        assert.deepEqual(
           called.map(([op]) => op),
+          RUNS[name]?.[1],
           name,
-        ).toEqual(RUNS[name]?.[1]);
+        );
     });
 
     it("puts the kind of each `NEVER` entry at the tier never", () => {
       for (const { op, kind } of NEVER)
-        expect(TIER_OF_KIND[kind], op).toBe("never");
+        assert.equal(TIER_OF_KIND[kind], "never", op);
     });
 
     it("never calls an operation `NEVER` holds", () => {
       for (const [name, { called }] of ran)
         for (const [op, given] of called)
-          expect(
+          assert.equal(
             NEVER.some(
               (never) =>
                 never.op === op &&
                 (never.with === undefined || given[never.with] !== undefined),
             ),
+            false,
             `${name} calls ${op}`,
-          ).toBe(false);
+          );
     });
   });
 
@@ -137,23 +143,25 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
     it("carries each by its name, description and schema", () => {
       for (const { name, description, inputSchema, ofPod } of RUNTIME) {
         const mine = TOOLS.find((tool) => tool.name === name);
-        expect(mine, name).toBeDefined();
-        expect(
+        assert.ok(mine, name);
+        assert.deepEqual(
           {
-            description: mine?.description,
-            inputSchema: mine?.inputSchema,
-            ofPod: mine?.ofPod,
+            description: mine.description,
+            inputSchema: mine.inputSchema,
+            ofPod: mine.ofPod,
           },
+          { description, inputSchema, ofPod },
           name,
-        ).toEqual({ description, inputSchema, ofPod });
+        );
       }
     });
 
     it("offers the runtime's questions as the `ask` tool's question", () => {
       const ask = TOOLS.find((tool) => tool.name === "ask");
-      expect(
+      assert.deepEqual(
         (ask?.inputSchema.properties?.question as { enum?: string[] }).enum,
-      ).toEqual(QUESTIONS);
+        QUESTIONS,
+      );
     });
   });
 });

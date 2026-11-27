@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { z } from "zod";
 
-const { INPUTS: CHECKED, inputRefusal } = (await import(
-  new URL("../../app/pod-api.ts", import.meta.url).href
-)) as {
+/** The entry point an app imports, read as loosely as the tests call it. */
+const APP: string = "cascade-runtime/app";
+const {
+  INPUTS: CHECKED,
+  inputRefusal,
+  INPUT_SCHEMAS: SCHEMAS,
+  refusalOf,
+} = (await import(APP)) as {
   INPUTS: Record<string, Record<string, unknown>>;
   inputRefusal: (operation: string, input: unknown) => string | undefined;
-};
-const { INPUT_SCHEMAS: SCHEMAS, refusalOf } = (await import(
-  new URL("../../app/server/inputs.ts", import.meta.url).href
-)) as {
   INPUT_SCHEMAS: Record<string, z.ZodObject>;
   refusalOf: (error: z.ZodError) => string;
 };

@@ -725,6 +725,26 @@ await showPerson(await her.look(firstExport));
 await her.close();
 ```
 
+## The app's core
+
+`cascade-runtime/app` is what every screen of an app reads and writes through, with no framework: `podApi(host)`
+gives each operation of the starter's app (`pods`, `answers`, `ask`, `makePod`, `unlock`, `connect`, `bring` and
+the rest), each taking and giving plain JSON and refusing bad input with a `Refusal`. In Node, `nodeHost({ folder })`
+is the host whose pods are the folders in `folder`, with the reference tables beside them. `remoteApi(base)` calls the
+same operations at a server's `POST /api/<operation>`, `INPUT_SCHEMAS` are what each operation may be sent, and `TOOLS`
+are the tools a model reaches the app by, each at its consent tier. Close it once, as a pod is closed.
+
+```js
+import { nodeHost, podApi } from "cascade-runtime/app";
+const api = podApi(nodeHost({ folder: "pods" }));
+const { rows } = await api.ask({
+  pod: "alex-rivera",
+  question: "pod/My active allergies",
+});
+await showPerson(rows);
+await api.close();
+```
+
 ## In a browser
 
 In a browser, the same import, served with the package's `components/` beside

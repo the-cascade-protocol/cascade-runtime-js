@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { getRequestListener } from "@hono/node-server";
 import { loadHospital, loadStories } from "@the-cascade-protocol/sandbox/node";
-import { Hono } from "hono";
 import {
   ConnectionFailure,
   openPod,
@@ -18,9 +15,8 @@ import {
   timelineIn,
   Unopened,
 } from "cascade-runtime";
-import { replayKit } from "cascade-runtime/fixtures";
 import { trendOf } from "cascade-runtime/tools";
-import { importClaimingEveryProfile } from "./claiming.js";
+import { importClaimingEveryProfile } from "../claiming.js";
 import {
   type Alter,
   answering,
@@ -28,8 +24,8 @@ import {
   pulled,
   routed,
   rowOf,
-} from "./hospitals.js";
-import { removed } from "./settled.js";
+} from "../hospitals.js";
+import { removed } from "../settled.js";
 
 type Input = Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,52 +65,25 @@ type Host = Record<string, unknown> & { tables: unknown };
 interface Clocked {
   clock?: () => number;
 }
-const { podApi, maps, notOpenedHere, WAIT_MS, IDLE_CHECK_MS } = (await import(
-  new URL("../../app/pod-api.ts", import.meta.url).href
-)) as {
+/** The entry point an app imports, read as loosely as the tests call it. */
+const APP: string = "cascade-runtime/app";
+const {
+  podApi,
+  maps,
+  notOpenedHere,
+  WAIT_MS,
+  IDLE_CHECK_MS,
+  remoteApi,
+  nodeHost,
+  INPUT_SCHEMAS,
+  refusalOf,
+} = (await import(APP)) as {
   WAIT_MS: number;
   IDLE_CHECK_MS: number;
   podApi: (host: Host, options?: Clocked) => Api;
   maps: (output: Output) => Output;
   notOpenedHere: (name: string) => string;
-};
-/** The Node target's server, as far as this test serves it, and what it answers as. */
-interface Own {
-  hosts: Set<string>;
-  origins: Set<string>;
-}
-interface App {
-  fetch(request: Request): Response | Promise<Response>;
-  request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-}
-const { appServer } = (await import(
-  new URL("../../app/server/app.ts", import.meta.url).href
-)) as {
-  appServer: (served: {
-    api: Api;
-    own: () => Own;
-    launch: Launch;
-    chat: Hono;
-    back: () => undefined;
-    pages: string | ((c: { req: { path: string } }) => Response);
-  }) => App;
-};
-/** What proves a request comes from the page the launch opened: the token the printed address carries, spent for a cookie. */
-interface Launch {
-  readonly token: string;
-  exchange(given: string | undefined): string | undefined;
-  holds(given: string | undefined): boolean;
-}
-const { newLaunch, launchCookie } = (await import(
-  new URL("../../app/server/launch.ts", import.meta.url).href
-)) as {
-  newLaunch: () => Launch;
-  launchCookie: (url: URL) => string;
-};
-/** PodApi at a server, through the app's own typed client. */
-const { remoteApi } = (await import(
-  new URL("../../app/src/hosts/remote.ts", import.meta.url).href
-)) as {
+  /** PodApi at a server, through the app's own client. */
   remoteApi: (
     base: string,
     options: {
@@ -125,27 +94,35 @@ const { remoteApi } = (await import(
       headers: Record<string, string>;
     },
   ) => Api;
-};
-const { nodeHost } = (await import(
-  new URL("../../app/node-host.ts", import.meta.url).href
-)) as {
   nodeHost: (options: { folder: string; opensEncrypted?: boolean }) => Host & {
     pods: {
       remove(names: string[], options: { all: boolean }): Promise<void>;
     };
   };
+  INPUT_SCHEMAS: Record<
+    string,
+    { safeParse(value: unknown): { success: boolean; error?: unknown } }
+  >;
+  refusalOf: (error: unknown) => string;
 };
-const { entryId, testsIn, PAGE_TOOLS, IDLE_LOCK_MS } = (await import(
-  new URL("../../app/said.ts", import.meta.url).href
+const { entryId, testsIn, IDLE_LOCK_MS } = (await import(
+  new URL("../../src/app/said.js", import.meta.url).href
 )) as {
   IDLE_LOCK_MS: number;
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
-  PAGE_TOOLS: { name: string }[];
 };
-const { TOOLS } = (await import(
-  new URL("../../app/tools.ts", import.meta.url).href
-)) as { TOOLS: { name: string; tier: string; opens?: true }[] };
+/**
+ * Why a case that reads a pod's title after PodApi is made again does not run here: `nodeHost` reads the title from the
+ * `pod.json` kept beside the pod, which a packed runtime keeps and a runtime run from a checkout does not. The kit's
+ * copy of each such case runs on the packed runtime until PodApi's tests run on a stand-in host.
+ */
+const KEPT_TITLES =
+  "a runtime run from a checkout keeps no pod.json, which nodeHost's title reads";
+/** What answers a request: the stand-in for the Node server's `/api/` routes. */
+interface App {
+  request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+}
 
 const STATIN = "story-statin";
 const SIDE_EFFECT = "story-side-effect";
@@ -154,7 +131,6 @@ const EMPTY = "empty";
 const SEALED = "sealed";
 const LDL = "18262-6";
 const ATORVASTATIN = "617310";
-const SECOND_ATORVASTATIN = "617314";
 const LABS = "pod/My lab results";
 const IMPORTS = "pod/What each import brought in";
 const MEDICATIONS = "pod/My medication history";
@@ -328,66 +304,62 @@ function opening(given: ReturnType<typeof host>, held = false) {
   };
 }
 const made: Api[] = [];
-const servers: Server[] = [];
 
 /** What each call that reached the server's instance came back with, in order, for `both()` to compare. */
 type Call = PromiseSettledResult<Output>;
 
-/** The Node target's server over `built`, answering as `own()` names it, and what `built` answered each call. */
-function served(built: Api, own: () => Own): [App, Call[], Launch] {
-  const launch = newLaunch();
+/**
+ * The `/api/` routes over `built`, and what `built` answered each call: a stand-in for the Node server's handler, which
+ * is not in this package yet, answering as it does. `POST /api/<operation>` takes the input as JSON, checked against
+ * the operation's schema, and answers 200 with the output; 400 `{ refused }` for a body that is no JSON, an input its
+ * schema refuses or a `Refusal`; 423 `{ unopened, refused }` for an `Unopened`; 500 for anything else.
+ */
+function served(built: Api): [App, Call[]] {
   const calls: Call[] = [];
-  const recording = { ...built } as Api;
-  for (const name of Object.keys(built) as (keyof Api)[]) {
-    if (name === "close") continue;
-    recording[name] = async (input: Input) => {
+  const app: App = {
+    async request(input, init) {
+      const operation = new URL(String(input)).pathname.replace(/^\/api\//, "");
+      const run = built[operation as keyof Api] as Operation | undefined;
+      const schema = INPUT_SCHEMAS[operation];
+      if (init?.method !== "POST" || run === undefined || schema === undefined)
+        return Response.json({ refused: "no such operation" }, { status: 404 });
+      let body: unknown;
       try {
-        const value = await built[name](input);
+        body = JSON.parse(String(init.body));
+      } catch {
+        return Response.json(
+          { refused: "the body must be JSON" },
+          { status: 400 },
+        );
+      }
+      const checked = schema.safeParse(body);
+      if (!checked.success)
+        return Response.json(
+          { refused: refusalOf(checked.error) },
+          { status: 400 },
+        );
+      try {
+        const value = await run(body as Input);
         calls.push({ status: "fulfilled", value });
-        return value;
+        return Response.json(value);
       } catch (reason) {
         calls.push({ status: "rejected", reason });
-        throw reason;
+        if (isRefusal(reason))
+          return reason.outcome === undefined
+            ? Response.json({ refused: reason.message }, { status: 400 })
+            : Response.json(
+                { unopened: reason.outcome, refused: reason.message },
+                { status: 423 },
+              );
+        console.error(`/api/${operation} failed:`, reason);
+        return Response.json(
+          { error: "the server failed; its log says why" },
+          { status: 500 },
+        );
       }
-    };
-  }
-  const app = appServer({
-    api: recording,
-    own,
-    launch,
-    chat: new Hono(),
-    back: () => undefined,
-    pages: folder,
-  });
-  return [app, calls, launch];
-}
-
-/** The cookie a page of the server at `origin` holds once it has opened the address the server printed. */
-function cookieOf(launch: Launch, origin: string): string {
-  const session = launch.exchange(launch.token);
-  assert.ok(session, "the token was spent already");
-  return `${launchCookie(new URL(origin))}=${session}`;
-}
-/** The cookie of each server `serve()` started, by its origin. */
-const cookies = new Map<string, string>();
-
-/** Serves `built` on an ephemeral port, as `npm start` does, and gives the address and what `built` answered each call. */
-async function serve(
-  built: Api,
-): Promise<[string, Call[], { launch: Launch; cookie: string }]> {
-  let origin = "";
-  const [app, calls, launch] = served(built, () => ({
-    hosts: new Set([new URL(origin).host]),
-    origins: new Set([origin]),
-  }));
-  const server = createServer(getRequestListener(app.fetch));
-  servers.push(server);
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const { port } = server.address() as { port: number };
-  origin = `http://127.0.0.1:${port}`;
-  const cookie = cookieOf(launch, origin);
-  cookies.set(origin, cookie);
-  return [origin, calls, { launch, cookie }];
+    },
+  };
+  return [app, calls];
 }
 
 /** A refusal as the app tells it, by its name; an `Unopened` carries its `outcome`. */
@@ -398,21 +370,18 @@ const unopened = (error: unknown, outcome: string) =>
   isRefusal(error) && error.outcome === outcome;
 
 /**
- * `built` over HTTP: through the Node target's server, by `app.request()`, with the app's own client.
+ * `built` over HTTP: through the `/api/` routes, by `app.request()`, with the app's own client.
  * A call over HTTP runs once, on `built`, unless its route refuses the input first, as PodApi would refuse it; what
  * comes back must be what `built` answered that call, after a JSON round trip, and what is thrown a refusal of the
  * same name with the same message. What `built` threw other than a `Refusal` crosses as a 500 naming the operation.
  */
 function crossing(built: Api): Api {
   const origin = "http://app.test";
-  const [app, calls, launch] = served(built, () => ({
-    hosts: new Set(["app.test"]),
-    origins: new Set([origin]),
-  }));
+  const [app, calls] = served(built);
   const remote = remoteApi(`${origin}/`, {
     fetch: (input: RequestInfo | URL, init?: RequestInit) =>
       app.request(input, init),
-    headers: { origin, cookie: cookieOf(launch, origin) },
+    headers: { origin },
   });
   const over = {} as Api;
   for (const name of Object.keys(remote) as (keyof Api)[]) {
@@ -511,9 +480,6 @@ async function fresh(
 
 after(async () => {
   await Promise.all(made.map((each) => each.close()));
-  await Promise.all(
-    servers.map((each) => new Promise((done) => each.close(done))),
-  );
   for (const each of [folder, ...folders]) await removed(each);
 });
 
@@ -554,27 +520,6 @@ async function connectedAndPulled(local: Api, pod: string) {
     `the connection is at step "${got.shown.step}", not "pulled"`,
   );
   return got;
-}
-/** `name` as a model runs it through `POST /tools/<name>` on the Node server over `built`. */
-function toolsOf(built: Api) {
-  const origin = "http://app.test";
-  const [app, , launch] = served(built, () => ({
-    hosts: new Set(["app.test"]),
-    origins: new Set([origin]),
-  }));
-  const cookie = cookieOf(launch, origin);
-  return {
-    app,
-    origin,
-    cookie,
-    launch,
-    run: (name: string, input: object) =>
-      app.request(`${origin}/tools/${name}`, {
-        method: "POST",
-        headers: { origin, "content-type": "application/json", cookie },
-        body: JSON.stringify(input),
-      }),
-  };
 }
 /** An instance whose host cannot read the reference tables. */
 const brokenApi = () =>
@@ -2531,11 +2476,17 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.ok(after.sources.length > 0);
     });
 
-    it("titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file", async () => {
-      const { untitled, titled } = await namedAfterBringIn();
-      assert.equal(untitled.title, "Ines Calloway");
-      assert.equal(titled.title, "Ada");
-    });
+    it(
+      "titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file",
+      {
+        skip: KEPT_TITLES,
+      },
+      async () => {
+        const { untitled, titled } = await namedAfterBringIn();
+        assert.equal(untitled.title, "Ines Calloway");
+        assert.equal(titled.title, "Ada");
+      },
+    );
 
     it("leaves the title of a pod when the import is refused", async () => {
       const { refused } = await namedAfterBringIn();
@@ -2550,12 +2501,18 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(disclaimed.title, "rowan-ellery-marsh");
     });
 
-    it("claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing", async () => {
-      const { retried, untitled } = await namedAfterBringIn();
-      assert.match(retried.failedFirst ?? "", /^Not brought in: /);
-      assert.equal(retried.title, "Ines Calloway");
-      assert.equal(retried.medications, untitled.medications);
-    });
+    it(
+      "claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing",
+      {
+        skip: KEPT_TITLES,
+      },
+      async () => {
+        const { retried, untitled } = await namedAfterBringIn();
+        assert.match(retried.failedFirst ?? "", /^Not brought in: /);
+        assert.equal(retried.title, "Ines Calloway");
+        assert.equal(retried.medications, untitled.medications);
+      },
+    );
 
     it("claims on a retry only the profiles its own pull's import filed, leaving another pull's of the same hospital for the person to answer", async () => {
       const { retriedBesideAnotherPull, retried } = await namedAfterBringIn();
@@ -2656,7 +2613,7 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
  * a person watch a sandbox story's later records arrive. It is kept as an instant, travels with each connection
  * started under it, and is said in words on the screens.
  */
-describe("Setting the day the demo hospitals answer as of · api.setWorldDate(), worldInstant(), utcInstant(), worldDateSaid(), pulledAsOfSaid(), GET /world-date", () => {
+describe("Setting the day the demo hospitals answer as of · api.setWorldDate(), worldInstant(), utcInstant(), worldDateSaid(), pulledAsOfSaid()", () => {
   const dated = once(async () => {
     let asOf: string | undefined;
     const world = {
@@ -2692,47 +2649,6 @@ describe("Setting the day the demo hospitals answer as of · api.setWorldDate(),
     it("returns that date on the connection, in `asOf`", async () => {
       assert.equal((await dated()).shown.asOf, "2024-02-01T23:59:59Z");
     });
-  });
-
-  describe("when a page asks `GET /world-date?back=<path>`", () => {
-    const app = () =>
-      appServer({
-        api: inProcess,
-        own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
-        launch: newLaunch(),
-        chat: new Hono(),
-        back: () => undefined,
-        pages: tmpdir(),
-      });
-    for (const [back, to, title] of [
-      [
-        "/pods/a/",
-        "/pods/a/#world-date",
-        "redirects to `/pods/a/#world-date` for `/pods/a/`",
-      ],
-      [
-        "/pods/a/hospitals?q=north",
-        "/pods/a/hospitals?q=north#world-date",
-        "redirects to `/pods/a/hospitals?q=north#world-date` for `/pods/a/hospitals?q=north`",
-      ],
-      [undefined, "/", "redirects home when no `back` is given"],
-      ["//evil.test/", "/", "redirects home for `//evil.test/`"],
-      ["https://evil.test/", "/", "redirects home for `https://evil.test/`"],
-      ["/\\evil.test/", "/", "redirects home for `/\\evil.test/`"],
-      ["/..//evil.test/", "/", "redirects home for `/..//evil.test/`"],
-      ["/.//evil.test/", "/", "redirects home for `/.//evil.test/`"],
-      ["/%2e%2e//evil.test/", "/", "redirects home for `/%2e%2e//evil.test/`"],
-      ["/a/..//evil.test", "/", "redirects home for `/a/..//evil.test`"],
-      ["pods/a/", "/", "redirects home for `pods/a/`"],
-    ] as const)
-      it(title, async () => {
-        const response = await app().request(
-          `http://localhost/world-date${back === undefined ? "" : `?back=${encodeURIComponent(back)}`}`,
-          { redirect: "manual" },
-        );
-        assert.ok(response.status >= 300 && response.status < 400);
-        assert.equal(response.headers.get("location"), to);
-      });
   });
 });
 
@@ -3007,23 +2923,9 @@ describe("Input PodApi refuses, and the sentence it gives · podApi(), Refusal",
     });
 });
 
-const post = (
-  base: string,
-  path: string,
-  headers: Record<string, string>,
-  body = "{}",
-) => fetch(`${base}${path}`, { method: "POST", headers, body });
-/** The headers of a page of the server at `base`: its own `Origin`, JSON, and the cookie its launch gave it. */
-const json = (base: string) => ({
-  "content-type": "application/json",
-  origin: base,
-  cookie: cookies.get(base) ?? "",
-});
-
 /**
  * The Node server offers each PodApi operation at `POST /api/<operation>`, taking and returning JSON, and the app's
- * own client, `remoteApi()`, calls them for the pages. A refusal crosses with its sentence, and the server turns
- * away a request that does not come from one of its own pages.
+ * own client, `remoteApi()`, calls them for the pages. A refusal crosses with its sentence.
  */
 describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => {
   describe("given the app's own client, `remoteApi()`, over the server", () => {
@@ -3039,22 +2941,6 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
       const crossed = await caught(overHttp.answers({ pod: "nobody" }));
       assert.equal(crossed.name, "Refusal");
       assert.equal(crossed.message, own.message);
-    });
-
-    it("throws an error that says to open the address the app printed, and not a `Refusal`, when the page holds no launch cookie", async () => {
-      const origin = "http://app.test";
-      const [app] = served(inProcess, () => ({
-        hosts: new Set(["app.test"]),
-        origins: new Set([origin]),
-      }));
-      const bare = remoteApi(`${origin}/`, {
-        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-          app.request(input, init),
-        headers: { origin },
-      });
-      const crossed = await caught(bare.pods({}));
-      assert.equal(crossed.name, "Error");
-      assert.match(crossed.message, /open the address `npm start` printed/);
     });
 
     it("throws `Unopened` with PodApi's `outcome` when a pod does not open", async () => {
@@ -3073,677 +2959,6 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
       } finally {
         quiet.mock.restore();
       }
-    });
-  });
-
-  describe("when a page asks `POST /api/<operation>`", () => {
-    let origin: string;
-    let broken: string;
-    let quiet: ReturnType<typeof mock.method>;
-    before(async () => {
-      [origin] = await serve(inProcess);
-      quiet = mock.method(console, "error", () => undefined);
-      const real = host();
-      [broken] = await serve(
-        api({
-          ...real,
-          pods: {
-            ...((real as Record<string, unknown>).pods as object),
-            names: async () => {
-              throw new Error("/secret/path");
-            },
-          },
-        }),
-      );
-    });
-    after(() => quiet.mock.restore());
-
-    for (const [title, request, status] of [
-      [
-        "responds 404 for an operation there is not",
-        (at: string) => post(at, "/api/nothing", json(at)),
-        404,
-      ],
-      [
-        "responds 404 for `close`, which stays in the process",
-        (at: string) => post(at, "/api/close", json(at)),
-        404,
-      ],
-      [
-        "responds 415 for a body that is not sent as JSON",
-        (at: string) =>
-          post(at, "/api/pods", { ...json(at), "content-type": "text/plain" }),
-        415,
-      ],
-      [
-        "responds 403 for a request whose `Origin` is another site",
-        (at: string) =>
-          post(at, "/api/pods", { ...json(at), origin: "http://evil.example" }),
-        403,
-      ],
-      [
-        "responds 400 for a body that is no object",
-        (at: string) => post(at, "/api/pods", json(at), "[]"),
-        400,
-      ],
-    ] as const)
-      it(title, async () => {
-        assert.equal((await request(origin)).status, status);
-      });
-
-    it("responds 400 for a body over 1 MiB", async () => {
-      const [alone] = await serve(inProcess);
-      const response = await post(
-        alone,
-        "/api/pods",
-        json(alone),
-        " ".repeat(1024 * 1024 + 1),
-      );
-      assert.equal(response.status, 400);
-    });
-
-    it("responds 500 with one fixed sentence when PodApi throws an error that is no refusal", async () => {
-      const response = await post(broken, "/api/pods", json(broken));
-      assert.equal(response.status, 500);
-      assert.equal(
-        await response.text(),
-        JSON.stringify({ error: "the server failed; its log says why" }),
-      );
-    });
-
-    it("keeps that error's text out of the response", async () => {
-      const response = await post(broken, "/api/pods", json(broken));
-      assert.ok(!(await response.text()).includes("/secret/path"));
-    });
-  });
-});
-
-/**
- * The app is one page that draws every screen, so the server returns that page for any address a person opens, and
- * a file only at the file's own address. A view entry's id may hold a dot, so the server tells a screen's address
- * from a file's by what the browser says it wants.
- */
-describe("Answering an address a person opens with the app's page · appServer()", () => {
-  describe("appServer({ pages })", () => {
-    let get: (
-      path: string,
-      headers?: Record<string, string>,
-    ) => Promise<readonly [number, string]>;
-    before(async () => {
-      const pages = await mkdtemp(join(tmpdir(), "pages-"));
-      folders.push(pages);
-      await writeFile(join(pages, "index.html"), "<h1>the app</h1>");
-      await writeFile(join(pages, "app.js"), "1");
-      const app = appServer({
-        api: inProcess,
-        own: () => ({ hosts: new Set(["localhost"]), origins: new Set() }),
-        launch: newLaunch(),
-        chat: new Hono(),
-        back: () => undefined,
-        pages,
-      });
-      get = async (path, headers = {}) => {
-        const response = await app.request(`http://localhost${path}`, {
-          headers,
-        });
-        return [response.status, await response.text()] as const;
-      };
-    });
-
-    it("returns the app's page for a screen's address with a dot in it, when the browser is navigating", async () => {
-      assert.deepEqual(
-        await get("/pods/a/entries/x.1", { "sec-fetch-mode": "navigate" }),
-        [200, "<h1>the app</h1>"],
-      );
-    });
-
-    it("returns the app's page for that address when the request accepts HTML", async () => {
-      assert.deepEqual(
-        await get("/pods/a/entries/x.1", { accept: "text/html" }),
-        [200, "<h1>the app</h1>"],
-      );
-    });
-
-    it("returns a file of the built app at the file's own address", async () => {
-      assert.deepEqual(await get("/app.js"), [200, "1"]);
-    });
-
-    it("responds 404 for a file there is not", async () => {
-      assert.equal((await get("/nope.json"))[0], 404);
-    });
-
-    it("responds 404 for an address with a dot in it that asks for no page", async () => {
-      assert.equal((await get("/pods/a/entries/x.1"))[0], 404);
-    });
-  });
-
-  describe("given pages that are a function, as `npm run dev` gives them, and a request that holds no launch cookie", () => {
-    const at = "http://app.test";
-    const dev = () => {
-      const launch = newLaunch();
-      const reached: string[] = [];
-      const app = appServer({
-        api: inProcess,
-        own: () => ({ hosts: new Set(["app.test"]), origins: new Set([at]) }),
-        launch,
-        chat: new Hono(),
-        back: () => undefined,
-        pages: (c) => {
-          reached.push(c.req.path);
-          return new Response("from vite");
-        },
-      });
-      const ask = (path: string, headers: Record<string, string> = {}) =>
-        app.request(`${at}${path}`, { headers });
-      return { app, ask, launch, reached };
-    };
-
-    for (const path of [
-      "/pods/probe-plain/clinical/labels.ttl",
-      "/pods/probe-four/settings/encryption.json",
-      "/pods/.answers/probe-four/pod.json",
-      "/@fs/C:/app/pods/probe-four/settings/encryption.json",
-      "/server/launch.ts",
-      "/pod-api.ts",
-      "/src/main.tsx",
-    ])
-      it(`responds 403 to GET ${path} and does not reach the pages`, async () => {
-        const { ask, reached } = dev();
-        const refused = await ask(path, { "sec-fetch-mode": "cors" });
-        assert.equal(refused.status, 403);
-        assert.match(
-          ((await refused.json()) as { refused: string }).refused,
-          /address .* printed/,
-        );
-        assert.deepEqual(reached, []);
-      });
-
-    it("responds 403 with a page that says to open the address the app printed, to a navigation", async () => {
-      const { ask, reached } = dev();
-      for (const path of ["/", "/pods/a"]) {
-        const refused = await ask(path, { "sec-fetch-mode": "navigate" });
-        assert.equal(refused.status, 403, path);
-        assert.match(refused.headers.get("content-type") ?? "", /text\/html/);
-        assert.match(await refused.text(), /Open the address .* printed/s);
-      }
-      assert.deepEqual(reached, []);
-    });
-
-    it("responds 403 to a cookie that is not the launch's", async () => {
-      const { ask, launch, reached } = dev();
-      cookieOf(launch, at);
-      const name = launchCookie(new URL(at));
-      for (const cookie of [`${name}=wrong`, `${name}=`, "x=y"])
-        assert.equal(
-          (await ask("/pods/a/clinical/labels.ttl", { cookie })).status,
-          403,
-          cookie,
-        );
-      assert.deepEqual(reached, []);
-    });
-
-    it("answers the pages when the request holds the launch cookie", async () => {
-      const { ask, launch, reached } = dev();
-      const cookie = cookieOf(launch, at);
-      for (const path of ["/", "/src/main.tsx", "/@vite/client"]) {
-        const answered = await ask(path, { cookie });
-        assert.equal(answered.status, 200, path);
-        assert.equal(await answered.text(), "from vite");
-      }
-      assert.deepEqual(reached, ["/", "/src/main.tsx", "/@vite/client"]);
-    });
-
-    it("trades the printed address's token for the cookie, which the page it sends the browser to then holds", async () => {
-      const { ask, launch, reached } = dev();
-      const traded = await ask(`/?launch=${launch.token}`, {
-        "sec-fetch-mode": "navigate",
-      });
-      assert.equal(traded.status, 303);
-      assert.equal(traded.headers.get("location"), "/");
-      const cookie = (traded.headers.get("set-cookie") ?? "").split(";")[0]!;
-      assert.equal(
-        (await ask("/", { cookie, "sec-fetch-mode": "navigate" })).status,
-        200,
-      );
-      assert.deepEqual(reached, ["/"]);
-    });
-  });
-});
-
-/** The statin story's pod with its lab results repeated on other days, so that the compact read of it is two pages. */
-const paged = once(async () => {
-  const at = await mkdtemp(join(tmpdir(), "pod-api-paged-"));
-  folders.push(at);
-  const { pull } = await pulled(north, STATIN);
-  const files = pullFiles(pull, "north");
-  const bundle = JSON.parse(
-    new TextDecoder().decode(files.get("north/bundle.json")),
-  );
-  const labs = bundle.entry.filter(
-    ({ resource }: Output) => resource.resourceType === "Observation",
-  );
-  for (let day = 0; day < 12; day += 1)
-    for (const lab of labs)
-      bundle.entry.push({
-        ...lab,
-        fullUrl: `${lab.fullUrl}-${day}`,
-        resource: {
-          ...lab.resource,
-          id: `${lab.resource.id}-${day}`,
-          effectiveDateTime: new Date(Date.UTC(2020, 0, 1 + day)).toISOString(),
-        },
-      });
-  const pod = await openPod(join(at, "paged"));
-  const imported = await importClaimingEveryProfile(
-    pod,
-    new Map([
-      ...files,
-      ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
-    ]),
-  );
-  assert.equal(imported.refused, undefined);
-  await pod.close();
-  return crossing(api(host(at)));
-});
-
-/** The pages of the paged pod's compact read, each asked for with the `next` of the page before. */
-const pagesOnce = once(async () => {
-  const { run } = toolsOf(await paged());
-  const pages: Output[] = [];
-  let input: Input | undefined = { pod: "paged", format: "compact" };
-  while (input !== undefined && pages.length < 10) {
-    const response = await run("ask", input);
-    assert.equal(response.status, 200);
-    const page: Output = await response.json();
-    pages.push(page);
-    input = page.next;
-  }
-  return pages;
-});
-
-/** The pods the table checks run over: Martin's kit pod, and the statin story's with a second atorvastatin. */
-const checks = once(async () => {
-  const at = await mkdtemp(join(tmpdir(), "pod-api-checks-"));
-  folders.push(at);
-  await replayKit("martin-okafor", join(at, "martin-okafor"));
-  const { pull } = await pulled(north, STATIN);
-  const files = pullFiles(pull, "north");
-  const bundle = JSON.parse(
-    new TextDecoder().decode(files.get("north/bundle.json")),
-  );
-  const [first] = bundle.entry.filter(
-    ({ resource }: Output) =>
-      resource.resourceType === "MedicationRequest" &&
-      resource.medicationCodeableConcept.coding[0].code === ATORVASTATIN,
-  );
-  const [coding] = first.resource.medicationCodeableConcept.coding;
-  bundle.entry.push({
-    ...first,
-    fullUrl: first.fullUrl.replace("med-1", "med-3"),
-    resource: {
-      ...first.resource,
-      id: "story-statin-med-3",
-      medicationCodeableConcept: {
-        coding: [
-          {
-            ...coding,
-            code: SECOND_ATORVASTATIN,
-            display: "atorvastatin 40 MG Oral Tablet",
-          },
-        ],
-        text: "Atorvastatin 40 mg tablet",
-      },
-    },
-  });
-  const pod = await openPod(join(at, "two-atorvastatins"));
-  const imported = await importClaimingEveryProfile(
-    pod,
-    new Map([
-      ...files,
-      ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
-    ]),
-  );
-  assert.equal(imported.refused, undefined);
-  await pod.close();
-  const { run } = toolsOf(api(nodeHost({ folder: at })));
-  return async (name: string, pod: string) => {
-    const response = await run(name, { pod });
-    assert.equal(response.status, 200, name);
-    return (await response.json()) as Output;
-  };
-});
-
-/**
- * What the server refuses before it answers: a request that names another host, a method it does not serve, and a
- * request to a route that reads a pod that does not carry the cookie the launch's address gave the app's page.
- */
-describe("Guarding the server · guard(), newLaunch(), GET /?launch=<token>", () => {
-  let app: ReturnType<typeof toolsOf>["app"];
-  let origin: string;
-  let cookie: string;
-  before(() => ({ app, origin, cookie } = toolsOf(inProcess)));
-
-  it("responds 403 to a request whose `Host` is not the server's own address, on `/api/` in JSON and elsewhere as a page", async () => {
-    const api = await app.request("http://rebound.example/api/pods", {
-      method: "POST",
-      headers: { origin, "content-type": "application/json" },
-      body: "{}",
-    });
-    assert.equal(api.status, 403);
-    assert.deepEqual(await api.json(), {
-      refused: "not this server's address",
-    });
-    const page = await app.request("http://rebound.example/tools");
-    assert.equal(page.status, 403);
-    assert.match(await page.text(), /<h1>Refused: not this server's address/);
-  });
-
-  it("responds 405 to a method that is neither GET nor POST", async () => {
-    for (const method of ["PUT", "DELETE", "PATCH"]) {
-      const refused = await app.request(`${origin}/api/pods`, { method });
-      assert.equal(refused.status, 405, method);
-    }
-  });
-
-  it("answers a GET on the server's own address that holds the launch cookie", async () => {
-    const answered = await app.request(`${origin}/tools`, {
-      headers: { cookie },
-    });
-    assert.equal(answered.status, 200);
-  });
-
-  describe("given a program that names the server's own `Host`, `Origin` and `Content-Type` and holds no launch cookie", () => {
-    const guarded = () => {
-      const at = "http://app.test";
-      const [app, calls, launch] = served(inProcess, () => ({
-        hosts: new Set(["app.test"]),
-        origins: new Set([at]),
-      }));
-      const session = launch.exchange(launch.token)!;
-      const ask = (
-        method: string,
-        path: string,
-        headers: Record<string, string>,
-      ) =>
-        app.request(`${at}${path}`, {
-          method,
-          headers: {
-            origin: at,
-            "content-type": "application/json",
-            ...headers,
-          },
-          ...(method === "POST" && { body: "{}" }),
-        });
-      return { app, at, calls, launch, session, ask };
-    };
-
-    for (const [method, path] of [
-      ["POST", "/api/pods"],
-      ["POST", "/api/answers"],
-      ["POST", "/api/waitingWords"],
-      ["POST", "/api/unlock"],
-      ["GET", "/tools"],
-      ["POST", "/tools/list_pods"],
-      ["GET", "/chat"],
-      ["POST", "/chat"],
-    ] as const)
-      it(`responds 403 to ${method} ${path}, in JSON, and runs no operation`, async () => {
-        const { ask, calls } = guarded();
-        const refused = await ask(method, path, {});
-        assert.equal(refused.status, 403);
-        assert.match(
-          ((await refused.json()) as { refused: string }).refused,
-          /address .* printed/,
-        );
-        assert.equal(calls.length, 0);
-      });
-
-    it("responds 403 to a cookie that is not the launch's", async () => {
-      const { ask, at } = guarded();
-      const name = launchCookie(new URL(at));
-      for (const cookie of [`${name}=wrong`, `${name}=`, `${name}`, "x=y"])
-        assert.equal(
-          (await ask("GET", "/tools", { cookie })).status,
-          403,
-          cookie,
-        );
-    });
-
-    it("responds 403 to the cookie of another port's launch, which a browser sends to every port of the same host", async () => {
-      const { ask, session } = guarded();
-      const other = launchCookie(new URL("http://app.test:3001"));
-      assert.notEqual(other, launchCookie(new URL("http://app.test")));
-      const refused = await ask("GET", "/tools", {
-        cookie: `${other}=${session}`,
-      });
-      assert.equal(refused.status, 403);
-    });
-
-    it("does not ask for the cookie at `/callback`, which a hospital's redirect reaches with none", async () => {
-      const { app, at } = guarded();
-      const answered = await app.request(`${at}/callback?code=x`);
-      assert.equal(answered.status, 400);
-      assert.match(await answered.text(), /No sign-in is waiting/);
-    });
-  });
-
-  describe("when a person opens the address the server printed, `/?launch=<token>`", () => {
-    const fresh = () => {
-      const at = "http://app.test";
-      const [app, calls, launch] = served(inProcess, () => ({
-        hosts: new Set(["app.test"]),
-        origins: new Set([at]),
-      }));
-      return { app, calls, launch, at };
-    };
-
-    it("answers 303 to `/` with a cookie the page keeps: `HttpOnly`, `SameSite=Strict`, `Path=/`, named for the port and not the token", async () => {
-      const { app, at, launch } = fresh();
-      const answered = await app.request(`${at}/?launch=${launch.token}`);
-      assert.equal(answered.status, 303);
-      assert.equal(answered.headers.get("location"), "/");
-      const set = answered.headers.get("set-cookie") ?? "";
-      const name = launchCookie(new URL(at));
-      assert.match(set, new RegExp(`^${name}=[\\w-]{43};`));
-      assert.match(set, /HttpOnly/i);
-      assert.match(set, /SameSite=Strict/i);
-      assert.match(set, /Path=\//);
-      assert.ok(!set.includes(launch.token), "the token is not the cookie");
-      const [pair = ""] = set.split(";");
-      const read = await app.request(`${at}/tools`, {
-        headers: { cookie: pair },
-      });
-      assert.equal(read.status, 200);
-    });
-
-    it("keeps the rest of the address, and drops only the token", async () => {
-      const { app, at, launch } = fresh();
-      const answered = await app.request(
-        `${at}/?back=%2Fpods&launch=${launch.token}`,
-      );
-      assert.equal(answered.headers.get("location"), "/?back=%2Fpods");
-    });
-
-    it("sends on a page that holds the cookie already, whatever the spent token it carries, and gives no new cookie", async () => {
-      const { app, at, launch } = fresh();
-      const first = await app.request(`${at}/?launch=${launch.token}`);
-      const [cookie = ""] = (first.headers.get("set-cookie") ?? "").split(";");
-      const again = await app.request(`${at}/?launch=${launch.token}`, {
-        headers: { cookie },
-      });
-      assert.equal(again.status, 303);
-      assert.equal(again.headers.get("location"), "/");
-      assert.equal(again.headers.get("set-cookie"), null);
-    });
-
-    it("answers 403 to the token a second time, and gives no cookie, as the token is spent", async () => {
-      const { app, at, launch } = fresh();
-      await app.request(`${at}/?launch=${launch.token}`);
-      const again = await app.request(`${at}/?launch=${launch.token}`);
-      assert.equal(again.status, 403);
-      assert.equal(again.headers.get("set-cookie"), null);
-      const page = await again.text();
-      assert.match(page, /This address was opened already/);
-      assert.match(page, /Start the app again/);
-    });
-
-    it("answers 403 to a token that is not the launch's, and to none", async () => {
-      const { app, at, launch } = fresh();
-      for (const query of [
-        "?launch=wrong",
-        "?launch=",
-        `?launch=${launch.token.slice(0, -1)}`,
-      ]) {
-        const refused = await app.request(`${at}/${query}`);
-        assert.equal(refused.status, 403, query);
-        assert.equal(refused.headers.get("set-cookie"), null, query);
-      }
-      const spent = await app.request(`${at}/?launch=${launch.token}`);
-      assert.equal(spent.status, 303, "a wrong token spends nothing");
-    });
-  });
-});
-
-/**
- * A page that carries no runtime of its own offers a model the app's read tools by calling the server: `GET /tools`
- * lists them, and `POST /tools/<name>` runs one on a JSON input. Only `free` tools that open no screen are here; a
- * tool that writes or moves the app is the page's own.
- */
-describe("Running the read tools over HTTP · GET /tools, POST /tools/<name>", () => {
-  const server = () => toolsOf(inProcess);
-
-  describe("when a page asks `GET /tools`", () => {
-    it("lists each `free` tool that opens no screen and is not the page's own, with its description and input schema", async () => {
-      const { app, origin, cookie } = server();
-      const listed = (await (
-        await app.request(`${origin}/tools`, { headers: { cookie } })
-      ).json()) as {
-        name: string;
-        description: unknown;
-        inputSchema: unknown;
-      }[];
-      const own = new Set(PAGE_TOOLS.map(({ name }) => name));
-      assert.deepEqual(
-        listed.map(({ name }) => name).sort(),
-        TOOLS.filter(
-          ({ tier, opens, name }) =>
-            tier === "free" && opens === undefined && !own.has(name),
-        )
-          .map(({ name }) => name)
-          .sort(),
-      );
-      assert.ok(listed.length > 0, "the server lists no tool");
-      for (const { name, description, inputSchema } of listed) {
-        assert.equal(typeof description, "string", name);
-        assert.equal(typeof inputSchema, "object", name);
-      }
-    });
-  });
-
-  describe("when a page asks `POST /tools/<name>`", () => {
-    it("runs `list_pods`, and returns the pods", async () => {
-      const pods = await server().run("list_pods", {});
-      assert.equal(pods.status, 200);
-      assert.ok(Array.isArray(await pods.json()));
-    });
-
-    it("runs `reference_table_checks` on a pod with the host's reference tables", async () => {
-      const checked = await server().run("reference_table_checks", {
-        pod: STATIN,
-      });
-      assert.equal(checked.status, 200);
-      assert.equal(((await checked.json()) as { tables: string }).tables, "on");
-    });
-
-    it("runs `ask` for a pod's compact read", async () => {
-      const compact = await server().run("ask", {
-        pod: STATIN,
-        format: "compact",
-      });
-      assert.equal(compact.status, 200);
-      assert.equal(
-        ((await compact.json()) as { format: string }).format,
-        "compact",
-      );
-    });
-
-    it("responds 400, with the tool's refusal in `refused`, for input the tool's schema refuses", async () => {
-      const wrong = await server().run("ask", {
-        pod: "x",
-        question: "SELECT * WHERE {}",
-      });
-      assert.equal(wrong.status, 400);
-      assert.match(
-        ((await wrong.json()) as { refused: string }).refused,
-        /must be one of/,
-      );
-    });
-
-    it("responds 423 with `{ unopened, refused }`, as `/api/` does, for an encrypted pod that is not open", async () => {
-      const locked = await server().run("ask", {
-        pod: SEALED,
-        format: "compact",
-      });
-      assert.equal(locked.status, 423);
-      const body = (await locked.json()) as {
-        unopened: string;
-        refused: string;
-      };
-      assert.equal(body.unopened, "secret needed");
-      assert.equal(typeof body.refused, "string");
-    });
-
-    it("responds 404 for a tool that writes or moves the app, and for a name that is no tool", async () => {
-      for (const name of ["make_pod", "open_pod", "nothing"])
-        assert.equal((await server().run(name, {})).status, 404, name);
-    });
-
-    it("returns a larger pod's compact read in two pages or more, each page's `next` being the input of the one after", async () => {
-      const pages = await pagesOnce();
-      assert.ok(pages.length >= 2, "the pod is read in more than one page");
-      assert.equal(pages.at(-1)!.next, undefined);
-    });
-
-    it("returns every row of every view once across those pages", async () => {
-      const shown = new Map<string, number>();
-      const total = new Map<string, number>();
-      for (const { views } of await pagesOnce())
-        for (const view of views) {
-          shown.set(
-            view.question,
-            (shown.get(view.question) ?? 0) + view.shown,
-          );
-          total.set(view.question, view.total);
-        }
-      assert.deepEqual(shown, total);
-    });
-  });
-
-  describe("given the reference tables cascade-runtime carries, in place of a stub", () => {
-    it("says from `worth_a_look` two medications that share an ingredient, with the ingredient's name", async () => {
-      const model = await checks();
-      const lines = (await model(
-        "worth_a_look",
-        "two-atorvastatins",
-      )) as unknown as Output[];
-      assert.ok(
-        lines.some(({ sentence }) =>
-          /share an ingredient, atorvastatin/.test(sentence),
-        ),
-        JSON.stringify(lines),
-      );
-    });
-
-    it("says from `worth_a_look` a report that differs from ClinVar today", async () => {
-      const lines = (await (
-        await checks()
-      )("worth_a_look", "martin-okafor")) as unknown as Output[];
-      const differing = lines.filter(({ tag }) => tag === "Differs");
-      assert.ok(differing.length > 0, JSON.stringify(lines));
-      assert.match(
-        differing[0]!.sentence,
-        /2022 report.* differs from ClinVar today\.$/,
-      );
     });
   });
 });

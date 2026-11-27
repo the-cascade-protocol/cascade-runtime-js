@@ -1,6 +1,6 @@
 // Compile-only: an input the route's schema does not name fails `npm run typecheck`, as a misspelled field would in a
 // screen, and so does reading an output as PodApi does not give it. It is never imported.
-import { remoteApi } from "./remote.ts";
+import { remoteApi } from "cascade-runtime/app";
 
 const remote = remoteApi("http://localhost/");
 
