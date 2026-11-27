@@ -211,7 +211,7 @@ and imports it as hers, then prints her active medications: lisinopril, which
 both formats carry, as one entry, and amlodipine, which only the C-CDA has. The
 same test file runs it and checks those rows.
 
-`developer-story/first.mjs` is the get-started page's script for an app of one's own. It takes Alex's `first export`
+`developer-story/first.mjs` is the get-started page's script for an app of one's own. It takes Alex's first export (`x-e2`)
 from `cascade-runtime/samples`, looks at it, imports it as hers and prints her four active allergies, each with the
 record it came from. The same test file runs it, on the installed package in CI, and checks the source and the
 allergies it prints; the page copies the script, so a change to what it prints is a change to the page.
