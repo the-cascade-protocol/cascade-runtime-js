@@ -91,7 +91,7 @@ const {
         input: RequestInfo | URL,
         init?: RequestInit,
       ) => Promise<Response>;
-      headers: Record<string, string>;
+      headers?: Record<string, string>;
     },
   ) => Api;
   nodeHost: (options: { folder: string; opensEncrypted?: boolean }) => Host & {
@@ -112,13 +112,6 @@ const { entryId, testsIn, IDLE_LOCK_MS } = (await import(
   entryId: (entry: string) => string;
   testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
 };
-/**
- * Why a case that reads a pod's title after PodApi is made again does not run here: `nodeHost` reads the title from the
- * `pod.json` kept beside the pod, which a packed runtime keeps and a runtime run from a checkout does not. The kit's
- * copy of each such case runs on the packed runtime until PodApi's tests run on a stand-in host.
- */
-const KEPT_TITLES =
-  "a runtime run from a checkout keeps no pod.json, which nodeHost's title reads";
 /** What answers a request: the stand-in for the Node server's `/api/` routes. */
 interface App {
   request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -2476,17 +2469,11 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.ok(after.sources.length > 0);
     });
 
-    it(
-      "titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file",
-      {
-        skip: KEPT_TITLES,
-      },
-      async () => {
-        const { untitled, titled } = await namedAfterBringIn();
-        assert.equal(untitled.title, "Ines Calloway");
-        assert.equal(titled.title, "Ada");
-      },
-    );
+    it("titles a pod with no name on file for the person of the record brought in, still so when it is opened again, and leaves a name on file", async () => {
+      const { untitled, titled } = await namedAfterBringIn();
+      assert.equal(untitled.title, "Ines Calloway");
+      assert.equal(titled.title, "Ada");
+    });
 
     it("leaves the title of a pod when the import is refused", async () => {
       const { refused } = await namedAfterBringIn();
@@ -2501,18 +2488,12 @@ describe("Connecting a pod to a hospital and bringing its records in · api.hosp
       assert.equal(disclaimed.title, "rowan-ellery-marsh");
     });
 
-    it(
-      "claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing",
-      {
-        skip: KEPT_TITLES,
-      },
-      async () => {
-        const { retried, untitled } = await namedAfterBringIn();
-        assert.match(retried.failedFirst ?? "", /^Not brought in: /);
-        assert.equal(retried.title, "Ines Calloway");
-        assert.equal(retried.medications, untitled.medications);
-      },
-    );
+    it("claims a profile and titles the pod when a bring is tried again after its claim failed, though the second import files nothing", async () => {
+      const { retried, untitled } = await namedAfterBringIn();
+      assert.match(retried.failedFirst ?? "", /^Not brought in: /);
+      assert.equal(retried.title, "Ines Calloway");
+      assert.equal(retried.medications, untitled.medications);
+    });
 
     it("claims on a retry only the profiles its own pull's import filed, leaving another pull's of the same hospital for the person to answer", async () => {
       const { retriedBesideAnotherPull, retried } = await namedAfterBringIn();
@@ -2958,6 +2939,44 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
         );
       } finally {
         quiet.mock.restore();
+      }
+    });
+  });
+
+  describe("given a server's answer the client reads on its own", () => {
+    const sent = (answer: Response, base = "http://h/app/") => {
+      const urls: string[] = [];
+      const client = remoteApi(base, {
+        fetch: async (input: RequestInfo | URL) => {
+          urls.push(String(input));
+          return answer;
+        },
+      });
+      return { client, urls };
+    };
+
+    it("throws an error carrying the server's sentence, and not a `Refusal`, for a 403, which the page's own refusals are not", async () => {
+      const sentence =
+        "Open the address the app printed, which holds this launch's cookie.";
+      const { client } = sent(
+        Response.json({ refused: sentence }, { status: 403 }),
+      );
+      const error = await caught(client.pods({}));
+      assert.equal(error.name, "Error");
+      assert.equal(error.message, sentence);
+    });
+
+    it("posts to `api/<operation>` under the base address's path, whatever query or fragment the base carries", async () => {
+      for (const base of [
+        "http://h/app",
+        "http://h/app/",
+        "http://h/app?x=1",
+        "http://h/app/#f",
+        "http://h/app/?x=1#f",
+      ]) {
+        const { client, urls } = sent(Response.json({}), base);
+        await client.pod({ pod: "x" });
+        assert.deepEqual(urls, ["http://h/app/api/pod"], base);
       }
     });
   });
