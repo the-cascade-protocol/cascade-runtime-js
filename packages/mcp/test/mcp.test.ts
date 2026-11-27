@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -72,12 +72,12 @@ interface Ended {
   readonly stderr: string;
 }
 
-/** cascade-mcp started with `args` and left to end, which it does for a start it cannot serve. */
-function endsWith(args: string[]): Promise<Ended> {
+/** cascade-mcp started with `args`, in `inFolder` when given, and left to end, which it does for a start it cannot serve. */
+function endsWith(args: string[], inFolder?: string): Promise<Ended> {
   return new Promise((done, fail) => {
     const { command: program, args: given, cwd } = command(args);
     const child = spawn(program, given, {
-      ...(cwd === undefined ? {} : { cwd }),
+      ...((inFolder ?? cwd) === undefined ? {} : { cwd: inFolder ?? cwd }),
     });
     let stdout = "";
     let stderr = "";
@@ -237,6 +237,91 @@ describe("Starting cascade-mcp · --pods, --help", () => {
       assert.equal(status, 0);
       assert.ok(stderr.startsWith(USAGE));
       assert.equal(stdout, "");
+    });
+  });
+});
+
+interface Block {
+  readonly mcpServers: Record<
+    string,
+    { readonly command: string; readonly args: string[] }
+  >;
+}
+
+/**
+ * `cascade-mcp --pods <folder> --settings` prints the `mcpServers` block a person pastes into Claude Desktop's
+ * `claude_desktop_config.json`, with absolute paths, and starts no server. Standard output is the JSON alone, so a
+ * person can pipe or paste it; the warning goes to standard error.
+ */
+describe("Printing Claude Desktop's settings · cascade-mcp --settings", () => {
+  describe("when given the pods' folder", () => {
+    it("prints a block whose command and arguments, started as printed, serve that folder", async () => {
+      const { status, stdout, stderr } = await endsWith([
+        "--pods",
+        folder,
+        "--settings",
+      ]);
+      assert.equal(status, 0);
+      assert.match(stderr, /hosted model is sent what the tools return/);
+      const { mcpServers } = JSON.parse(stdout) as Block;
+      const [server] = Object.values(mcpServers);
+      assert.equal(Object.keys(mcpServers).length, 1);
+      const [script, pods, printed, ...rest] = server!.args;
+      assert.equal(isAbsolute(server!.command), true);
+      assert.equal(existsSync(server!.command), true);
+      assert.equal(isAbsolute(script!), true);
+      assert.equal(realpathSync(script!), realpathSync(CLI));
+      assert.equal(pods, "--pods");
+      assert.equal(printed, resolve(folder));
+      assert.deepEqual(rest, []);
+
+      // What Claude Desktop does with the block: start the command with the arguments, from any folder.
+      const asked = new Client({ name: "test", version: "0.0.0" });
+      try {
+        await asked.connect(
+          new StdioClientTransport({
+            command: server!.command,
+            args: server!.args,
+          }),
+        );
+        const [first] = (
+          await asked.callTool({ name: "list_pods", arguments: {} })
+        ).content as { text: string }[];
+        assert.deepEqual(JSON.parse(first!.text), ["locked", "tamsin-vale"]);
+      } finally {
+        await asked.close();
+      }
+    });
+
+    it("resolves a relative folder to an absolute one and keeps `--check-tables`", async () => {
+      const { stdout } = await endsWith(
+        ["--pods", basename(folder), "--settings", "--check-tables"],
+        dirname(folder),
+      );
+      const [server] = Object.values((JSON.parse(stdout) as Block).mcpServers);
+      assert.deepEqual(server!.args.slice(1), [
+        "--pods",
+        resolve(folder),
+        "--check-tables",
+      ]);
+    });
+  });
+
+  describe("when the block would not start", () => {
+    it("exits with status 2, naming what is missing, and prints no block", async () => {
+      const without = await endsWith(["--settings"]);
+      assert.equal(without.status, 2);
+      assert.equal(
+        without.stderr.split("\n")[0],
+        "give the pods' folder with --pods",
+      );
+      assert.equal(without.stdout, "");
+
+      const missing = resolve(folder, "never-made");
+      const nowhere = await endsWith(["--pods", missing, "--settings"]);
+      assert.equal(nowhere.status, 2);
+      assert.equal(nowhere.stderr.split("\n")[0], `${missing} is no folder`);
+      assert.equal(nowhere.stdout, "");
     });
   });
 });
