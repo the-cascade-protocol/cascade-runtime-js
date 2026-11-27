@@ -1,5 +1,6 @@
 // PodApi called at a server's `/api/`, `POST /api/<operation>` with the input as JSON, typed by PodApi's own inputs and
 // outputs. What the server refuses is thrown as PodApi throws it in-process, by name.
+import { Refusal } from "@cascade-runtime/runtime/refusal";
 import type { Input as In, Operation } from "./inputs.js";
 import type { Output } from "./pod-api.js";
 
@@ -12,10 +13,7 @@ export interface RemoteOptions {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
-/** PodApi's own errors, by the names the runtime's carry: the screens tell them apart by `name`. */
-class Refusal extends Error {
-  override name = "Refusal";
-}
+/** What the server refuses with a locked pod, by the name the runtime's `Unopened` carries: the screens tell it apart by `name`. */
 class Unopened extends Error {
   override name = "Unopened";
   readonly outcome: string;

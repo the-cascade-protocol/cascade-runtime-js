@@ -727,22 +727,25 @@ await her.close();
 
 ## The app's core
 
-`cascade-runtime/app` is this runtime's convenience for app builders, not part of what a conforming runtime must
-provide. It is what every screen of an app reads and writes through, with no framework: `podApi(host)`
+`cascade-runtime/app` is this runtime's own aid to app builders; a conforming runtime need not provide it. It is what
+every screen of an app reads and writes through, with no framework: `podApi(host)`
 gives each operation of the starter's app (`pods`, `answers`, `ask`, `makePod`, `unlock`, `connect`, `bring` and
 the rest), each taking and giving plain JSON and refusing bad input with a `Refusal`, which it exports. In Node, `nodeHost({ folder })`
 is the host whose pods are the folders in `folder`, with the reference tables beside them. In a browser the same import
 gives `browserHost({ samples })`, whose pods are the IndexedDB databases and whose samples are the pods published at
 `samples.at`, and `popupSignIns()`, which signs in at a hospital in a popup. A page that runs pods loads it from the
 package's browser build, which shares its modules with `cascade-runtime`, so serve both from the one `dist/browser/`
-(`cascadeRuntime()` of `cascade-runtime/vite` maps both). Each entry
+(`cascadeRuntime()` of `cascade-runtime/vite` maps both; a bundler with no plugin resolves both to those same files).
+Each entry
 is a short file that imports shared chunks: `cascadeRuntime()` preloads them, and a page without it lists the files of
 each entry it imports from `dist/browser/preloads.json` as `<link rel="modulepreload">`.
 `remoteApi(base)` calls the
 same operations at a server's `POST /api/<operation>`, `INPUT_SCHEMAS` are what each operation may be sent, and `TOOLS`
 are the tools a model reaches the app by, each at its consent tier. Close it once, as a pod is closed. A page whose
 pods are at its server bundles `cascade-runtime/app` itself (`cascadeRuntime({ browser: false })`), and carries only
-what it imports of it: `remoteApi`, the wording and the page's functions below, never the engine.
+what it imports of it: `remoteApi`, the wording and the page's functions below, never the engine. However a page
+resolves the package, it has one runtime: the plugin's build, the plugin's development server and a bundler with no
+plugin each give the page that runs pods one copy, and the page that talks to a server none.
 
 ```js
 import { nodeHost, podApi } from "cascade-runtime/app";

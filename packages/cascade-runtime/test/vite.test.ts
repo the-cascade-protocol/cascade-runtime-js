@@ -254,7 +254,7 @@ describe("Importing the package in a web page · browserBuildVersion(), cascadeR
     });
   });
 
-  describe("given a build that is not the browser's, of a page that imports two modules naming a `.wasm` file each and uses one", () => {
+  describe("given a build that is not the browser's, of a page that imports two modules naming a `.wasm` file each and uses one, and whose HTML names a third", () => {
     let folder: string;
     let written: string[];
 
@@ -264,11 +264,12 @@ describe("Importing the package in a web page · browserBuildVersion(), cascadeR
       await write(installed, runtimeFiles("components/vocabulary/abc"));
       const app = join(folder, "app");
       await write(app, {
-        "index.html": `<!doctype html><html><head></head><body><script type="module" src="./main.js"></script></body></html>`,
+        "index.html": `<!doctype html><html><head><link rel="preload" href="./page.wasm" as="fetch" crossorigin></head><body><script type="module" src="./main.js"></script></body></html>`,
         "main.js": `import { called } from "./called.js"; import { uncalled } from "./uncalled.js"; document.title = called();`,
         "called.js": `export const called = () => new URL("./called.wasm", import.meta.url).href;`,
         "uncalled.js": `export const uncalled = () => new URL("./uncalled.wasm", import.meta.url).href;`,
         "called.wasm": "called",
+        "page.wasm": "page",
         "uncalled.wasm": "uncalled",
       });
       await build({
@@ -287,10 +288,10 @@ describe("Importing the package in a web page · browserBuildVersion(), cascadeR
       await rm(folder, { recursive: true, force: true, maxRetries: 5 });
     });
 
-    it("writes the `.wasm` file a chunk names and not the one no chunk names", () => {
+    it("writes the `.wasm` files a chunk or the page names and not the one nothing names", () => {
       assert.deepEqual(
         written.map((name) => name.replace(/-[\w-]+\.wasm$/, ".wasm")),
-        ["called.wasm"],
+        ["called.wasm", "page.wasm"],
       );
     });
   });

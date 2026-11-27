@@ -73,7 +73,7 @@
     "./app": {
       "browser": {
         "types": "./dist/src/browser/app.d.ts",
-        "default": "./dist/src/browser/app.js"
+        "default": "./dist/browser/app.js"
       },
       "types": "./dist/src/node/app.d.ts",
       "default": "./dist/src/node/app.js"
