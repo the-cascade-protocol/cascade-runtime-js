@@ -3,16 +3,19 @@
 // MCP client to start. stdout is the protocol; what it says of itself goes to stderr.
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { argv, exit, stderr, stdin } from "node:process";
+import { argv, execPath, exit, stderr, stdin, stdout } from "node:process";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { configureTables } from "cascade-runtime";
 import { podReads, podsIn } from "cascade-runtime/tools/node";
 import { podServer } from "./server.js";
 
-const USAGE = `usage: cascade-mcp --pods <folder> [--check-tables]
+const USAGE = `usage: cascade-mcp --pods <folder> [--check-tables] [--settings]
 
   --pods <folder>   the folder whose folders are the pods, as an app keeps them
+  --settings        print the block for Claude Desktop's claude_desktop_config.json, with absolute paths, and
+                    start no server
   --check-tables    check the reference tables' feeds for newer tables when the first pod opens (a network call),
                     and offer reference_table_checks' rows; without it, the tables the folder holds are used as
                     they are, and reference_table_checks says the tables are off
@@ -30,6 +33,7 @@ try {
     options: {
       pods: { type: "string" },
       "check-tables": { type: "boolean", default: false },
+      settings: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
   }));
@@ -45,12 +49,26 @@ const folder = resolve(values.pods);
 if (!statSync(folder, { throwIfNoEntry: false })?.isDirectory())
   refuse(`${folder} is no folder`);
 
-configureTables({ checkOnOpen: values["check-tables"] });
-const reads = podReads(podsIn(folder), { tables: values["check-tables"] });
-const serving = serveStdio(() => podServer(reads));
+if (values.settings) {
+  stderr.write(
+    "warning: a hosted model is sent what the tools return, so give it only pods you are content to share with it\n",
+  );
+  const args = [fileURLToPath(import.meta.url), "--pods", folder];
+  if (values["check-tables"]) args.push("--check-tables");
+  const block = { mcpServers: { cascade: { command: execPath, args } } };
+  stdout.write(`${JSON.stringify(block, null, 2)}\n`, () => exit(0));
+} else {
+  serve(folder, values["check-tables"]);
+}
 
-stdin.on("close", async () => {
-  await serving.close();
-  await reads.close();
-  exit(0);
-});
+function serve(pods: string, checkTables: boolean): void {
+  configureTables({ checkOnOpen: checkTables });
+  const reads = podReads(podsIn(pods), { tables: checkTables });
+  const serving = serveStdio(() => podServer(reads));
+
+  stdin.on("close", async () => {
+    await serving.close();
+    await reads.close();
+    exit(0);
+  });
+}

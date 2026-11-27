@@ -138,7 +138,7 @@ describe("The MCP page · mcpPage(), mcpSection", () => {
         said,
         /A proposal the pod's rules refuse is an answer, not an error/,
       );
-      assert.ok(code.some((block) => block.includes("mcpServers")));
+      assert.ok(code.some((block) => block.includes("--settings")));
     });
 
     it("shows its list of tools once, as the rows and not as a list", async () => {
