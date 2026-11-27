@@ -1027,10 +1027,12 @@ table holds has its notation alone.
 In Node only, `builders` names sources whose builders run on this machine in
 each check, a name under cascade-reference-tables' `builders/` or a path from
 the file; what one builds is kept as a feed's versions are, from
-`pods/.builds/<name>/`. A builder runs through cascade-reference-tables, which
-the app installs itself:
-`npm install --save-exact https://github.com/the-cascade-protocol/cascade-reference-tables/releases/download/package-builds/cascade-reference-tables-0.0.0-commit-abcb8bd9a99f3f2d9b33351b97416fc0b81f7bab.tgz`.
-A version that does not descend from the one held of its series is never kept.
+`pods/.builds/<name>/`. A version that does not descend from the one held of
+its series is never kept. A builder runs through cascade-reference-tables,
+which the app installs itself, at the build the package was tested with, which
+its release's notes name:
+
+<!-- TABLES -->
 
 ## What it cannot do yet
 

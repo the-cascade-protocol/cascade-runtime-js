@@ -10,9 +10,9 @@ name: perf
 #   on a runner with another processor model: a comparison with a file from another job cannot be read to a few percent. If
 #   that run gives no file the job goes on, warns, and the comment compares with the latest push's file as before, saying so.
 #   A hand-started run on a branch other than main does the same and puts the comparison in its summary. It reads the
-#   `Depends-On:` lines of that branch's open pull request as a run the pull request started would (the actions
-#   depends-on and starter, through .github/actions/depends-on/pull-request-body.sh; the vocabulary and the adapters, which the Bridge
-#   spec's start action places, follow when it does the same); main's checkouts under main/ stay at the default branches.
+#   `Depends-On:` lines of that branch's open pull request as a run the pull request started would (the reference tables and
+#   the starter kit, which the Bridge spec's pick action places, and the vocabulary and the adapters, which its start action
+#   places); main's checkouts under main/ stay at the default branches.
 # - A push to main and the nightly run write their file to the orphan branch `perf-data`, at
 #   runtime/YYYY/MM/DD/<run>-<sha7>-<event>.json, and put the table in the job summary. The nightly run and a
 #   hand-started run add the large size, plain and encrypted. A push also names its file in runtime/latest-push.txt,
@@ -147,28 +147,16 @@ jobs:
         with:
           path: cascade-runtime-js
           persist-credentials: false
-      - id: tables-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-reference-tables
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.tables-at.outputs.repository }}
-          ref: ${{ steps.tables-at.outputs.ref }}
-          path: cascade-reference-tables
-          persist-credentials: false
+          checkout: cascade-reference-tables
       # The starter kit, beside this checkout: the file records its commit, and a test of this repository fails when the
       # questions the harness asks first are no longer the kit's.
-      - id: kit-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-starter-kit
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.kit-at.outputs.repository }}
-          ref: ${{ steps.kit-at.outputs.ref }}
-          path: cascade-starter-kit
-          persist-credentials: false
+          checkout: cascade-starter-kit
       # Main beside this build, for a run that measures both (SAME_JOB): the runtime at the default branch and each repository it
       # reads, in a folder of their own, so that main reads main's vocabulary, adapters, reference tables and starter kit as a
       # push to main does, and this build reads the ones its Depends-On lines name. Every step may fail: a build of main that
@@ -463,26 +451,14 @@ jobs:
         with:
           path: cascade-runtime-js
           persist-credentials: false
-      - id: tables-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-reference-tables
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.tables-at.outputs.repository }}
-          ref: ${{ steps.tables-at.outputs.ref }}
-          path: cascade-reference-tables
-          persist-credentials: false
-      - id: kit-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+          checkout: cascade-reference-tables
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-starter-kit
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.kit-at.outputs.repository }}
-          ref: ${{ steps.kit-at.outputs.ref }}
-          path: cascade-starter-kit
-          persist-credentials: false
+          checkout: cascade-starter-kit
       - uses: actions/setup-node@v5
         with:
           node-version: "24"

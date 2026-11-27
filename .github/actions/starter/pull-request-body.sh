@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The body of the pull request this run is for, on stdout; empty when it is for none. Where the actions that read a
-# `Depends-On:` line (.github/actions/depends-on, .github/actions/starter) get the line from.
+# The body of the pull request this run is for, on stdout; empty when it is for none. Where the starter action gets its
+# `Depends-On:` line from.
 #
 # A run started by a pull request event is for that pull request: its number is in PULL. A run started by hand on a branch
 # other than the default one has no event pull request, so it is for the open pull request whose head is that branch of this

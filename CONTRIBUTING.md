@@ -15,10 +15,14 @@ You need Node.js 24 or newer and git.
 git clone git@github.com:<you>/cascade-runtime-js.git
 cd cascade-runtime-js
 npm ci
+npm run builds
 ```
 
 Dependencies are pinned exactly in [`package.json`](package.json) and `package-lock.json`. Use `npm ci`, not
-`npm install`, so your run measures what CI measures.
+`npm install`, so your run measures what CI measures. Two are not pinned: the reference tables and the sandbox. The
+builds the lock names for them are only what `npm ci` installs so that the repository builds; `npm run builds` installs
+the newest build of each default branch over them, as CI does, and `npm run builds -- --tables <commit> --sandbox
+<commit>` (or a `.tgz` file for either) installs another. Run it again after every `npm ci`, which removes it.
 
 ## Run the tests
 

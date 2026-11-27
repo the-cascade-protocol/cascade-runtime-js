@@ -216,29 +216,17 @@ jobs:
           path: cascade-runtime-js
           persist-credentials: false
       # Beside this checkout, where the runtime looks for a component before it fetches one: the offline suite reads
-      # the pod-encryption vectors and the reference tables from these, and fetches nothing. The start action honours a
-      # Depends-On: line for the vocabulary and the adapters only, so the depends-on action reads it for these two: a pull
-      # request of either, named on one, is checked out at its head, else the default branch.
-      - id: conformance-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      # the pod-encryption vectors and the reference tables' files from these, and fetches nothing. The start action places
+      # the vocabulary and the adapters only, so the pick action places these two: a pull request of either named on a
+      # Depends-On: line merged into its target, else the default branch.
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/conformance
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.conformance-at.outputs.repository }}
-          ref: ${{ steps.conformance-at.outputs.ref }}
-          path: conformance
-          persist-credentials: false
-      - id: tables-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+          checkout: conformance
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-reference-tables
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.tables-at.outputs.repository }}
-          ref: ${{ steps.tables-at.outputs.ref }}
-          path: cascade-reference-tables
-          persist-credentials: false
+          checkout: cascade-reference-tables
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -347,26 +335,14 @@ jobs:
         with:
           path: cascade-runtime-js
           persist-credentials: false
-      - id: conformance-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/conformance
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.conformance-at.outputs.repository }}
-          ref: ${{ steps.conformance-at.outputs.ref }}
-          path: conformance
-          persist-credentials: false
-      - id: tables-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+          checkout: conformance
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-reference-tables
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.tables-at.outputs.repository }}
-          ref: ${{ steps.tables-at.outputs.ref }}
-          path: cascade-reference-tables
-          persist-credentials: false
+          checkout: cascade-reference-tables
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -457,26 +433,14 @@ jobs:
         with:
           path: cascade-runtime-js
           persist-credentials: false
-      - id: conformance-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/conformance
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.conformance-at.outputs.repository }}
-          ref: ${{ steps.conformance-at.outputs.ref }}
-          path: conformance
-          persist-credentials: false
-      - id: tables-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+          checkout: conformance
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-reference-tables
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.tables-at.outputs.repository }}
-          ref: ${{ steps.tables-at.outputs.ref }}
-          path: cascade-reference-tables
-          persist-credentials: false
+          checkout: cascade-reference-tables
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
@@ -1057,29 +1021,17 @@ jobs:
           path: cascade-runtime-js
           persist-credentials: false
       # Beside this checkout, where the runtime looks for a component before it fetches one: the offline suite reads
-      # the pod-encryption vectors and the reference tables from these, and fetches nothing. The start action honours a
-      # Depends-On: line for the vocabulary and the adapters only, so the depends-on action reads it for these two: a pull
-      # request of either, named on one, is checked out at its head, else the default branch.
-      - id: conformance-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+      # the pod-encryption vectors and the reference tables' files from these, and fetches nothing. The start action places
+      # the vocabulary and the adapters only, so the pick action places these two: a pull request of either named on a
+      # Depends-On: line merged into its target, else the default branch.
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/conformance
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.conformance-at.outputs.repository }}
-          ref: ${{ steps.conformance-at.outputs.ref }}
-          path: conformance
-          persist-credentials: false
-      - id: tables-at
-        uses: ./cascade-runtime-js/.github/actions/depends-on
+          checkout: conformance
+      - uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
         with:
           repository: the-cascade-protocol/cascade-reference-tables
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.tables-at.outputs.repository }}
-          ref: ${{ steps.tables-at.outputs.ref }}
-          path: cascade-reference-tables
-          persist-credentials: false
+          checkout: cascade-reference-tables
       - uses: actions/setup-node@v5
         with:
           node-version: "24"

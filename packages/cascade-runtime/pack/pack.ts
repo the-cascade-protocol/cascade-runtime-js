@@ -26,7 +26,6 @@ import {
 } from "@cascade-runtime/runtime";
 import { breakingSince } from "./breaking.js";
 import {
-  BRIDGE_REPOSITORY,
   checkout,
   compiledBridge,
   CONFIG_FILE,
@@ -50,6 +49,12 @@ import {
   vendored,
 } from "./dependencies.js";
 import { bundleBrowser } from "./browser.js";
+import {
+  releaseNotes,
+  shipped,
+  testedBuilds,
+  type TestedBuild,
+} from "./notes.js";
 
 const WORKSPACE = fileURLToPath(new URL("../../", import.meta.url));
 const ROOT = findRoot(WORKSPACE);
@@ -382,21 +387,10 @@ async function packCode(
   };
 }
 
-/** A Markdown file the package ships, with the install line where it asks for it. */
-function shipped(text: string, address: string): string {
-  return text
-    .split(/\r?\n/)
-    .flatMap((line) =>
-      line === "<!-- INSTALL -->"
-        ? ["```sh", `npm install ${address}`, "```"]
-        : [line],
-    )
-    .join("\n");
-}
-
 async function packOwnFiles(
   manifest: Manifest,
   address: string,
+  tested: readonly TestedBuild[],
 ): Promise<void> {
   await copyFile(join(ROOT, "LICENSE"), join(STAGE, "LICENSE"));
   for (const path of manifest.files ?? []) {
@@ -414,7 +408,10 @@ async function packOwnFiles(
         ? [to]
         : [];
     for (const file of markdown)
-      await writeFile(file, shipped(await readFile(file, "utf8"), address));
+      await writeFile(
+        file,
+        shipped(await readFile(file, "utf8"), address, tested),
+      );
   }
 }
 
@@ -444,7 +441,10 @@ async function npmPack(
  * cascade-mcp, packed beside the package and depending on it at this build's version, so installing the two tarballs
  * together installs it, from a release or from files alike.
  */
-async function packMcp(commit: string, runtime: Manifest): Promise<string> {
+async function packMcp(
+  commit: string,
+  runtime: Manifest,
+): Promise<{ filename: string; integrity: string }> {
   const manifest = await manifestOf(MCP);
   await rm(MCP_STAGE, { recursive: true, force: true });
   await cp(join(MCP, "dist", "src"), join(MCP_STAGE, "dist", "src"), {
@@ -469,7 +469,7 @@ async function packMcp(commit: string, runtime: Manifest): Promise<string> {
   for (const file of await readdir(BUILD))
     if (file.startsWith(`${manifest.name}-`) && file.endsWith(".tgz"))
       await rm(join(BUILD, file));
-  return (await npmPack(MCP_STAGE)).filename;
+  return await npmPack(MCP_STAGE);
 }
 
 /**
@@ -508,48 +508,14 @@ async function breakingChanges(
   );
 }
 
-function releaseNotes(
-  address: string,
-  mcp: string,
-  commit: string,
-  integrity: string,
-  resolved: readonly Resolved[],
-  bridge: Packed["bridge"],
-  breaking: string,
-): string {
-  return [
-    ...(breaking === "" ? [] : [breaking]),
-    "```sh",
-    `npm install ${address}`,
-    "```",
-    "",
-    "With cascade-mcp, an MCP server over a folder of pods: install both in one `npm install`, then run `npx --no-install cascade-mcp --pods <folder>` in that folder.",
-    "",
-    "```sh",
-    `npm install ${address} ${mcp}`,
-    "```",
-    "",
-    `Built from commit ${commit}. Integrity \`${integrity}\`.`,
-    "",
-    "It carries:",
-    "",
-    "| Component | Tree | Commit |",
-    "| --- | --- | --- |",
-    ...resolved.map(
-      ({ component, iri, version }) =>
-        `| ${repositoryName(component)} | <${iri}> | \`${version}\` |`,
-    ),
-    `| cascade-bridge-rs | [${bridge.release}](${BRIDGE_REPOSITORY}/releases/tag/${bridge.release}) | \`${bridge.commit}\` |`,
-    "",
-  ].join("\n");
-}
-
 async function main(): Promise<void> {
   const head = await checkout(ROOT);
   if (head === undefined) throw new Error(`${ROOT} is no git checkout`);
   const { commit } = head;
   const address = tarballAddress(commit);
   const manifest = await manifestOf(WORKSPACE);
+  const tested = await testedBuilds(ROOT);
+  for (const { name, file, how } of tested) log(`${name}: ${file}, ${how}`);
 
   await rm(STAGE, { recursive: true, force: true });
   await mkdir(STAGE, { recursive: true });
@@ -565,7 +531,7 @@ async function main(): Promise<void> {
     components,
     bridge: bridgeFolder,
   });
-  await packOwnFiles(manifest, address);
+  await packOwnFiles(manifest, address, tested);
   const undeclared = await undeclaredImports(STAGE, workspaces, {
     ...dependencies,
     ...(manifest.peerDependencies as Record<string, string> | undefined),
@@ -592,22 +558,30 @@ async function main(): Promise<void> {
   for (const file of await readdir(BUILD))
     if (file.startsWith(`${manifest.name}-`) && file.endsWith(".tgz"))
       await rm(join(BUILD, file));
-  const { filename, integrity } = await npmPack();
+  const runtime = await npmPack();
   const mcp = await packMcp(commit, manifest);
   await writeFile(
     join(BUILD, "release-notes.md"),
-    releaseNotes(
+    releaseNotes({
       address,
-      address.replace(filename, mcp),
+      mcp: address.replace(runtime.filename, mcp.filename),
       commit,
-      integrity,
-      resolved,
+      files: [runtime, mcp].map(({ filename, integrity }) => ({
+        file: filename,
+        integrity,
+      })),
+      carried: resolved.map(({ component, iri, version }) => ({
+        name: repositoryName(component),
+        iri,
+        commit: version,
+      })),
       bridge,
-      await breakingChanges(commit, resolved),
-    ),
+      breaking: await breakingChanges(commit, resolved),
+      tested,
+    }),
   );
   log(
-    `packed ${join(BUILD, filename)} and ${join(BUILD, mcp)}${head.uncommitted > 0 ? `, from ${commit} with ${head.uncommitted} uncommitted files` : `, from ${commit}`}`,
+    `packed ${join(BUILD, runtime.filename)} and ${join(BUILD, mcp.filename)}${head.uncommitted > 0 ? `, from ${commit} with ${head.uncommitted} uncommitted files` : `, from ${commit}`}`,
   );
 }
 
