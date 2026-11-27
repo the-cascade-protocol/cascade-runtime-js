@@ -110,7 +110,7 @@ export interface BuiltFixture {
   readonly screensFilled: boolean;
   /**
    * Fills every screen again for the entries in scope: each view's fill, the labels, then each view's finish. Gives each
-   * part that made or dropped a table, view or index, as `<its .sql>: its <part> part`.
+   * part that made, dropped or analyzed a table, view or index, as `<its .sql>: its <part> part`.
    */
   refill(): readonly string[];
   close(): void;
@@ -666,17 +666,20 @@ export function madeScreens(
 
 /**
  * The versions of the schema of the connection's database and of its temporary one: a statement that makes or drops a
- * table, view or index moves one, and SQLite then compiles again each statement compiled on the connection.
+ * table, view or index moves one, and SQLite then compiles again each statement compiled on the connection, as it does
+ * after an ANALYZE, which moves neither.
  */
 const SCHEMA_VERSIONS = [
   "PRAGMA main.schema_version",
   "PRAGMA temp.schema_version",
 ];
 
+const ANALYZE = /^(?:\s|--[^\n]*\n|\/\*[\s\S]*?\*\/)*ANALYZE\b/i;
+
 /**
  * Fills each view's screen again for the entries in scope: every view's fill, then the labels, then every view's finish,
- * each statement compiled once in `compiled`, as a runtime that fills keyed runs often does; gives each part that made or
- * dropped a table, view or index, which would have that runtime compile every statement again.
+ * each statement compiled once in `compiled`, as a runtime that fills keyed runs often does; gives each part that made,
+ * dropped or analyzed a table, view or index, which would have that runtime compile every statement again.
  */
 function refilled(
   db: Database,
@@ -690,16 +693,22 @@ function refilled(
     if (found === undefined) compiled.set(text, (found = db.prepare(text)));
     return found;
   };
+  let analyzed = false;
   const run = (script: string): void => {
-    for (const text of sqlStatements(script)) statement(text).run();
+    for (const text of sqlStatements(script)) {
+      if (ANALYZE.test(text)) analyzed = true;
+      statement(text).run();
+    }
   };
   const schema = (): string =>
     SCHEMA_VERSIONS.map((text) => JSON.stringify(statement(text).get())).join();
   const remade: string[] = [];
   const watched = (rq: string, part: string, work: () => void): void => {
     const was = schema();
+    analyzed = false;
     work();
-    if (schema() !== was) remade.push(`${sqlPath(rq)}: its ${part} part`);
+    if (analyzed || schema() !== was)
+      remade.push(`${sqlPath(rq)}: its ${part} part`);
   };
   for (const part of ["fill", "finish"]) {
     for (const { query, parts } of views)
@@ -1500,7 +1509,7 @@ export function keyedFillFailures(
           if (!remade.has(part)) {
             remade.add(part);
             lines.push(
-              `${fixture}, under ${lens}, ${name}: ${part}, run again, makes or drops a table, view or index, so that SQLite compiles every statement compiled on the connection again: make each IF NOT EXISTS and empty it rather than drop it`,
+              `${fixture}, under ${lens}, ${name}: ${part}, run again, makes, drops or analyzes a table, view or index, so that SQLite compiles every statement compiled on the connection again: make each IF NOT EXISTS, empty it rather than drop it, and analyze none`,
             );
           }
         return screenTables(db);

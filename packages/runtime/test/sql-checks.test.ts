@@ -269,22 +269,30 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
       keyed[0]?.why ?? "",
       /moved out of entry .*: condition_member holds .* a whole fill does not/,
     );
-    const remaking = replaced(
-      conditions,
-      "CREATE TEMP TABLE IF NOT EXISTS condition_filled",
-      "DROP TABLE IF EXISTS temp.condition_filled;\nCREATE TEMP TABLE condition_filled",
-    );
-    const remade = (await over({ [CONDITIONS]: remaking }, "conditions-view"))
-      .filter(({ outcome }) => outcome === "failed")
-      .map(({ test, why }) => ({ test: test.split("#")[1], why }));
-    assert.deepEqual(
-      remade.map(({ test }) => test),
-      ["keyed/conditions-view/everyday", "keyed/conditions-view/export"],
-    );
-    assert.match(
-      remade[0]?.why ?? "",
-      /queries\/views\/conditions\.sql: its fill part, run again, makes or drops a table, view or index/,
-    );
+    for (const remaking of [
+      replaced(
+        conditions,
+        "CREATE TEMP TABLE IF NOT EXISTS condition_filled",
+        "DROP TABLE IF EXISTS temp.condition_filled;\nCREATE TEMP TABLE condition_filled",
+      ),
+      replaced(
+        conditions,
+        "DELETE FROM condition_filled;",
+        "DELETE FROM condition_filled;\nANALYZE temp.condition_filled;",
+      ),
+    ]) {
+      const remade = (await over({ [CONDITIONS]: remaking }, "conditions-view"))
+        .filter(({ outcome }) => outcome === "failed")
+        .map(({ test, why }) => ({ test: test.split("#")[1], why }));
+      assert.deepEqual(
+        remade.map(({ test }) => test),
+        ["keyed/conditions-view/everyday", "keyed/conditions-view/export"],
+      );
+      assert.match(
+        remade[0]?.why ?? "",
+        /queries\/views\/conditions\.sql: its fill part, run again, makes, drops or analyzes a table, view or index/,
+      );
+    }
     const addressed = (
       await over({ [ALLERGIES]: one(allergies) }, "allergies-view")
     )
