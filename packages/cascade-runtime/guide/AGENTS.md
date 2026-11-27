@@ -751,6 +751,13 @@ await showPerson(rows);
 await api.close();
 ```
 
+The same import says what a pod holds the way every app says it: a row of "What needs review" as a sentence
+(`worthALook`), an entry's page (`entryOf`), a day (`day`, `dayOrAsWritten`), a change after a medication
+(`changeSaid`), a pull (`pullSaid`), a person's or a pod's name (`personName`), a connection that failed
+(`failureSaid`). The tiles a pod's page shows are the app's own, each a `Section`: the question it shows, the column
+of a row's name, its code columns and its table's columns. Give them as `podApi(host, { sections })`, and to each
+function that takes `sections`: `answers` then asks their questions, and an entry is named as its tile calls it.
+
 ## In a browser
 
 In a browser, the same import, served with the package's `components/` beside
