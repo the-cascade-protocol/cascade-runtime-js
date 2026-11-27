@@ -183,7 +183,14 @@ async function toolsAnswer(
     return text("Not found", 404);
   const body = await bodyOf(request);
   if (body === undefined) return tooLong();
-  const name = decodeURIComponent(path.slice("/tools/".length));
+  const asked = path.slice("/tools/".length);
+  const name = (() => {
+    try {
+      return decodeURIComponent(asked);
+    } catch {
+      return asked;
+    }
+  })();
   const read = READS.find((each) => each.name === name);
   if (read === undefined) return json({ refused: "no such tool" }, 404);
   try {
@@ -269,7 +276,10 @@ export function appHandler(
     const path = routeOf(url);
     const cookie = cookieNamed(request, launchCookie(url));
     const get = request.method === "GET";
-    if (SERVED.test(url.pathname) && !launch.holds(cookie))
+    if (
+      (SERVED.test(url.pathname) || SERVED.test(path)) &&
+      !launch.holds(cookie)
+    )
       return json({ refused: NO_COOKIE }, 403);
     if (get && path === "/" && url.searchParams.has("launch"))
       return traded(launch, request, url);

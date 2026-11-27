@@ -758,6 +758,31 @@ The same import says what a pod holds the way every app says it: a row of "What 
 of a row's name, its code columns and its table's columns. Give them as `podApi(host, { sections })`, and to each
 function that takes `sections`: `answers` then asks their questions, and an entry is named as its tile calls it.
 
+**A server for the app, in Node.** `appHandler({ api, own, launch, address, back })` is one handler any server mounts: it
+takes a `Request` and gives a `Response` (`handle(request, pages)`, `pages` answering any address a person opens: the
+built app's files and page, or in development Vite's). It answers `POST /api/<operation>` over `podApi`, checked against
+`INPUT_SCHEMAS`; `GET /tools` and `POST /tools/<name>`, the reads of `TOOLS`; `/chat` when the app gives a `chat`;
+`/callback`, where a hospital's redirect comes back (`back(url)`, from `signIns()`); and `/world-date`. It refuses a
+request whose `Host` is not the server's own (`own()`), a method that is not GET or POST, and a POST from another site,
+and it asks every route that reads a pod for the launch cookie: the server prints one address, `/?launch=<token>`
+(`newLaunch()`), the first request to carry the token is given the cookie (`launchCookie(url)` names it for the port) and
+the token is spent, so no other program on the machine reads the pods. With `pagesNeedLaunch` the pages ask for it too,
+as development's do. Mount it in your server's catch-all route: for Hono, `app.all("*", (c) => handle(c.req.raw, pages))`.
+
+**The page's side, with no framework.** The same import, in the page, says what the page is doing in `data-state` on the
+body (`pageBusy`, `pageReady`, `pageFailed`, `pageSettled`, and `watchRouter(router)` for a data router such as React
+Router's, with `pageCommitted` told by the commit that draws what the router read), warms the engine once the first
+screen is drawn (`warmEngine(host)`, `whenNamed(read, unsaid, what)`), counts the calls a person caused for the idle lock
+(`idleCounted(api)`, `revalidateWhenIdle(revalidate)`), and offers a model the app's tools through the page's model
+context, where the browser has one (`offerTools`).
+
+**The build.** `cascadeRuntime({ app: true })` of `cascade-runtime/vite` adds to the one plugin what an app needs beside
+its bundle: the About box's attributes on the body (`CASCADE_NAME`, `CASCADE_VERSION`, `CASCADE_CODE`, `CASCADE_HUB`, and
+for a browser build `CASCADE_SAMPLES`) and, in the browser build, the demo hospitals' service worker with their data, the
+demo people and the page a sign-in returns to; it needs the `@the-cascade-protocol/sandbox` package the app depends on.
+`devOptions(root, pods)` gives development's Vite options with the pods folder never served or watched, and `looks` is
+what `samplesToPublish({ lookups: looks })` keeps for a first visit's first paint.
+
 ## In a browser
 
 In a browser, the same import, served with the package's `components/` beside

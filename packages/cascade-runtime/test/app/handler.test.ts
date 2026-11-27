@@ -298,6 +298,9 @@ describe("Guarding the server · guard, newLaunch(), GET /?launch=<token>", () =
       ["POST", "/tools/list_pods"],
       ["GET", "/chat"],
       ["POST", "/chat"],
+      ["POST", "/api/pods/"],
+      ["GET", "/tools/"],
+      ["GET", "/chat/"],
     ] as const)
       it(`responds 403 to ${method} ${path}, in JSON, and runs no operation`, async () => {
         const { request, calls } = served();
@@ -607,7 +610,7 @@ describe("Running the read tools over HTTP · GET /tools, POST /tools/<name>", (
   it("responds 404 for a tool that writes or moves the app, and for a name that is no tool", async () => {
     const { request, cookie } = served();
     const held = cookie();
-    for (const name of ["make_pod", "open_pod", "nothing"])
+    for (const name of ["make_pod", "open_pod", "nothing", "%E0%A4%A"])
       assert.equal((await run(request, held, name, {})).status, 404, name);
   });
 });
@@ -658,6 +661,34 @@ describe("Answering an address a person opens with the app's pages · appHandler
     it("responds 404 to an address that is no route", async () => {
       const { request } = served();
       assert.equal((await request("/pods/a/")).status, 404);
+    });
+  });
+
+  describe("given a hospital's redirect back, and the demo people", () => {
+    it("sends a sign-in that waits on to its connection's address, and answers the redirect of none with a page", async () => {
+      const waiting = served(stubApi(), {
+        back: (url: URL) =>
+          url.searchParams.get("state") === "s1"
+            ? { pod: "alex-rivera", connection: 2 }
+            : undefined,
+      });
+      const back = await waiting.request("/callback?state=s1&code=x");
+      assert.equal(back.status, 303);
+      assert.equal(back.headers.get("location"), "/pods/alex-rivera/");
+      assert.equal((await waiting.request("/callback?state=s2")).status, 400);
+    });
+
+    it("lists the demo people at `/demo-people.json`, none when the app gives none", async () => {
+      const people = [{ name: "Alex Rivera" }];
+      const given = served(stubApi(), { people: () => people });
+      assert.deepEqual(
+        await (await given.request("/demo-people.json")).json(),
+        people,
+      );
+      assert.deepEqual(
+        await (await served().request("/demo-people.json")).json(),
+        [],
+      );
     });
   });
 
