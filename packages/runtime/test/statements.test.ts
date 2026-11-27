@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { earl } from "../src/conformance.js";
 import { type Files, MemoryFiles, readText } from "../src/files.js";
@@ -519,12 +522,32 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
     });
   });
 
-  it("asks a pod's database a question in the parts prepare and answer, its statements compiled once on the connection, as it asks a question in no part", async () => {
+  it("asks a pod's database a question in parts on a connection of its own, each of its statements compiled once there, so the connection a keyed run and a question in no part are compiled on prepares none of them and keeps its schema", async () => {
     const files = new MemoryFiles("https://example.test/vocabulary/");
     await files.write(STATEMENTS_SCHEMA, new Uint8Array());
+    const folder = await mkdtemp(join(tmpdir(), "parts-"));
+    const connections: Database[] = [];
+    const prepared: string[][] = [];
     const database = await PodDatabase.opened(
       {
-        open: ({ functions }) => openDatabase(":memory:", { functions }),
+        open: ({ functions }) => {
+          const db = openDatabase(join(folder, "pod.db"), { functions });
+          const texts: string[] = [];
+          connections.push(db);
+          prepared.push(texts);
+          return {
+            prepare: (sql) => {
+              texts.push(sql);
+              return db.prepare(sql);
+            },
+            exec: (sql) => {
+              texts.push(sql);
+              db.exec(sql);
+            },
+            transaction: (work) => db.transaction(work),
+            close: () => db.close(),
+          };
+        },
         builtWhole: async () => undefined,
         remove: async () => undefined,
         exists: async () => true,
@@ -532,15 +555,49 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
       new MemoryFiles("https://example.test/pod/"),
       files,
     );
-    assert.deepEqual(database.answer(ASKED_IN_PARTS), {
-      rows: [{ entry: "urn:x:asked-1" }],
-    });
-    assert.deepEqual(database.answer(ASKED_IN_PARTS), {
-      rows: [{ entry: "urn:x:asked-2" }],
-    });
-    assert.deepEqual(database.answer("SELECT '<urn:x:a>' AS entry"), {
-      rows: [{ entry: "urn:x:a" }],
-    });
+    try {
+      const [pod] = connections as [Database];
+      pod.exec(
+        "CREATE TABLE listed (k TEXT) STRICT; INSERT INTO listed VALUES ('a');",
+      );
+      const schema = (): unknown[] =>
+        ["main", "temp"].map(
+          (home) =>
+            pod.prepare(`PRAGMA ${home}.schema_version`).get()?.schema_version,
+        );
+      const was = schema();
+      const listed = [
+        "-- part: prepare",
+        "CREATE TEMP TABLE said AS SELECT k FROM listed;",
+        "ANALYZE temp.said;",
+        "-- part: answer",
+        "SELECT '<urn:x:' || k || '>' AS entry FROM said",
+        "-- part: cleanup",
+        "DROP TABLE temp.said;",
+      ].join("\n");
+      for (let asked = 0; asked < 2; asked++)
+        assert.deepEqual(database.answer(listed), {
+          rows: [{ entry: "urn:x:a" }],
+        });
+      assert.deepEqual(database.answer(ASKED_IN_PARTS), {
+        rows: [{ entry: "urn:x:asked-1" }],
+      });
+      assert.deepEqual(database.answer(ASKED_IN_PARTS), {
+        rows: [{ entry: "urn:x:asked-2" }],
+      });
+      assert.deepEqual(database.answer("SELECT '<urn:x:a>' AS entry"), {
+        rows: [{ entry: "urn:x:a" }],
+      });
+      assert.equal(connections.length, 2);
+      assert.deepEqual(prepared[0], ["SELECT '<urn:x:a>' AS entry"]);
+      assert.deepEqual(schema(), was);
+      const apart = prepared[1] ?? [];
+      assert.equal(apart.length, 9);
+      assert.equal(new Set(apart).size, apart.length);
+    } finally {
+      database.close();
+      await rm(folder, { recursive: true, force: true });
+    }
   });
 
   it("drops what a question's prepare part made by its cleanup part, once its answer has given its rows and when it fails", () => {
@@ -841,7 +898,7 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           ],
           screens: new Map(),
           screensFilled: false,
-          refill: () => undefined,
+          refill: () => [],
           close: () => undefined,
         },
         {
@@ -964,7 +1021,7 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           ],
           screens: new Map(),
           screensFilled: false,
-          refill: () => undefined,
+          refill: () => [],
           close: () => undefined,
         },
         {
