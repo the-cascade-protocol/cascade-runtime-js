@@ -411,14 +411,10 @@ export const REVIEW = "entry/What needs review";
 
 export const DIFFERS = "Differs";
 export const NEEDS_REVIEW = "Needs review";
-const RETIRED = "Retired code";
+export const RETIRED_CODE = "Retired code";
 
-/** The one set of tags a line, a row and an entry share, in the order they are drawn, and whether each is warm. */
-export const TAGS = [
-  { tag: DIFFERS, warm: true },
-  { tag: NEEDS_REVIEW, warm: true },
-  { tag: RETIRED, warm: false },
-];
+/** The one set of tag words a line, a row and an entry share, in the order they are drawn. How each is drawn is the app's. */
+export const TAGS: readonly string[] = [DIFFERS, NEEDS_REVIEW, RETIRED_CODE];
 
 /** The tags that hold, in `TAGS` order. */
 export function tagsOf({
@@ -433,9 +429,9 @@ export function tagsOf({
   const holds: Readonly<Record<string, boolean>> = {
     [DIFFERS]: differs,
     [NEEDS_REVIEW]: review,
-    [RETIRED]: retired,
+    [RETIRED_CODE]: retired,
   };
-  return TAGS.filter(({ tag }) => holds[tag]).map(({ tag }) => tag);
+  return TAGS.filter((tag) => holds[tag]);
 }
 
 /** The entries `answers` say need review. */
@@ -464,6 +460,7 @@ export const questionsOf = (sections: readonly Section[]) => [
     VARIANTS,
     REPORTS,
     HISTORY,
+    LABS,
     IMPORTS,
     ...sections.flatMap(({ question }) => question ?? []),
   ]),
@@ -730,10 +727,12 @@ export interface Waiting {
   readonly records: number;
 }
 
-/** A hospital's name as a person says it: `Cascade North Demo Hospital` is `Cascade North`. */
-export function hospitalName(name: string): string {
-  return name.replace(/ Demo Hospital$/, "");
-}
+/**
+ * A hospital's name as a person says it: the sandbox's hospitals are `Cascade North Demo Hospital` and the like, said
+ * `Cascade North`, and any other name is said as it is. Not exported: an app that lists the sandbox's hospitals says
+ * them as it likes.
+ */
+const hospitalName = (name: string) => name.replace(/ Demo Hospital$/, "");
 
 /** What waits under What needs review, as a note on `who`'s pod: the profiles, each with what names it; none for none. */
 export function waitingSaid(
@@ -784,7 +783,7 @@ export function counted(records: Readonly<Record<string, number>>): string {
 const UNNAMED = "An entry";
 
 export const capitalised = (sentence: string) =>
-  sentence[0]!.toUpperCase() + sentence.slice(1);
+  sentence.slice(0, 1).toUpperCase() + sentence.slice(1);
 
 /** An entry as a sentence names it: its name, and what one of its kind is called. */
 interface Item {
@@ -1972,14 +1971,10 @@ function claimsOf(
 function variantFacts(
   answers: Answers,
   entry: string,
+  { name, asked, reports, clinvar, from, namedFrom }: VariantReport,
   said: VariantsSaid | undefined,
   held: readonly Series[],
 ) {
-  const { name, asked, reports, clinvar, from, namedFrom } = variantReports(
-    answers,
-    said,
-    held,
-  ).get(entry)!;
   const genes = [
     ...new Set(
       rowsOf(answers, VARIANTS)
@@ -2055,8 +2050,8 @@ function variantFacts(
  *
  * An entry no section shows is named and kinded from its label, and has no columns or codes.
  *
- * A variant (a row of the section whose `rows` are `variantRows`) has instead, by `variantFacts`: its genes and expressions for `what`, its
- * ClinVar IDs for `codes`, the date of each report on the `where` line of its document as `issued`, and `known` lines
+ * A variant (an entry `variantReports` knows, whichever tile shows it, or none, and then named as it names it) has
+ * instead, by `variantFacts`: its genes and expressions for `what`, its ClinVar IDs for `codes`, the date of each report on the `where` line of its document as `issued`, and `known` lines
  * for each report, ClinVar today and the counsellor sentence; `said` is `variantsSaid`'s answer, none until the tables
  * can say.
  */
@@ -2087,10 +2082,11 @@ export function entryOf(
   );
   const rows =
     section === undefined ? [] : ofEntry(sectionRows(section, answers, said));
+  const found = variantReports(answers, said, held).get(entry);
   const variant =
-    section?.rows === variantRows
-      ? variantFacts(answers, entry, said, held)
-      : undefined;
+    found === undefined
+      ? undefined
+      : variantFacts(answers, entry, found, said, held);
   const label = [
     ...rows,
     ...ofEntry(sources),
@@ -2102,7 +2098,8 @@ export function entryOf(
   const kind = section?.one ?? labelled.one;
   const namings = rows.map((row) => namingOf(section!, row, about));
   const given = namings.find((each) => each.label !== undefined)?.label;
-  const own = rows.map((row) => row[section!.field]).find(Boolean);
+  const own =
+    rows.map((row) => row[section!.field]).find(Boolean) ?? found?.name;
   const title = given ?? (own || labelled.name);
 
   const codes = [

@@ -688,6 +688,16 @@ describe("Reading a pod for its screens · api.pods(), api.pod(), api.answers(),
       );
     });
 
+    it("returns the same lab changes for an app whose tiles do not ask for lab results", async () => {
+      const untiled = await crossing(
+        api(host(), {
+          sections: TILES.filter(({ question }) => question !== LABS),
+        }),
+      ).answers({ pod: STATIN });
+      assert.ok(read.changes.length > 0);
+      assert.deepEqual(untiled.changes, read.changes);
+    });
+
     it("reads no reference table", () => {
       assert.equal((counting.tables as { calls: number }).calls, 0);
     });
