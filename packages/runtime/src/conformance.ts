@@ -144,6 +144,8 @@ export interface Assertion {
   readonly name: string;
   readonly outcome: Outcome;
   readonly why?: string;
+  /** What the check saw, for a check over a whole run of the others to read; the report holds none of it. */
+  readonly observed?: readonly string[];
 }
 
 export interface ConformanceOptions {

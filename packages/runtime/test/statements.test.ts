@@ -840,6 +840,8 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
             },
           ],
           screens: new Map(),
+          screensFilled: false,
+          refill: () => undefined,
           close: () => undefined,
         },
         {
@@ -961,6 +963,8 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
             },
           ],
           screens: new Map(),
+          screensFilled: false,
+          refill: () => undefined,
           close: () => undefined,
         },
         {
@@ -1027,21 +1031,83 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
         "b",
         "c",
       ]),
-      [{ column: 1 }, { column: 0 }, { column: 2, read: whole }, { column: 2 }],
+      [
+        { columns: [1] },
+        { columns: [0] },
+        { columns: [2], read: whole },
+        { columns: [2] },
+      ],
     );
     assert.deepEqual(
       finalOrder(
         'SELECT ?a ?b WHERE { } ORDER BY DESC(COALESCE(SUBSTR(STR(?a), 1, 10), "")) ?b',
         ["a", "b"],
       ),
-      [{ column: 0, read: day }, { column: 1 }],
+      [{ columns: [0], read: day }, { columns: [1] }],
+    );
+    assert.deepEqual(
+      finalOrder(
+        'SELECT ?a ?b WHERE { } ORDER BY DESC(COALESCE(SUBSTR(STR(COALESCE(?a, ?b)), 1, 10), ""))',
+        ["a", "b"],
+      ),
+      [{ columns: [0, 1], read: day }],
+    );
+    assert.equal(
+      finalOrder("SELECT ?a WHERE { } GROUP BY ?a", ["a"]),
+      undefined,
+    );
+    for (const condition of [
+      "CONCAT(?a, ?b) ?a",
+      "?z ?a",
+      "?a COALESCE(?a, ?z)",
+      "COALESCE(?a, ?b, 1)",
+      "?a 1",
+    ])
+      assert.throws(
+        () =>
+          finalOrder(`SELECT ?a ?b WHERE { } ORDER BY ${condition}`, [
+            "a",
+            "b",
+          ]),
+        /no key can be read from the ORDER BY condition .*; write a projected variable, or a COALESCE of them, alone or inside STR, SUBSTR, DESC or ASC, and nothing else/,
+        condition,
+      );
+    for (const tail of [
+      "?a LIMIT 10",
+      "?a LIMIT 10 OFFSET 5",
+      "?a OFFSET 5",
+      "?a # the first key\n",
+      '?a # a "quote, and LIMIT 2\nLIMIT 3',
+      "$a",
+      "DESC($a) ?b",
+    ])
+      assert.deepEqual(
+        finalOrder(`SELECT ?a ?b WHERE { } ORDER BY ${tail}`, ["a", "b"])?.map(
+          ({ columns }) => columns,
+        ),
+        tail.startsWith("DESC") ? [[0], [1]] : [[0]],
+        tail,
+      );
+    const later = at("2024-01-03T00:00:00Z");
+    const firstBound = [
+      { columns: [0, 1], read: day },
+      { columns: [0, 1], read: whole },
+    ];
+    const wanted = [
+      [null, later],
+      [unzoned, zoned],
+    ];
+    assert.deepEqual(compared(["t", "u"], wanted, [...wanted], firstBound), []);
+    assert.notDeepEqual(
+      compared(["t", "u"], wanted, [...wanted].reverse(), firstBound),
+      [],
     );
     assert.deepEqual(
       compared(
         ["t"],
         [[zoned], [unzoned]],
         [[unzoned], [zoned]],
-        [{ column: 0 }],
+        [{ columns: [0] }],
       ),
       [],
     );
@@ -1050,7 +1116,7 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
         ["t"],
         [[zoned], [unzoned]],
         [[unzoned], [zoned]],
-        [{ column: 0, read: whole }],
+        [{ columns: [0], read: whole }],
       ),
       [
         `the same rows in another order, from row 1: expected ?t=${zoned}, found ?t=${unzoned}`,
@@ -1067,7 +1133,7 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           [zoned, unzoned],
           [unzoned, zoned],
         ],
-        [{ column: 0, read: day }],
+        [{ columns: [0], read: day }],
       ),
       [],
     );
@@ -1083,8 +1149,8 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
           [unzoned, unzoned],
         ],
         [
-          { column: 0, read: day },
-          { column: 1, read: whole },
+          { columns: [0], read: day },
+          { columns: [1], read: whole },
         ],
       ),
       [],

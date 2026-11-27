@@ -80,6 +80,24 @@ export function layout(): Promise<Layout> {
   return read;
 }
 
+/** A copy of the vocabulary with the text of some of its files put in place of its own; nothing is written to the real one. */
+export function overlaid(
+  real: Files,
+  texts: Readonly<Record<string, string>>,
+): Files {
+  return {
+    iri: real.iri,
+    read: async (path) =>
+      path in texts
+        ? new TextEncoder().encode(texts[path])
+        : await real.read(path),
+    write: async () => {
+      throw new Error("an overlaid vocabulary is read only");
+    },
+    list: (folder) => real.list(folder),
+  };
+}
+
 /**
  * The story an example of a feature file tells, or the feature's background when no example is named: whose pod,
  * the folder its steps name their files under, and the steps through the one named, or all of them.

@@ -58,7 +58,7 @@ layout says). Each step of `runtime/steps.md` is implemented once, in
 and a failed example's report names its rule and the step that failed.
 `--folder <repository>=<folder>` hands in a folder for a repository, and
 `--feature <path>` runs only that feature file of the vocabulary.
-`--sql-only <fixture or .sql path>` (repeatable) makes only the SQL comparisons of that fixture, or of that query, as a vocabulary's author checks one `.sql` against its `.rq`: it prints each, writes no report, and exits 1 when one fails or a name chooses none.
+`--sql-only <fixture or .sql path>` (repeatable) makes only the SQL comparisons of that fixture, or of that query, as a vocabulary's author checks one `.sql` against its `.rq`: it prints each, writes no report, and exits 1 when one fails or a name chooses none. It reads the vocabulary beside this checkout, so it refuses `--folder`, which is read only where there is none. A fixture whose manifest names `queries/views/` also has its screens filled keyed to each change a run may be given and compared with a whole fill. The checks that need no fixture (each `.sql` in its parts, each screen table emptied where it is filled, the shipped statistics rows, each `.rq`'s pin in `tests/sql-pins.json`, `tests/sql-unported.txt`, and that each query gives a row on some fixture, each view's screen on some fixture whose screens are filled keyed) are made by the full command only.
 
 `npm test` does not run the command: the cases that assert on a conformance report are skipped. With
 `CASCADE_CONFORMANCE_REPORT=<report>` they run against that report; CI's `conformance (native)` job does that on every

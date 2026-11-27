@@ -63,15 +63,17 @@ import { ofMediaType } from "../load-adapter.js";
 import { WasmBridge } from "../wasm-bridge.js";
 import { checkouts } from "./components.js";
 import { bridgeRecord } from "./bridge-record.js";
-import { openDatabase } from "./sqlite.js";
 import {
   fixtureNames,
   sqlCheckAssertions,
-  type SqlCheckOptions,
   sqlFunctionAssertions,
-  sqlNamedAssertions,
   unchosenSqlAssertions,
 } from "../sql-check.js";
+import {
+  sqlStaticAssertions,
+  sqlWholeRunAssertions,
+} from "../sql-static-check.js";
+import { seconds, sqlCheckOptions, sqlOnly, summary } from "./sql-run.js";
 
 const RUNTIME = "cascade-runtime-js";
 const KIT = "conformance/";
@@ -87,12 +89,6 @@ function folderMap(pairs: readonly string[]): Map<string, string> {
       return [pair.slice(0, at), pair.slice(at + 1)];
     }),
   );
-}
-
-function summary(assertions: readonly Assertion[]): string {
-  const count = (outcome: Assertion["outcome"]): number =>
-    assertions.filter((a) => a.outcome === outcome).length;
-  return `${assertions.length} tests: ${count("passed")} passed, ${count("failed")} failed, ${count("inapplicable")} inapplicable`;
 }
 
 function testedWith(resolved: Resolved): TestedWith {
@@ -163,12 +159,14 @@ async function conformance(args: string[]): Promise<number> {
     },
   });
   if (values["sql-only"] !== undefined) {
-    const clash = (["sql", "feature", "assertions", "report", "jobs"] as const)
-      .filter((option) => values[option] !== undefined)
+    const clash = (
+      ["sql", "feature", "assertions", "report", "jobs", "folder"] as const
+    )
+      .filter((option) => (values[option]?.length ?? 0) > 0)
       .map((option) => `--${option}`);
     if (clash.length > 0)
       throw new Error(
-        `--sql-only runs the named SQL comparisons and nothing else, so it is not given with ${clash.join(", ")}`,
+        `--sql-only runs the named SQL comparisons and nothing else, over the vocabulary beside this checkout, so it is not given with ${clash.join(", ")}: a --folder is read only where there is no sibling checkout, and an author checks the sibling`,
       );
   }
   const root = findRoot(dirname(fileURLToPath(import.meta.url)));
@@ -257,12 +255,15 @@ async function conformance(args: string[]): Promise<number> {
       log(
         `the vocabulary's SQL: ${(await checked).length + sqlShards.reduce((sum, { assertions }) => sum + assertions, 0)} assertions in ${seconds(Math.max(...sqlShards.map(({ ended }) => ended)))} s, over ${sqlShards.length} runs beside the features'`,
       );
+    const sqlSeen =
+      values.feature === undefined ? [...assertions, ...(await checked)] : [];
     await reported(
       values.feature === undefined
         ? [
             ...assertions,
             ...(await kitFindingAssertions(files, config, converting.adapters)),
             ...(await checked),
+            ...sqlWholeRunAssertions(files, sqlSeen),
           ]
         : assertions,
       report,
@@ -356,29 +357,21 @@ async function sqlAssertions(files: FolderFiles): Promise<Assertion[]> {
   return assertions;
 }
 
-/** The SQL check's assertions that no fixture is dealt: each function's vectors, and each `.sql` no fixture chooses. */
+/**
+ * The SQL check's assertions that no fixture is dealt: each function's vectors, each `.sql` no fixture chooses, and the
+ * checks over the SQL files themselves.
+ */
 async function sqlChecksBesideTheShards(
   files: FolderFiles,
 ): Promise<Assertion[]> {
   return [
-    ...(await sqlFunctionAssertions(files)),
+    ...(await sqlFunctionAssertions(files, () => new OxigraphStore())),
     ...(await unchosenSqlAssertions({
       vocabulary: files,
       newStore: () => new OxigraphStore(),
     })),
+    ...(await sqlStaticAssertions(await sqlCheckOptions(files))),
   ];
-}
-
-const seconds = (milliseconds: number): string =>
-  (milliseconds / 1000).toFixed(1);
-
-async function sqlCheckOptions(files: FolderFiles): Promise<SqlCheckOptions> {
-  return {
-    vocabulary: files,
-    newStore: () => new OxigraphStore(),
-    layout: await Layout.read(files, () => new OxigraphStore()),
-    open: (functions) => openDatabase(":memory:", { functions }),
-  };
 }
 
 /**
@@ -393,29 +386,6 @@ async function sqlCheckDealt(
     await sqlCheckOptions(files),
     (await fixtureNames(files)).filter((_, at) => at % count === index),
   );
-}
-
-/**
- * The comparisons the names choose and nothing else, each said as it ends; the exit code is 1 when one fails, unlike a
- * conformance run's, which reports in the EARL file, for an author asking about one `.sql` has no report to read.
- */
-async function sqlOnly(
-  files: FolderFiles,
-  names: readonly string[],
-): Promise<number> {
-  const started = performance.now();
-  const assertions = await sqlNamedAssertions(
-    await sqlCheckOptions(files),
-    names,
-  );
-  for (const { name, outcome, why } of assertions)
-    console.error(
-      `${outcome}: ${name}${why === undefined ? "" : `\n  ${why.replaceAll("\n", "\n  ")}`}`,
-    );
-  console.error(
-    `${summary(assertions)} in ${seconds(performance.now() - started)} s`,
-  );
-  return assertions.some(({ outcome }) => outcome !== "passed") ? 1 : 0;
 }
 
 function dealOf(given: string): [number, number] {
