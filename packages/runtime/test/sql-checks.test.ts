@@ -300,6 +300,7 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
         },
       };
       const checked = new Set<string>();
+      const observed: string[] = [];
       for (let again = 0; again < 3; again += 1)
         assert.deepEqual(
           await sqlFailures(
@@ -307,12 +308,16 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
             counting,
             ported,
             undefined,
-            undefined,
+            observed,
             checked,
           ),
           [],
         );
       assert.equal(refills, 1, "refilled once for three comparisons");
+      assert.deepEqual(
+        observed.filter((each) => each.startsWith("two-addresses:")),
+        [`two-addresses:${view}`],
+      );
       assert.deepEqual([...checked], [view]);
       failing = Object.assign(new Error("NOT NULL constraint failed"), {
         code: "SQLITE_CONSTRAINT_NOTNULL",
@@ -444,18 +449,20 @@ SELECT 1;
         "queries/views/w.rq",
         "rows:queries/views/w.rq",
         "screen:queries/views/w.rq",
+        "two-addresses:queries/views/w.rq",
       ),
     ]);
     assert.equal(unscreened[0]?.outcome, "failed");
     assert.match(
       unscreened[0]?.why ?? "",
-      /no fixture whose screens are filled keyed gives its screen a row: queries\/views\/v\.rq$/,
+      /no fixture whose screens are filled keyed gives its screen a row: queries\/views\/v\.rq\n.*two addresses: queries\/views\/v\.rq$/,
     );
     const views = sqlWholeRunAssertions(files, [
       compared(
         "queries/views/v.rq",
         "rows:queries/views/v.rq",
         "screen:queries/views/v.rq",
+        "two-addresses:queries/views/v.rq",
         "kept:unchanged",
         "kept:moved",
       ),

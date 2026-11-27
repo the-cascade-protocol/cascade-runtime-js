@@ -284,11 +284,15 @@ export function sqlWholeRunAssertions(
   const rows = seen("rows:");
   const kept = seen("kept:");
   const screened = seen("screen:");
+  const addressed = seen("two-addresses:");
   const named = (check: string, lines: readonly string[]): Assertion =>
     assertionOf(vocabulary, check, SQL_WHOLE_RUN_CHECKS[check] ?? check, lines);
   const silent = [...compared].filter((rq) => !rows.has(rq)).sort();
   const unfilled = [...compared]
     .filter((rq) => rq.startsWith(VIEWS) && !screened.has(rq))
+    .sort();
+  const unaddressed = [...compared]
+    .filter((rq) => rq.startsWith(VIEWS) && !addressed.has(rq))
     .sort();
   const missing = [...compared].some((rq) => rq.startsWith(VIEWS))
     ? Object.keys(KEYED_KINDS).filter((kind) => !kept.has(kind))
@@ -306,6 +310,11 @@ export function sqlWholeRunAssertions(
           ? []
           : [
               `no fixture whose screens are filled keyed gives its screen a row: ${unfilled.join(", ")}`,
+            ]),
+        ...(unaddressed.length === 0
+          ? []
+          : [
+              `no fixture whose screen holds entries was filled with the view at two addresses: ${unaddressed.join(", ")}`,
             ]),
       ],
     ),

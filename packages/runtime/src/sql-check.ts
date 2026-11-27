@@ -1380,7 +1380,9 @@ export async function sqlFailures(
           `${fixture}, ${entry.name}, under ${lens}, ${ported.rq}: ${kind}: ${row}`,
         );
   }
-  lines.push(...twoAddressFailures(built, ported, where, twoAddressed));
+  lines.push(
+    ...twoAddressFailures(built, ported, where, twoAddressed, observed),
+  );
   const left = leftIn(db, before);
   if (left.length > 0)
     lines.push(
@@ -1498,14 +1500,15 @@ const viewNamed = (rq: string): string => rq.slice(VIEWS.length, -".rq".length);
  * Why a view's screen, whose entries the pod holds, is filled whole though the layout places the view at a second address,
  * where it should fail rather than name the view's entries after either address: the second address given, the screens'
  * rows deleted and every screen filled again, all put back after. Whether the fill refuses is a property of its text once
- * the pod holds entries, so a view is tried once for each run: `tried` holds the views that were, and is added to. A
- * refusal is a constraint's failure; any other error is the fill's own and is thrown.
+ * the pod holds entries, so a view is tried once for each run: `tried` holds the views that were, and is added to, and `observed` is told `two-addresses:` and the
+ * view's `.rq`. A refusal is a constraint's failure; any other error is the fill's own and is thrown.
  */
 function twoAddressFailures(
   built: BuiltFixture,
   ported: Ported,
   where: string,
   tried?: Set<string>,
+  observed?: string[],
 ): string[] {
   if (!ported.rq.startsWith(VIEWS) || tried?.has(ported.rq)) return [];
   const { db } = built;
@@ -1519,6 +1522,7 @@ function twoAddressFailures(
     .get(`<${WRITTEN_BY}>`, `"views/${viewNamed(ported.rq)}.rq"`);
   if (registered === undefined) return [];
   tried?.add(ported.rq);
+  observed?.push(`two-addresses:${ported.rq}`);
   return undone(db, () => {
     const make = termIdsOf(db);
     db.prepare("INSERT INTO quad (s, p, o, g) VALUES (?, ?, ?, ?)").run(
