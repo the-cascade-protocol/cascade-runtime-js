@@ -47,19 +47,17 @@ import {
   entryId,
   entryOf,
   HISTORY,
-  IDLE_LOCK_MS,
   joinedBy,
   LABS,
   maps,
   MEDICATIONS,
-  NOT_WORDS,
   pageNumber,
   panelSaid,
   panelsOf,
   patientName,
   patientNames,
-  QUESTIONS,
-  savedLoginChanged,
+  questionsOf,
+  type Section,
   slug,
   sourcesOf,
   tableId,
@@ -105,6 +103,32 @@ const NOT_WAITING =
   "These six words are not waiting any more. Make the pod again.";
 const SHOWN_ONCE =
   "These six words were shown once, and are not shown again. Make the pod again.";
+const NOT_WORDS = "Those aren't words 2 and 5.";
+const WORDS_CHANGED =
+  "Don't change the Password field or take a suggested password: it must hold the six words above, so your password manager saves the words that open the pod.";
+const POD_CHANGED =
+  "The Pod field must keep the pod's name, so the saved login matches the Open page.";
+
+/**
+ * What is wrong with the visible `password` and `username` of a submitted six-words form, or undefined when they are
+ * still the `words` shown (spaces compared as single ones) and the pod's name `pod`. Never repeats a submitted value.
+ */
+function savedLoginChanged(
+  fields: { get(name: string): unknown },
+  pod: string,
+  words: string,
+): string | undefined {
+  const joined = String(fields.get("password") ?? "")
+    .trim()
+    .split(/\s+/)
+    .join(" ");
+  if (joined !== words) return WORDS_CHANGED;
+  if (String(fields.get("username") ?? "") !== pod) return POD_CHANGED;
+  return undefined;
+}
+
+/** How long an encrypted pod stays open with no request the person caused before it is closed and asks for its words again, and the page is drawn again. */
+export const IDLE_LOCK_MS = 15 * 60 * 1000;
 
 /** How often a quiet instance looks at the clock; a request looks at it too, so the pod is closed no later than its next one. */
 export const IDLE_CHECK_MS = 30 * 1000;
@@ -381,11 +405,17 @@ function typed<K extends Operation, Output>(
 /**
  * The operations over the pods and tables `host` gives; `host.hospitals` and `host.world` are read at each call. An
  * encrypted pod is closed, and asks for its words again, once `IDLE_LOCK_MS` of `clock`'s milliseconds pass with no call.
+ * `sections` are the app's tiles: `answers` asks their questions too, and an entry, its names and Worth a look read
+ * their rows as the tiles show them. With none, a page reads only the questions every pod's page asks.
  */
 export function podApi(
   host: PodHost,
-  { clock = () => Date.now() }: { clock?: () => number } = {},
+  {
+    clock = () => Date.now(),
+    sections = [],
+  }: { clock?: () => number; sections?: readonly Section[] } = {},
 ) {
+  const questions = questionsOf(sections);
   /** Each pod this instance opened, by name, as the promise of its opening. */
   const opened = new Map<string, Promise<Pod>>();
   /** The title each pod keeps, by name, once read. */
@@ -575,7 +605,7 @@ export function podApi(
     waiting.catch(() => undefined);
     const answers: Answers = Object.fromEntries(
       await Promise.all(
-        QUESTIONS.map(async (question) => [question, await pod.ask(question)]),
+        questions.map(async (question) => [question, await pod.ask(question)]),
       ),
     );
     const changes = changesIn(answers[HISTORY] ?? [], answers[LABS] ?? [], {
@@ -658,7 +688,7 @@ export function podApi(
   function aboutCodes(answered: Answers, pod: Pod) {
     return host
       .tables(pod)
-      .then((tables) => codesSaid(answered, { tables }))
+      .then((tables) => codesSaid(answered, { tables, sections }))
       .catch((error: Error) => {
         host.unsaid?.("names", error);
         return undefined;
@@ -708,7 +738,7 @@ export function podApi(
       host
         .tables()
         .then(async (tables) =>
-          panelsOf(entryOf(answered.answers, id), {
+          panelsOf(entryOf(answered.answers, id, { sections }), {
             tables,
             held: await tables.held(),
           }),
@@ -723,6 +753,7 @@ export function podApi(
         said: variants,
         held: heldNow,
         joined,
+        sections,
       }),
       panels,
       joined: pairs(joined),
@@ -938,6 +969,7 @@ export function podApi(
           answered.answers,
           about as Abouts | undefined,
           variants as VariantsSaid | undefined,
+          sections,
         ).map(({ sentence, entry, tag }) => ({
           sentence,
           entry: entryId(entry),

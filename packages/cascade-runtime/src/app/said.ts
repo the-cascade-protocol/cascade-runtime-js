@@ -1,16 +1,12 @@
-// What a pod's page says, as data: the sections and their rows, the names, dates and sentences the pages draw, from a
-// pod's question rows and what the tables answer. Plain functions whose one import is the runtime's terms (beside its
-// types, which are erased), which the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser
-// alike.
+// What any app showing a pod says the same way: the names, dates, review reasons and other sentences made from a pod's
+// question rows, the tables' answers, a hospital's record and the runtime's outcomes. Plain functions, in Node and in a
+// browser alike. The tiles a page shows are the app's own: a function that reads them takes them as `sections`.
 
 import type { DateIs } from "../changes.js";
 import {
   medicationsSharingAnIngredient,
   reportDiffers,
   reportsDifferingFromClinVar,
-  TIER_OF_KIND,
-  type ToolKind,
-  type ToolTier,
 } from "../pod-tools.js";
 import { terms } from "../terms.js";
 
@@ -100,30 +96,25 @@ export interface Source {
   readonly series: readonly Series[];
 }
 
-/** What a column of a section's table sorts and shows. */
-export type ColumnType = "text" | "date" | "number";
-/** A column of a section's table: its heading, what a cell shows, and what the column sorts by. */
+/** A column of a section's table, as an entry's page says it: its heading, and what a cell shows. */
 export interface Column {
   readonly head: string;
-  readonly type: ColumnType;
-  key(row: SectionRow): string | number | undefined;
   show(row: SectionRow): string;
-  warm?(row: SectionRow): boolean;
-  readonly tag?: boolean;
 }
-/** A tile of a pod's page, as `SECTIONS` holds them. */
+/**
+ * A tile of a pod's page, as the app gives it and these functions read it: what one of its rows is called, the question
+ * it shows the rows of, the column of the record's own name for it, the columns holding its codes in the order a name
+ * is taken from them, which of the question's rows it shows, and its table's columns, the name's first. A tile with
+ * `rows` builds them from several questions and `said` (`variantsSaid`'s answer) instead, as `variantRows` does.
+ */
 export interface Section {
-  readonly title: string;
   readonly one: string;
   readonly question?: string;
   readonly field: string;
   readonly codes: readonly string[];
   shows?(row: SectionRow): boolean;
-  current?(row: SectionRow): boolean;
   rows?(answers: Answers, said?: VariantsSaid): SectionRow[];
   readonly columns: readonly Column[];
-  readonly sortBy: number;
-  readonly newestFirst?: boolean;
 }
 
 /** A line of Worth a look. */
@@ -290,39 +281,6 @@ export interface Therapy {
   written?: string;
   ended?: string;
 }
-/** A point of a chart: a day, as a time, and a value. */
-export interface Point {
-  readonly time: number;
-  readonly value: number;
-}
-/** A day marked across a chart. */
-export interface Mark {
-  readonly time: number;
-  readonly kind: string;
-  readonly text: string;
-}
-/** The size of a chart. */
-export interface Size {
-  readonly width: number;
-  readonly height: number;
-  readonly margin: {
-    readonly top: number;
-    readonly right: number;
-    readonly bottom: number;
-    readonly left: number;
-  };
-  readonly radius: number;
-}
-/** Where times and values fall in a chart, as `plotOf` gives it. */
-export interface Plot extends Size {
-  readonly from: number;
-  readonly to: number;
-  readonly low: number;
-  readonly high: number;
-  x(time: number): number;
-  y(value: number): number;
-}
-
 /** A pull, as `howOf` lists it. */
 export interface Pull {
   readonly label: string;
@@ -446,199 +404,7 @@ export function maps(
   return mapped;
 }
 
-/** A column of a section's table: its heading, what a cell shows, and what the column sorts by. */
-const text = (head: string, of: (row: SectionRow) => string): Column => ({
-  head,
-  type: "text",
-  key: of,
-  show: of,
-});
-const date = (head: string, of: (row: SectionRow) => string): Column => ({
-  head,
-  type: "date",
-  key: of,
-  show: (row) => day(of(row)),
-});
-const number = (
-  head: string,
-  of: (row: SectionRow) => string | number | undefined,
-): Column => ({
-  head,
-  type: "number",
-  key: of,
-  show: (row) => rounded(of(row)),
-});
-
-const SEVERITY: Readonly<Record<string, string>> = {
-  high: "High severity",
-  low: "Low severity",
-};
-
 const ACTIVE = terms.MedicationActive;
-const STOPPED = terms.MedicationStopped;
-const UNKNOWN = terms.MedicationUnknown;
-const ENTERED_IN_ERROR = terms.MedicationEnteredInError;
-
-/**
- * The lifecycle classes of rule L1 a person is shown, in the order the Medications table opens in, each with its word.
- * A medication of any but the last is current. Entered in error is not among them: such a medication is not shown.
- */
-const LIFECYCLES = (
-  [
-    [ACTIVE, "Active"],
-    [terms.MedicationPaused, "Paused"],
-    [UNKNOWN, "Unknown"],
-    [STOPPED, "Stopped"],
-  ] as const
-).map(([lifecycle, said], order) => ({ lifecycle, said, order }));
-
-/** A medication row's lifecycle class, as `LIFECYCLES` holds it: unknown when the row states none. */
-const lifecycleOf = (row: SectionRow) =>
-  LIFECYCLES.find(({ lifecycle }) => lifecycle === row.lifecycle) ??
-  LIFECYCLES.find(({ lifecycle }) => lifecycle === UNKNOWN)!;
-
-const isCurrent = (row: SectionRow) => lifecycleOf(row).lifecycle !== STOPPED;
-
-/**
- * A medication's status in a person's words: its lifecycle class, with the day it stopped, or, for one not stopped
- * that states an end, the day it runs until.
- */
-function medicationStatus(row: SectionRow): string {
-  const { lifecycle, said } = lifecycleOf(row);
-  if (row.ended === undefined) return said;
-  return lifecycle === STOPPED
-    ? `${said} ${day(row.ended)}`
-    : `${said}, until ${day(row.ended)}`;
-}
-
-/**
- * One tile for each of these questions, in this order: its title, what one of its rows is called, the column of the
- * record's own name for it, the columns holding its codes in the order a name is taken from them, the table's columns,
- * the column the table opens sorted by, and whether it opens with the newest first; and, for a section that has them,
- * which of its question's rows it shows and which of those are current, the tile counting and naming the current ones.
- */
-export const SECTIONS: readonly Section[] = [
-  {
-    title: "Allergies",
-    one: "allergy",
-    question: "pod/My active allergies",
-    field: "allergenName",
-    codes: ["code"],
-    columns: [
-      text("Allergen", (row) => row.allergenName!),
-      {
-        head: "Severity",
-        type: "number",
-        key: (row) =>
-          String(
-            row.criticality === undefined
-              ? 4
-              : (({ high: 1, low: 2 } as Readonly<Record<string, number>>)[
-                  row.criticality
-                ] ?? 3),
-          ),
-        show: (row) =>
-          row.criticality === undefined
-            ? ""
-            : (SEVERITY[row.criticality] ??
-              row.criticality.replaceAll("-", " ")),
-        warm: (row) => row.criticality === "high",
-        tag: true,
-      },
-    ],
-    sortBy: 1,
-  },
-  {
-    title: "Medications",
-    one: "medication",
-    question: "pod/My medication history",
-    field: "medication",
-    codes: ["code"],
-    shows: (row) => row.lifecycle !== ENTERED_IN_ERROR,
-    current: isCurrent,
-    columns: [
-      text("Medication", (row) => row.medication!),
-      {
-        head: "Status",
-        type: "text",
-        key: (row) =>
-          `${lifecycleOf(row).order} ${isCurrent(row) ? "" : (row.ended ?? "")} ${row.medication ?? ""}`,
-        show: medicationStatus,
-      },
-      date("Since", (row) => row.started!),
-      date("Prescribed", (row) => row.written!),
-    ],
-    sortBy: 1,
-  },
-  {
-    title: "Conditions",
-    one: "condition",
-    question: "pod/My active conditions",
-    field: "condition",
-    codes: ["conditionCode"],
-    columns: [
-      text("Condition", (row) => row.condition!),
-      date("Since", (row) => row.onset!),
-    ],
-    sortBy: 0,
-  },
-  {
-    title: "Lab results",
-    one: "lab result",
-    question: "pod/My lab results",
-    field: "test",
-    codes: ["code"],
-    columns: [
-      text("Test", (row) => row.test!),
-      number("Value", (row) => row.value),
-      text("Unit", (row) => row.unit!),
-      date("Date", (row) => row.performed!),
-    ],
-    sortBy: 3,
-    newestFirst: true,
-  },
-  {
-    title: "Immunizations",
-    one: "immunization",
-    question: "pod/My immunizations",
-    field: "vaccine",
-    codes: ["code"],
-    columns: [
-      text("Vaccine", (row) => row.vaccine!),
-      date("Date", (row) => row.given!),
-    ],
-    sortBy: 1,
-    newestFirst: true,
-  },
-  {
-    title: "Procedures",
-    one: "procedure",
-    question: "pod/My procedures",
-    field: "procedure",
-    codes: ["procedureCode"],
-    columns: [
-      text("Procedure", (row) => row.procedure!),
-      date("Date", (row) => row.performed!),
-    ],
-    sortBy: 1,
-    newestFirst: true,
-  },
-  {
-    title: "Genetic variants",
-    one: "variant",
-    field: "variant",
-    codes: [],
-    rows: variantRows,
-    columns: [
-      text("Variant", (row) => row.variant!),
-      number("Reports", (row) => row.reports),
-    ],
-    sortBy: 0,
-  },
-];
-
-/** How long an encrypted pod stays open with no request the person caused before it is closed and asks for its words again, and the page is drawn again. */
-export const IDLE_LOCK_MS = 15 * 60 * 1000;
 
 export const SOURCES = "entry/Where it came from";
 export const REVIEW = "entry/What needs review";
@@ -689,8 +455,8 @@ const VERSIONS = "record/What each version says";
 /** The questions only the import history under What changed reads: see `withImportHistory`. */
 export const IMPORT_HISTORY = [REVISIONS, VERSIONS];
 
-/** Every question `podPage` reads: ask each, and hand it the rows by question. */
-export const QUESTIONS = [
+/** Every question a pod's page reads with `sections` as its tiles: ask each, and hand it the rows by question. */
+export const questionsOf = (sections: readonly Section[]) => [
   ...new Set([
     SOURCES,
     SEEN,
@@ -699,7 +465,7 @@ export const QUESTIONS = [
     REPORTS,
     HISTORY,
     IMPORTS,
-    ...SECTIONS.flatMap(({ question }) => question ?? []),
+    ...sections.flatMap(({ question }) => question ?? []),
   ]),
 ];
 
@@ -721,13 +487,15 @@ export const isCode = (code: string | undefined): code is string =>
   /^[a-z][a-z\d+.-]*:/i.test(code ?? "");
 
 /**
- * The codes the sections' rows in `answers`, and every row of the medication history, hold, each once: what to ask the
- * tables' `about` of. The Medications section is the history less the medications entered in error, and the change
- * cards name their medication by any row of it.
+ * The codes the rows of `sections` in `answers`, and every row of the medication history, hold, each once: what to ask
+ * the tables' `about` of. The change cards name their medication by any row of the history.
  */
-export function codesOf(answers: Answers): string[] {
+export function codesOf(
+  answers: Answers,
+  sections: readonly Section[] = [],
+): string[] {
   const codes = [
-    ...SECTIONS.flatMap((section) =>
+    ...sections.flatMap((section) =>
       sectionRows(section, answers).flatMap((row) =>
         section.codes.map((column) => row[column]),
       ),
@@ -755,15 +523,16 @@ function namingOf(section: Section, row: SectionRow, about: Abouts) {
 }
 
 /**
- * The credit each series asks for that named a row of the sections in `answers` (by `about`), once, among `held`: a
+ * The credit each series asks for that named a row of `sections` in `answers` (by `about`), once, among `held`: a
  * credit travels with what a table says, and a series whose names a page shows is one of them.
  */
 export function namingCredits(
   answers: Answers,
   about: Abouts,
   held: readonly Series[],
+  sections: readonly Section[] = [],
 ): string[] {
-  const origins = SECTIONS.flatMap((section) =>
+  const origins = sections.flatMap((section) =>
     section.question === undefined || answers[section.question] === undefined
       ? []
       : sectionRows(section, answers).flatMap((row) => {
@@ -781,13 +550,14 @@ export function namingCredits(
 }
 
 /**
- * The sections' rows in `answers`, each named by the first of its codes `about` (the tables' `about`) names, else by
- * the record's own text, and `tags` when it has any: `Retired code` when the code that named it, or with none the first
- * of its codes with a status, is retired, and `Needs review` when What needs review names its entry.
+ * `answers` with the rows of each of `sections` named by the first of its codes `about` (the tables' `about`) names,
+ * else by the record's own text, and `tags` when it has any: `Retired code` when the code that named it, or with none
+ * the first of its codes with a status, is retired, and `Needs review` when What needs review names its entry.
  */
 export function named(
   answers: Answers,
   about: Abouts,
+  sections: readonly Section[] = [],
 ): Record<string, readonly SectionRow[]> {
   const renamed: Record<string, readonly SectionRow[]> = Object.fromEntries(
     Object.keys(answers).map((question) => [
@@ -796,7 +566,7 @@ export function named(
     ]),
   );
   const review = reviewed(answers);
-  for (const section of SECTIONS) {
+  for (const section of sections) {
     if (
       section.question === undefined ||
       answers[section.question] === undefined
@@ -816,15 +586,18 @@ export function named(
 }
 
 /**
- * What the tables say of the codes `answers` hold, as the tables' `about` answers (`tables` is the tables), and of the
- * ingredients those codes map to, which the sentences that name an ingredient need. An ingredient the tables cannot say
- * is left unnamed; the codes' own answer failing throws.
+ * What the tables say of the codes `answers` hold for `sections` (`codesOf`), as the tables' `about` answers (`tables`
+ * is the tables), and of the ingredients those codes map to, which the sentences that name an ingredient need. An
+ * ingredient the tables cannot say is left unnamed; the codes' own answer failing throws.
  */
 export async function codesSaid(
   answers: Answers,
-  { tables }: { tables: Pick<Tables, "about"> },
+  {
+    tables,
+    sections = [],
+  }: { tables: Pick<Tables, "about">; sections?: readonly Section[] },
 ): Promise<Map<string, About>> {
-  const about = await tables.about(codesOf(answers));
+  const about = await tables.about(codesOf(answers, sections));
   const ingredients = new Set(
     [...about.values()].flatMap((each) => each.ingredients?.codes ?? []),
   );
@@ -855,22 +628,6 @@ export function day(text: string | undefined): string {
         day: "numeric",
         year: "numeric",
         timeZone: "UTC",
-      });
-}
-
-/**
- * A time of the app's clock, as the day it fell on where the page is drawn: the person's own day. A date with no time
- * is said as written, as `day` says it.
- */
-export function localDay(text: string | undefined): string {
-  if (text === undefined || !/T\d\d:\d\d/.test(String(text))) return day(text);
-  const date = new Date(Date.parse(String(text)));
-  return Number.isNaN(date.getTime())
-    ? String(text)
-    : date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
       });
 }
 
@@ -1161,7 +918,8 @@ export function fromLabel(label = ""): Item {
  * today, which `said` (`variantsSaid`'s answer, none until the tables can say) gives; then each pair of medications in
  * two entries whose codes have an ingredient in common, which the tables' `about` gives. A line that needs the tables
  * comes after those that do not, so the part only grows when they load. `answers` holds the rows of each of
- * `QUESTIONS`, by question.
+ * `questionsOf(sections)`, by question. An entry a row of `sections` shows is named as the row names it, and called what
+ * one of the tile's rows is called; any other is named and called from its label.
  *
  * The pair is a hint the starter gives, not something the pod knows: a pod's questions never read the tables' rows.
  * A combination maps to its own multiple-ingredient concept (MIN), never to each of its ingredients, so lisinopril and
@@ -1171,9 +929,10 @@ export function worthALook(
   answers: Answers,
   about: Abouts = new Map(),
   said?: VariantsSaid,
+  sections: readonly Section[] = [],
 ): Line[] {
   const entries = new Map<string, Item>();
-  for (const section of SECTIONS)
+  for (const section of sections)
     for (const row of sectionRows(section, answers))
       entries.set(row.entry!, {
         name: row[section.field] || fromLabel(row.entryLabel).name,
@@ -1250,13 +1009,12 @@ interface Shared {
 
 /**
  * A `{ sentence, entries }` for each pair of active medications (rule L1's class) in two entries whose codes share an
- * ingredient, in the order of the section, once for the pair of entries whatever codes their rows show, and none for a pair whose rows share a
+ * ingredient, in the order of the medication history's rows, once for the pair of entries whatever codes their rows show, and none for a pair whose rows share a
  * code, which What needs review lists. `entries` are the pair's `{ entry, origin }`, the first the sentence's subject and
  * `origin` the table version its code's ingredients were read from.
  */
 export function sharedIngredients(answers: Answers, about: Abouts): Shared[] {
-  const medications = SECTIONS.find(({ one }) => one === "medication")!;
-  const rows = sectionRows(medications, answers);
+  const rows = rowsOf(answers, HISTORY);
   const nameOf = (entry: string, code: string) => {
     const row = rows.find(
       (each) =>
@@ -1605,10 +1363,13 @@ export function variantReports(
 }
 
 /**
- * The Genetic variants section's rows: `{ entry, variant, reports, tags }` for each variant `variantReports` gives,
- * `tags` only when it has any.
+ * The rows of a tile of genetic variants, as its `rows`: `{ entry, variant, reports, tags }` for each variant
+ * `variantReports` gives, `tags` only when it has any.
  */
-function variantRows(answers: Answers, said?: VariantsSaid): SectionRow[] {
+export function variantRows(
+  answers: Answers,
+  said?: VariantsSaid,
+): SectionRow[] {
   const review = reviewed(answers);
   return [...variantReports(answers, said)].map(
     ([entry, { name, reports }]) => {
@@ -1623,21 +1384,6 @@ function variantRows(answers: Answers, said?: VariantsSaid): SectionRow[] {
         ...(tags.length > 0 && { tags }),
       } as unknown as SectionRow;
     },
-  );
-}
-
-/** The section's rows in the order its table opens in, a row with nothing to sort by last either way. */
-export function openingOrder(
-  section: Section,
-  rows: readonly SectionRow[],
-): SectionRow[] {
-  const column = section.columns[section.sortBy];
-  const key = (row: SectionRow) => String(column!.key(row) ?? "");
-  const order = section.newestFirst ? -1 : 1;
-  return [...rows].sort(
-    (a, b) =>
-      Number(key(a) === "") - Number(key(b) === "") ||
-      order * compare(column!.type, key(a), key(b)),
   );
 }
 
@@ -1666,37 +1412,6 @@ export const CHANGED: Readonly<
     `${test} was higher after ${medication} ${day}.`,
 };
 
-/** The view a model can open: the trend of one test, a medication marked. A host registers it with what runs it. */
-export const TREND_VIEW = {
-  name: "open_trend",
-  description:
-    "Opens the trend of one lab test over time, the days a medication was prescribed, started and stopped marked on it. It shows what changed after what, never why.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      test: { type: "string", description: "A LOINC code such as 18262-6." },
-      medication: {
-        type: "string",
-        description:
-          "An RxNorm code such as 617310, or the medication's name where it has no code; none marked if left out.",
-      },
-    },
-    required: ["test"],
-    additionalProperties: false,
-  },
-};
-
-export const DAY_MS = 86_400_000;
-export const timeOf = (text: string) =>
-  Date.parse(`${String(text).slice(0, 10)}T00:00:00Z`);
-export const dayAt = (time: number) => day(new Date(time).toISOString());
-export const monthAt = (time: number) =>
-  new Date(time).toLocaleDateString("en-US", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-export const near = (n: number) => Math.round(n * 10) / 10;
 export const resultsSaid = (n: number) =>
   `${n} ${n === 1 ? "result" : "results"}`;
 
@@ -1857,66 +1572,6 @@ export function therapySpan(
   return `${begun}${ended ? ` to ${dayOf(ended)}` : ", not stopped"}`;
 }
 
-/** Where a time and a value fall in a drawing of `size`, over the days and numbers of `points` and `marks`. */
-export function plotOf({
-  points,
-  marks = [],
-  size,
-}: {
-  points: readonly Point[];
-  marks?: readonly Mark[];
-  size: Size;
-}): Plot {
-  const { width, height, margin } = size;
-  const times = [
-    ...points.map(({ time }) => time),
-    ...marks.map(({ time }) => time),
-  ];
-  let from = Math.min(...times);
-  let to = Math.max(...times);
-  if (from === to) {
-    from -= DAY_MS;
-    to += DAY_MS;
-  }
-  const values = points.map(({ value }) => value);
-  let low = Math.min(...values);
-  let high = Math.max(...values);
-  const pad = (high - low) * 0.1 || Math.abs(low) * 0.1 || 1;
-  low -= pad;
-  high += pad;
-  const across = width - margin.left - margin.right;
-  const down = height - margin.top - margin.bottom;
-  return {
-    ...size,
-    from,
-    to,
-    low,
-    high,
-    x: (time) => margin.left + ((time - from) / (to - from)) * across,
-    y: (value) => margin.top + (1 - (value - low) / (high - low)) * down,
-  };
-}
-
-export const SMALL: Size = {
-  width: 240,
-  height: 84,
-  margin: { top: 8, right: 8, bottom: 8, left: 8 },
-  radius: 3,
-};
-export const LARGE: Size = {
-  width: 640,
-  height: 280,
-  margin: { top: 30, right: 36, bottom: 34, left: 60 },
-  radius: 4,
-};
-
-/** `count` values from `from` to `to`, evenly. */
-export const spread = (count: number, from: number, to: number) =>
-  Array.from(
-    { length: count },
-    (_, at) => from + ((to - from) * at) / (count - 1),
-  );
-
 /** The unit most of `results` carry, the earliest on a tie. */
 export function unitOf(results: readonly { readonly unit: string }[]): string {
   const counts = new Map<string, number>();
@@ -1939,8 +1594,6 @@ export function trendTitle(
   const { code, name, notation } = series.test;
   return labelled(about, code, name ?? notation ?? code);
 }
-
-export const LAB_SECTION = SECTIONS.find(({ question }) => question === LABS)!;
 
 /** The tables' name for `code` where it names it, else `own`. */
 export const labelled = (
@@ -1981,46 +1634,6 @@ export function sentenceOf(
   return capitalised(
     CHANGED[finding.direction]!(test, medication, medicationDay(finding).said),
   );
-}
-
-/** The most questions an empty chat offers. */
-const SUGGESTED = 4;
-
-/**
- * The questions an empty chat offers, as texts: at most `SUGGESTED`, in a fixed order, the same for the same input,
- * and each only when the pod holds what answers it. First "Find anything interesting in this pod", when What changed
- * has a change or Worth a look has a line (`worth_a_look` gives the lines); then, for each change shown, strongest first, "Did <test> change after
- * <medication> started?" (or "was prescribed", or "stopped", as `medicationDay` says), named as its card names them; last "Which medications have I stopped?", when a
- * medication of the history has an end date. The changes make room for the other two. `answers` holds the rows of each
- * of `QUESTIONS`, by question, and `changes`, `about` and `said` are as `podPage` takes them.
- */
-export function suggestedQuestions(
-  answers: Answers,
-  {
-    changes = [],
-    about = new Map(),
-    said,
-  }: { changes?: readonly Finding[]; about?: Abouts; said?: VariantsSaid },
-): string[] {
-  const shown = changes.filter(
-    ({ direction }) => direction !== "not enough results",
-  );
-  const first =
-    shown.length > 0 || worthALook(answers, about, said).length > 0
-      ? ["Find anything interesting in this pod"]
-      : [];
-  const last = rowsOf(answers, HISTORY).some((row) => row.ended)
-    ? ["Which medications have I stopped?"]
-    : [];
-  const changed = [
-    ...new Set(
-      shown.map((finding) => {
-        const names = changeNames(finding, about);
-        return `Did ${names.test} change after ${names.medication} ${medicationDay(finding).said}?`;
-      }),
-    ),
-  ].slice(0, SUGGESTED - first.length - last.length);
-  return [...first, ...changed, ...last];
 }
 
 /** A statement's field in words: `…#medicationUseEndDate` is `medication use end date`. */
@@ -2425,9 +2038,10 @@ function variantFacts(
 
 /**
  * The entry whose address part is `id` (see `entryId`), as its page reads it, or undefined when no row of "Where it
- * came from" has it. `answers` holds the rows of each of `QUESTIONS`, by question; `about` is `codesSaid`'s answer, and
- * `held` the tables' `held()`, both empty until the tables can say; `joined` is `joinedBy`'s answer, which names on the
- * entry's seen-more-than-once line the held table version whose rows joined its records.
+ * came from" has it. `answers` holds the rows of each of `questionsOf(sections)`, by question, `sections` being the
+ * app's tiles; `about` is `codesSaid`'s answer, and `held` the tables' `held()`, both empty until the tables can say;
+ * `joined` is `joinedBy`'s answer, which names on the entry's seen-more-than-once line the held table version whose rows
+ * joined its records.
  *
  * - `entry`, `name`, `kind` (`allergy`) and `tags`, as a row of its section has them: `Retired code`, `Needs review`
  *   when What needs review names it (an entry no section shows too), and `Differs` when a report of a variant does;
@@ -2441,7 +2055,7 @@ function variantFacts(
  *
  * An entry no section shows is named and kinded from its label, and has no columns or codes.
  *
- * A variant (the Genetic variants section's) has instead, by `variantFacts`: its genes and expressions for `what`, its
+ * A variant (a row of the section whose `rows` are `variantRows`) has instead, by `variantFacts`: its genes and expressions for `what`, its
  * ClinVar IDs for `codes`, the date of each report on the `where` line of its document as `issued`, and `known` lines
  * for each report, ClinVar today and the counsellor sentence; `said` is `variantsSaid`'s answer, none until the tables
  * can say.
@@ -2454,11 +2068,13 @@ export function entryOf(
     said,
     held = [],
     joined = new Map(),
+    sections = [],
   }: {
     about?: Abouts;
     said?: VariantsSaid;
     held?: readonly Series[];
     joined?: ReadonlyMap<string, readonly string[]>;
+    sections?: readonly Section[];
   } = {},
 ): Entry | undefined {
   const sources = rowsOf(answers, SOURCES);
@@ -2466,13 +2082,13 @@ export function entryOf(
   if (entry === undefined) return undefined;
   const ofEntry = <R extends Row>(rows: readonly R[]) =>
     rows.filter((row) => row.entry === entry);
-  const section = SECTIONS.find(
+  const section = sections.find(
     (each) => ofEntry(sectionRows(each, answers, said)).length > 0,
   );
   const rows =
     section === undefined ? [] : ofEntry(sectionRows(section, answers, said));
   const variant =
-    section?.one === "variant"
+    section?.rows === variantRows
       ? variantFacts(answers, entry, said, held)
       : undefined;
   const label = [
@@ -2529,7 +2145,7 @@ export function entryOf(
   for (const sentence of reviews.values())
     known.push({ sentence, tag: NEEDS_REVIEW });
   for (const { sentence, entries } of sharedIngredients(
-    named(answers, about),
+    named(answers, about, sections),
     about,
   )) {
     const origin = entries.find((each) => each.entry === entry)?.origin;
@@ -2577,7 +2193,7 @@ export function entryOf(
               ...(series !== undefined && { series }),
             };
           }),
-    ...(section?.one === "lab result" && { testCodes: codes }),
+    ...(section?.question === LABS && { testCodes: codes }),
     where: linesOf(ofEntry(sources), variant?.issued),
     known,
     credits: [
@@ -2747,10 +2363,6 @@ export function gradePerson(
   return grades.sort((a, b) => GRADES.indexOf(b) - GRADES.indexOf(a))[0];
 }
 
-/** The id of the new-pod box's checkbox, and the name of the field it adds to whichever form makes the pod. */
-export const ENCRYPT_BOX = "encrypt-pod";
-export const ENCRYPT_FIELD = "encrypt";
-
 /** What the person is told of each way a pod can fail to open, by `Unopened`'s outcome. */
 export const UNOPENED: Readonly<Record<string, string>> = {
   "incorrect secret":
@@ -2763,51 +2375,6 @@ export const UNOPENED: Readonly<Record<string, string>> = {
   "changed outside the runtime":
     "This pod was changed outside the app: a file in it is missing, damaged or swapped for another. Restore the pod from a copy you made before that, then open it again.",
 };
-
-/** What the six-words page says when the check fails, by the way it failed. */
-export const NOT_WORDS = "Those aren't words 2 and 5.";
-export const WORDS_CHANGED =
-  "Don't change the Password field or take a suggested password: it must hold the six words above, so your password manager saves the words that open the pod.";
-export const POD_CHANGED =
-  "The Pod field must keep the pod's name, so the saved login matches the Open page.";
-
-/**
- * What is wrong with the visible `password` and `username` of a submitted six-words form, or undefined when they are
- * still the `words` shown (spaces compared as single ones) and the pod's name `pod`. Never repeats a submitted value.
- */
-export function savedLoginChanged(
-  fields: { get(name: string): unknown },
-  pod: string,
-  words: string,
-): string | undefined {
-  const joined = String(fields.get("password") ?? "")
-    .trim()
-    .split(/\s+/)
-    .join(" ");
-  if (joined !== words) return WORDS_CHANGED;
-  if (String(fields.get("username") ?? "") !== pod) return POD_CHANGED;
-  return undefined;
-}
-
-/**
- * What the page says after a File menu item, from its address's `query`: `deleted=<n>`, how many pods went; `reset`,
- * that the pods `kits` are back; else undefined.
- */
-export function didNote(
-  query: { get(name: string): string | null; has(name: string): boolean },
-  kits: readonly string[],
-): string | undefined {
-  const deleted = query.get("deleted");
-  if (deleted !== null && /^\d+$/.test(deleted)) {
-    const count = Number(deleted);
-    return count === 0
-      ? "There was no pod to delete."
-      : `Deleted ${count} ${count === 1 ? "pod" : "pods"}.`;
-  }
-  if (query.has("reset"))
-    return `Reset: ${listed(kits.map((kit) => personName(kit)))} ${kits.length === 1 ? "is" : "are"} back.`;
-  return undefined;
-}
 
 /** A reference table's name in an address: its `urn:uuid:` without the prefix. */
 export function tableId(series: string): string {
@@ -2896,9 +2463,6 @@ export const RELATIONS = [
 
 export const relationName = (relation: string) =>
   RELATIONS.find(([each]) => each === relation)?.[1] ?? notationOf(relation);
-
-/** What a connection's box says while it brings a record in. */
-export const BRINGING = "Bringing the record in…";
 
 /** The page a query's `page` asks for: a whole number from 1, else 1. */
 export function pageNumber(asked: unknown): number {
@@ -3206,307 +2770,3 @@ export function failureSaid(
     ? undefined
     : { said: row.said(name), again: row.again };
 }
-
-/** The question a click on an "Ask about this" button for `context` sends at once; undefined for a kind it does not know. */
-export function firstQuestion(
-  context: { readonly kind?: string } | undefined,
-): string | undefined {
-  const questions: Readonly<Record<string, string>> = {
-    finding: "What does this change show?",
-    trend: "What does this trend show?",
-    entry: "What is this, and where did it come from?",
-    worth: "What does this flag mean?",
-  };
-  return Object.hasOwn(questions, context?.kind as PropertyKey)
-    ? questions[context!.kind!]
-    : undefined;
-}
-
-/** A tool's input, as its door checked it against the tool's schema; `pod` for a tool with `ofPod`. */
-export type ToolInput = Readonly<Record<string, string | undefined>>;
-
-/** The PodApi operations the tools a page runs call, each as PodApi answers it. */
-export interface PageToolsApi {
-  pod(input: { pod: string }): Promise<unknown>;
-  trend(input: {
-    pod: string;
-    test?: string;
-    medication?: string;
-    named?: boolean;
-  }): Promise<unknown>;
-  ask(input: { pod: string; question: string }): Promise<unknown>;
-  table(input: { id: string }): Promise<unknown>;
-  makePod(input: { person: string }): Promise<unknown>;
-  checkTables(input: object): Promise<unknown>;
-  setWorldDate(input: { date: string }): Promise<unknown>;
-}
-
-/** What a door gives the tools that move its app: its own addresses, and `open`, which moves the app to one. */
-export interface PageDoor {
-  readonly address: {
-    pod(name: string): string;
-    trend(
-      name: string,
-      trend: { test: string; medication?: string | undefined },
-    ): string;
-    entry(name: string, entry: string): string;
-    classes(name: string, picked?: string): string;
-    panel(name: string, panel: string): string;
-    table(
-      id?: string,
-      asked?: {
-        q?: string | undefined;
-        code?: string | undefined;
-      },
-    ): string;
-  };
-  open(address: string): Promise<void>;
-}
-
-/** A tool a page can run itself, with no runtime: it moves the app, or writes once the person has said yes (`ask`). Its `tier` is its `kind`'s. */
-export interface PageTool {
-  readonly name: string;
-  readonly description: string;
-  readonly inputSchema: object;
-  readonly kind: ToolKind;
-  readonly tier: ToolTier;
-  readonly ofPod?: true;
-  readonly opens?: true;
-  run(api: PageToolsApi, input: ToolInput, door: PageDoor): Promise<unknown>;
-}
-
-/** An error its door tells by its name, as PodApi's own refusals: the input was turned down and nothing was done. */
-export const refusal = (message: string): Error =>
-  Object.assign(new Error(message), { name: "Refusal" });
-
-export const NO_INPUT = {
-  type: "object",
-  properties: {},
-  additionalProperties: false,
-};
-
-/** Goes to `address` by the door's `open`, and gives it. */
-async function going(address: string, { open }: PageDoor) {
-  await open(address);
-  return { opened: address };
-}
-
-/**
- * The tools a page runs itself, the last nine of `TOOLS` in `tools.ts`: the six that move the app, each giving
- * `{ opened }`, and the three writes the person confirms first, each giving PodApi's answer. They need no runtime, so
- * the Node target's chat runs them in the page.
- */
-const PAGE_TOOLS_OF_KIND: readonly Omit<PageTool, "tier">[] = [
-  {
-    name: "open_pod",
-    description: "Opens a pod's page in the app.",
-    inputSchema: NO_INPUT,
-    kind: "MovingTheAppsView",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod = "" }, door) {
-      await api.pod({ pod });
-      return going(door.address.pod(pod), door);
-    },
-  },
-  {
-    name: TREND_VIEW.name,
-    description: TREND_VIEW.description,
-    inputSchema: TREND_VIEW.inputSchema,
-    kind: "MovingTheAppsView",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod = "", test, medication }, door) {
-      const drug = medication === "" ? undefined : medication;
-      const { series, timeline } = (await api.trend({
-        pod,
-        ...(test === undefined ? {} : { test }),
-        ...(drug === undefined ? {} : { medication: drug }),
-        named: false,
-      })) as {
-        series: { test: { notation?: string; code: string } };
-        timeline: { notation?: string; code?: string; name: string }[];
-      };
-      const wanted = drug?.toLowerCase();
-      const found =
-        drug === undefined
-          ? undefined
-          : timeline.find(
-              (each) =>
-                each.notation === drug ||
-                each.code === drug ||
-                each.name.toLowerCase() === wanted,
-            );
-      return going(
-        door.address.trend(pod, {
-          test: series.test.notation ?? series.test.code,
-          ...(found === undefined
-            ? {}
-            : { medication: found.notation ?? found.name }),
-        }),
-        door,
-      );
-    },
-  },
-  {
-    name: "open_entry",
-    description:
-      "Opens the page of one entry of a pod: what it is and where it came from.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        entry: {
-          type: "string",
-          description:
-            "The entry's IRI or ID, as the entry column of the rows of ask gives it.",
-        },
-      },
-      required: ["entry"],
-      additionalProperties: false,
-    },
-    kind: "MovingTheAppsView",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod = "", entry = "" }, door) {
-      const { rows } = (await api.ask({ pod, question: SOURCES })) as {
-        rows: { entry: string }[];
-      };
-      if (!rows.some((row) => entryId(row.entry) === entryId(entry)))
-        throw refusal(
-          `the pod ${pod} holds no entry ${entry}; ask's rows give each entry's ID in their entry column`,
-        );
-      return going(door.address.entry(pod, entry), door);
-    },
-  },
-  {
-    name: "open_classes",
-    description:
-      "Opens the page of a pod's medications by the classes they belong to, or with a class named, that class.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        class: {
-          type: "string",
-          description: "A class's name, to open it; left out for all of them.",
-        },
-      },
-      additionalProperties: false,
-    },
-    kind: "MovingTheAppsView",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod = "", class: picked }, door) {
-      await api.pod({ pod });
-      return going(
-        door.address.classes(pod, picked === "" ? undefined : picked),
-        door,
-      );
-    },
-  },
-  {
-    name: "open_panel",
-    description:
-      "Opens the page of a pod's results in one LOINC panel, with the tests the panel names that it has no result for.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        panel: {
-          type: "string",
-          description: "The panel's LOINC code, such as 24326-1.",
-        },
-      },
-      required: ["panel"],
-      additionalProperties: false,
-    },
-    kind: "MovingTheAppsView",
-    ofPod: true,
-    opens: true,
-    async run(api, { pod = "", panel = "" }, door) {
-      if (panel === "") throw refusal("a panel is a LOINC code: name one");
-      await api.pod({ pod });
-      return going(door.address.panel(pod, panel), door);
-    },
-  },
-  {
-    name: "open_table",
-    description:
-      "Opens a reference table, a search in it or one code of it; with none named, the list of the tables the app holds.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        table: {
-          type: "string",
-          description: "The table's ID, as its address names it.",
-        },
-        q: { type: "string", description: "Words to search the table for." },
-        code: {
-          type: "string",
-          description: "One code, to open what the tables say of it.",
-        },
-      },
-      additionalProperties: false,
-    },
-    kind: "MovingTheAppsView",
-    opens: true,
-    async run(api, { table, q, code }, door) {
-      if (table !== undefined && table !== "") await api.table({ id: table });
-      return going(
-        door.address.table(table === "" ? undefined : table, {
-          q: q === "" ? undefined : q,
-          code: code === "" ? undefined : code,
-        }),
-        door,
-      );
-    },
-  },
-  {
-    name: "make_pod",
-    description:
-      "Makes a pod for a person, named after them: empty, or the sample of that name; a pod of that name already there is left as it is. It is never encrypted.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        person: {
-          type: "string",
-          description: "The person's name, as they write it.",
-        },
-      },
-      required: ["person"],
-      additionalProperties: false,
-    },
-    kind: "MakingAPodThatIsNotEncrypted",
-    run: (api, { person = "" }) => api.makePod({ person }),
-  },
-  {
-    name: "check_tables",
-    description:
-      "Checks each source of the reference tables for a newer version and keeps any there is.",
-    inputSchema: NO_INPUT,
-    kind: "ChangingTheAppsTablesOrSettings",
-    run: (api) => api.checkTables({}),
-  },
-  {
-    name: "set_world_date",
-    description:
-      "Sets the date the demo hospitals answer as of: their records as they stood at the end of that day. An empty date takes it back to everything they hold.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        date: {
-          type: "string",
-          description:
-            "A day as YYYY-MM-DD, or an instant with its timezone; empty for none.",
-        },
-      },
-      required: ["date"],
-      additionalProperties: false,
-    },
-    kind: "ChangingTheAppsTablesOrSettings",
-    run: (api, { date = "" }) => api.setWorldDate({ date }),
-  },
-];
-
-/** The tools a page runs itself, each with the `tier` the protocol gives its `kind` of act. */
-export const PAGE_TOOLS: readonly PageTool[] = PAGE_TOOLS_OF_KIND.map(
-  (tool) => ({ ...tool, tier: TIER_OF_KIND[tool.kind] }),
-);

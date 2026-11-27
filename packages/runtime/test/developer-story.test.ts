@@ -209,7 +209,7 @@ const AMLODIPINE = {
  * The scripts the README and the get-started page walk a developer through, run as that developer runs them: from a
  * folder outside the repository, on a kit's downloads, with the real Bridge.
  */
-describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs, developer-story/first.mjs, developer-story/app.mjs", () => {
+describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs, developer-story/first.mjs, developer-story/app.mjs, developer-story/review.mjs", () => {
   describe("when `allergies.mjs` is run on Alex's first export", () => {
     let printed: StoryRow[];
     let expected: StoryRow[];
@@ -240,6 +240,26 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
     it('prints the rows that "My active allergies" answers on the kit\'s replay through step J1', (t) => {
       for (const row of printed) t.diagnostic(JSON.stringify(row));
       assert.deepEqual(multiset(printed.map(inPod)), multiset(expected));
+    });
+  });
+
+  describe("when `review.mjs` loads Alex's whole sample pod and says what needs review through `worthALook` of `cascade-runtime/app`", () => {
+    let printed: StoryRow[];
+
+    before(async () => {
+      printed = await story("review.mjs", "pods", []);
+    });
+
+    it("says, tagged Needs review, that sources disagree on how severe her Sulfamethoxazole allergy is, among what her pod says needs review", (t) => {
+      for (const row of printed) t.diagnostic(JSON.stringify(row));
+      assert.ok(
+        printed.some(
+          ({ sentence }) =>
+            sentence ===
+            "Sources disagree on how severe the Sulfamethoxazole allergy is.",
+        ),
+      );
+      assert.ok(printed.every(({ tag }) => tag === "Needs review"));
     });
   });
 

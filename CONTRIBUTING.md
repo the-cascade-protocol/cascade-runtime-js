@@ -195,7 +195,7 @@ To see where the time of a build went, [each build's flame graphs](https://refer
 
 ### The developer story
 
-There are three: two, one per epic, and the get-started page's script. `developer-story/allergies.mjs` is what an app would write against the package
+There are five: two, one per epic, the get-started page's script, and two of an app's core. `developer-story/allergies.mjs` is what an app would write against the package
 `cascade-runtime`: open a pod, look at Alex's first export, import it as hers
 and print her active allergies. It is the developer story of
 [#20](https://github.com/the-cascade-protocol/cascade-runtime-js/issues/20) and that epic's
@@ -215,6 +215,10 @@ same test file runs it and checks those rows.
 from `cascade-runtime/samples`, looks at it, imports it as hers and prints her four active allergies, each with the
 record it came from. The same test file runs it, on the installed package in CI, and checks the source and the
 allergies it prints; the page copies the script, so a change to what it prints is a change to the page.
+
+`developer-story/app.mjs` and `developer-story/review.mjs` are an app's core on `cascade-runtime/app`: the first loads
+Alex's sample through `J1` and prints her active allergies through `podApi`, which the same test checks against the
+replay; the second loads her whole sample and prints what needs review as `worthALook` says it, one sentence.
 
 ### The package
 

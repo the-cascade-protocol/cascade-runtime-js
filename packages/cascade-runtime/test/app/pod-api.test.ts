@@ -34,6 +34,7 @@ import {
   writeStarterCopies,
 } from "../../src/tables.js";
 import { importClaimingEveryProfile } from "../claiming.js";
+import { TILES } from "./fixtures.js";
 import {
   type Alter,
   answering,
@@ -78,9 +79,10 @@ type Api = Record<
 > & { close(): Promise<void> };
 type Host = Record<string, unknown> & { tables: unknown };
 
-/** What `podApi` takes besides the host: the clock the idle lock reads, in milliseconds. */
+/** What `podApi` takes besides the host: the clock the idle lock reads, in milliseconds, and the app's tiles. */
 interface Clocked {
   clock?: () => number;
+  sections?: typeof TILES;
 }
 /** The entry point an app imports, read as loosely as the tests call it. */
 const APP: string = "cascade-runtime/app";
@@ -90,13 +92,19 @@ const {
   notOpenedHere,
   WAIT_MS,
   IDLE_CHECK_MS,
+  IDLE_LOCK_MS,
   remoteApi,
   nodeHost,
   INPUT_SCHEMAS,
   refusalOf,
+  entryId,
+  testsIn,
 } = (await import(APP)) as {
   WAIT_MS: number;
   IDLE_CHECK_MS: number;
+  IDLE_LOCK_MS: number;
+  entryId: (entry: string) => string;
+  testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
   podApi: (host: Host, options?: Clocked) => Api;
   maps: (output: Output) => Output;
   notOpenedHere: (name: string) => string;
@@ -121,13 +129,6 @@ const {
     { safeParse(value: unknown): { success: boolean; error?: unknown } }
   >;
   refusalOf: (error: unknown) => string;
-};
-const { entryId, testsIn, IDLE_LOCK_MS } = (await import(
-  new URL("../../src/app/said.js", import.meta.url).href
-)) as {
-  IDLE_LOCK_MS: number;
-  entryId: (entry: string) => string;
-  testsIn: (labs: unknown[]) => { code: string; notation?: string }[];
 };
 /** What answers a request: the stand-in for the Node server's `/api/` routes. */
 interface App {
@@ -434,7 +435,7 @@ function crossing(built: Api): Api {
   return over;
 }
 function api(given: Host = host(), options?: Clocked) {
-  const built = podApi(given, options);
+  const built = podApi(given, { sections: TILES, ...options });
   made.push(built);
   const checked = {} as Api;
   for (const [name, operation] of Object.entries(built))
@@ -620,9 +621,12 @@ async function clinvarTables() {
   return { tables, parts: { ...found, tables } };
 }
 
-/** A stub pod `reviewed`: one thing that needs review, and one table version the app does not hold. */
-const reviewing = () => {
+/** A stub pod `reviewed`: one allergy that needs review, and one table version the app does not hold. */
+const reviewing = (options?: Clocked) => {
   const answered: Record<string, unknown[]> = {
+    "pod/My active allergies": [
+      { entry: "urn:uuid:0e1f", allergenName: "Latex" },
+    ],
     "entry/What needs review": [
       {
         entry: "urn:uuid:0e1f",
@@ -632,18 +636,21 @@ const reviewing = () => {
     ],
   };
   return crossing(
-    api({
-      ...host(),
-      pods: {
-        names: async () => ["reviewed"],
-        title: async () => undefined,
-        open: async () => ({
-          ask: async (question: string) => answered[question] ?? [],
-          unheldTableVersions: async () => ["urn:x:ingredient-map-2"],
-          close: async () => {},
-        }),
+    api(
+      {
+        ...host(),
+        pods: {
+          names: async () => ["reviewed"],
+          title: async () => undefined,
+          open: async () => ({
+            ask: async (question: string) => answered[question] ?? [],
+            unheldTableVersions: async () => ["urn:x:ingredient-map-2"],
+            close: async () => {},
+          }),
+        },
       },
-    }),
+      options,
+    ),
   );
 };
 
@@ -1029,6 +1036,17 @@ describe("Asking a pod a named question, and running a tool on it · api.ask(), 
 
     it("names each line's view entry by its short id, as `entryId()` gives it", async () => {
       assert.equal((await lines()).value[0].entry, entryId("urn:uuid:0e1f"));
+    });
+
+    it("calls a line's entry what the app's tile calls one of its rows, as `podApi`'s `sections` give them", async () => {
+      const allergies = TILES.find(({ one }) => one === "allergy")!;
+      const { value } = await reviewing({
+        sections: [{ ...allergies, one: "reaction" }],
+      }).tool({ pod: "reviewed", tool: "worth_a_look" });
+      assert.equal(
+        value[0].sentence,
+        "Latex was marked as different, but is still shown as one reaction.",
+      );
     });
 
     it("returns none for a pod with nothing worth a look", async () => {
