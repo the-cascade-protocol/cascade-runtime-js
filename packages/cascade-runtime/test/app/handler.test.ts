@@ -300,7 +300,6 @@ describe("Guarding the server · guard, newLaunch(), GET /?launch=<token>", () =
       ["POST", "/chat"],
       ["POST", "/api/pods/"],
       ["GET", "/tools/"],
-      ["GET", "/chat/"],
     ] as const)
       it(`responds 403 to ${method} ${path}, in JSON, and runs no operation`, async () => {
         const { request, calls } = served();
@@ -406,6 +405,66 @@ describe("Guarding the server · guard, newLaunch(), GET /?launch=<token>", () =
       assert.equal(spent.status, 303, "a wrong token spends nothing");
     });
   });
+});
+
+/**
+ * An address with a closing slash is a different address from the route's, as the starter kit's server answers it:
+ * the kit's strict routing hands `/chat/`, `/tools/`, `/callback/` and `/demo-people.json/` to the app's pages, answers
+ * `/api/pods/` as no operation, and asks for the launch cookie only where the route's own address would be asked.
+ */
+describe("Matching an address exactly, with a closing slash and without · appHandler()", () => {
+  const asked = async (method: string, path: string, held: boolean) => {
+    const reached: string[] = [];
+    const { request, cookie } = served(stubApi(), {
+      chat: () => new Response("chat"),
+    });
+    const answered = await request(
+      path,
+      {
+        method,
+        headers: {
+          origin: ORIGIN,
+          "content-type": "application/json",
+          ...(held ? { cookie: cookie() } : {}),
+        },
+        ...(method === "POST" && { body: "{}" }),
+      },
+      (given) => {
+        reached.push(new URL(given.url).pathname);
+        return new Response(`page ${new URL(given.url).pathname}`);
+      },
+    );
+    return { status: answered.status, text: await answered.text(), reached };
+  };
+
+  for (const [method, path, text] of [
+    ["GET", "/chat/", "page /chat/"],
+    ["GET", "/callback/", "page /callback/"],
+    ["GET", "/demo-people.json/", "page /demo-people.json/"],
+    ["GET", "//?launch=x", "page //"],
+  ] as const)
+    it(`hands ${method} ${path} to the app's pages, whether or not the page holds the launch cookie`, async () => {
+      for (const held of [false, true]) {
+        const answered = await asked(method, path, held);
+        assert.equal(answered.status, 200, `${held}`);
+        assert.equal(answered.text, text, `${held}`);
+      }
+    });
+
+  for (const [method, path, status, text] of [
+    ["POST", "/api/pods/", 404, '{"refused":"no such operation"}'],
+    ["GET", "/tools/", 200, "page /tools/"],
+    ["POST", "/tools/%E0%A4%A", 404, '{"refused":"no such tool"}'],
+  ] as const)
+    it(`responds 403 to ${method} ${path} without the launch cookie, and ${status} with it`, async () => {
+      const refused = await asked(method, path, false);
+      assert.equal(refused.status, 403);
+      assert.match(JSON.parse(refused.text).refused, REFUSED_ADDRESS);
+      assert.deepEqual(refused.reached, []);
+      const answered = await asked(method, path, true);
+      assert.equal(answered.status, status);
+      assert.equal(answered.text, text);
+    });
 });
 
 /**
