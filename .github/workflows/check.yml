@@ -19,6 +19,9 @@ permissions:
 env:
   # Where the hub's header, strip and footer link the website, and where scripts/sync-chrome.mjs reads its css/chrome.css.
   WEBSITE_URL: https://cascadeprotocol.org
+  # Where this repository's docs site is served: the address its own "Reference" links, the base of its link checks and live
+  # tests, and the one perf.yml reads for its comment's links. Nothing else in the repository writes it.
+  HUB_URL: https://reference.cascadeprotocol.org
 
 jobs:
   # Which of the jobs that run after the merge a pull request runs as well. On a push, nightly and by hand every one runs;
@@ -477,7 +480,7 @@ jobs:
       # report from the recorded runs (CI never calls a model, it only checks every recorded run renders).
       - name: Build the Pages tree
         if: ${{ !cancelled() }}
-        run: npm run build:pages -- --website "${WEBSITE_URL:?WEBSITE_URL is empty, so the hub would link no website}" --built "$(git log -1 --format=%cs)"
+        run: npm run build:pages -- --website "${WEBSITE_URL:?WEBSITE_URL is empty, so the hub would link no website}" --hub "${HUB_URL:?HUB_URL is empty, so the hub would link no page of itself}" --built "$(git log -1 --format=%cs)"
         env:
           GITHUB_TOKEN: ${{ github.token }}
       # Every link of the tree resolves as a file, its anchor in it, and a GitHub link into a repository checked out beside
@@ -486,7 +489,7 @@ jobs:
       - name: Every link of the tree resolves
         if: ${{ !cancelled() }}
         run: >-
-          node scripts/link-check.mjs --tree build/pages --no-external --save-external build/external-links.json
+          node scripts/link-check.mjs --tree build/pages --site "${HUB_URL}/" --no-external --save-external build/external-links.json
           --checkout the-cascade-protocol/cascade-runtime-js=.
           --checkout the-cascade-protocol/cascade-vocabulary=../cascade-vocabulary
           --checkout the-cascade-protocol/cascade-bridge-adapter-fhir-r4=../cascade-bridge-adapter-fhir-r4
@@ -597,7 +600,7 @@ jobs:
         with:
           name: external-links
           path: build
-      - run: node scripts/link-check.mjs --only-external build/external-links.json
+      - run: node scripts/link-check.mjs --only-external build/external-links.json --site "${HUB_URL}/"
 
   # The reverse check: the starter kit's own tests and checks, run on this commit's tarball, after the merge (push, nightly and
   # by hand) and on a pull request that names a starter kit pull request on Depends-On. A change the starter must
@@ -1130,11 +1133,11 @@ jobs:
             fetch "$repository" "$workflow" "$artifact" "$file" "build/tests/${repository#*/}"
           done
       - name: Build the Pages tree
-        run: npm run build:pages -- --report build/conformance/earl.ttl --tests build/tests --website "${WEBSITE_URL:?WEBSITE_URL is empty, so the hub would link no website}" --built "$(git log -1 --format=%cs)"
+        run: npm run build:pages -- --report build/conformance/earl.ttl --tests build/tests --website "${WEBSITE_URL:?WEBSITE_URL is empty, so the hub would link no website}" --hub "${HUB_URL:?HUB_URL is empty, so the hub would link no page of itself}" --built "$(git log -1 --format=%cs)"
         env:
           GITHUB_TOKEN: ${{ github.token }}
           # llms.txt links absolutely under the address the deploy serves; the pull request's artifact leaves it unset.
-          PAGES_URL: https://the-cascade-protocol.github.io/cascade-runtime-js/
+          PAGES_URL: ${{ env.HUB_URL }}/
       # The check `docs site` runs on a pull request, over the tree this job deploys.
       - name: Every pod's explorer data holds together
         run: node scripts/explorer-check.mjs --tree build/pages
@@ -1183,7 +1186,8 @@ jobs:
             fi
             if ! node scripts/perf-runs.mjs pages --data "$RUNNER_TEMP/perf-flame" --out build/pages/perf \
               --viewer node_modules/speedscope/dist/release --viewer-license node_modules/speedscope/LICENSE \
-              --repo "$GITHUB_REPOSITORY" --pages "https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/perf" \n              --perf-data "$RUNNER_TEMP/perf-data"; then
+              --repo "$GITHUB_REPOSITORY" --pages "${HUB_URL}/perf" \
+              --perf-data "$RUNNER_TEMP/perf-data"; then
               echo "::warning::/perf/runs/ is skipped: the builds' flame graphs could not be put in the site"
             fi
             # The main page, after the index of builds, so that a column opens a build's entry only where the index has one.
@@ -1266,7 +1270,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
       - run: npm run test:live
         env:
-          PAGES_URL: https://the-cascade-protocol.github.io/cascade-runtime-js/
+          PAGES_URL: ${{ env.HUB_URL }}/
           COMMIT: ${{ github.sha }}
 
   # The deployed site, nightly and by hand, not on a push: every link of every page, each README's Docs block and the
@@ -1279,8 +1283,6 @@ jobs:
     if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.pages.outputs.deployed == 'true' && (needs.live.result == 'success' || needs.live.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      PAGES_URL: https://the-cascade-protocol.github.io/cascade-runtime-js/
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1306,9 +1308,11 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
-      - run: node scripts/link-check.mjs --crawl --site "$PAGES_URL" --readmes
+      - run: node scripts/link-check.mjs --crawl --site "${HUB_URL}/" --readmes
       - if: ${{ !cancelled() }}
         run: npm run test:walkthrough
+        env:
+          PAGES_URL: ${{ env.HUB_URL }}/
 
   # connect and pull against the SMART launcher, a server this project did not write, over the network: nightly and by
   # hand only, so a network failure gates no pull request.

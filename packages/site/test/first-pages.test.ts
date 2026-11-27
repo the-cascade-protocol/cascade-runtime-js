@@ -212,8 +212,7 @@ describe("A newcomer's first pages · startSection, examplesSection, trySection"
 
   describe("with `try/index.html`", () => {
     let text: string;
-    const here =
-      "https://the-cascade-protocol.github.io/cascade-runtime-js/try/";
+    const here = "https://hub.example/try/";
     const sentFrom = async (
       registrations: string[],
       unregistered: string[],

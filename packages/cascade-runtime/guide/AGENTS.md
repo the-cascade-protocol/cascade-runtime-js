@@ -4,7 +4,7 @@
 
 A pod holds one person's health records, from their hospitals and what they
 entered themselves, with their judgments on them, read and written only through the calls
-of `cascade-runtime` below: <https://the-cascade-protocol.github.io/cascade-runtime-js/>.
+of `cascade-runtime` below: <https://reference.cascadeprotocol.org/>.
 
 ## What a pod holds
 

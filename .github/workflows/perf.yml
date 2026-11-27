@@ -413,12 +413,14 @@ jobs:
           set -euo pipefail
           : > "$RUNNER_TEMP/where.md"
           [ -f "$RUNNER_TEMP/flame/flame.json" ] || exit 0
-          site="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/perf/speedscope/"
+          # The docs site's address is check.yml's HUB_URL, the one place it is written.
+          hub=$(bash scripts/hub-url.sh)
+          site="${hub}/perf/speedscope/"
           if [ "$KEPT" = true ]; then
             raw="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/perf-flame/runtime/${DAY}/${GITHUB_RUN_ID}-${GITHUB_SHA::7}-${EVENT}"
             node scripts/perf-flame.mjs summary "$RUNNER_TEMP/flame" --markdown --files "$raw" --viewer "$site" > "$RUNNER_TEMP/where.md"
             echo >> "$RUNNER_TEMP/where.md"
-            echo "This build in [where the time goes, over time](https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/perf/), and its entry in [the flame graph index](https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/perf/runs/#${GITHUB_RUN_ID}-${GITHUB_SHA::7}) (both appear with the next deploy). The links above read the \`perf-flame\` branch and stop working when the build is no longer among the newest 30 kept there; the index lists what each kept build still has." >> "$RUNNER_TEMP/where.md"
+            echo "This build in [where the time goes, over time](${hub}/perf/), and its entry in [the flame graph index](${hub}/perf/runs/#${GITHUB_RUN_ID}-${GITHUB_SHA::7}) (both appear with the next deploy). The links above read the \`perf-flame\` branch and stop working when the build is no longer among the newest 30 kept there; the index lists what each kept build still has." >> "$RUNNER_TEMP/where.md"
           else
             node scripts/perf-flame.mjs summary "$RUNNER_TEMP/flame" --markdown --download "$DOWNLOAD" --viewer "$site" > "$RUNNER_TEMP/where.md"
           fi
@@ -583,6 +585,8 @@ jobs:
         run: |
           set -euo pipefail
           marker='<!-- perf-compare -->'
+          # The docs site's address is check.yml's HUB_URL, the one place it is written.
+          hub=$(bash scripts/hub-url.sh)
           # Main as this job measured it, beside the pull request, is what the pull request is compared with. The latest push's file,
           # taken on another run and perhaps another machine, is read only when that file is missing or unreadable (main's run in the
           # job failed): then the comment says so and compares with it. Only the pointer and the file it names are fetched, never
@@ -609,7 +613,7 @@ jobs:
               cat pr/where.md
               echo
             fi
-            echo "What each row means: [the glossary](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/perf-glossary.md). Every main build over time: [where the time goes, over time](https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/perf/), and [every measurement as its own small chart](https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/perf/detail/)."
+            echo "What each row means: [the glossary](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/perf-glossary.md). Every main build over time: [where the time goes, over time](${hub}/perf/), and [every measurement as its own small chart](${hub}/perf/detail/)."
             echo
             echo "[Run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
           } > comment.md

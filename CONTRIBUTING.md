@@ -175,7 +175,7 @@ npm run graphdb -- <name> <GraphDB's URL>     # a repository <name>, holding the
 An eval run (the pod against the same records read as files, judged blind) is
 one command, and a finished run is committed by recording it. CI publishes
 every recorded run at
-[the eval runs](https://the-cascade-protocol.github.io/cascade-runtime-js/evals/):
+[the eval runs](https://reference.cascadeprotocol.org/evals/):
 
 ```sh
 node packages/evals/dist/src/cli.js run --config small-models   # plans; prints the jobs and the estimate
@@ -189,9 +189,9 @@ the configs, and how it is scored.
 
 ### How fast it is
 
-[Performance history](https://the-cascade-protocol.github.io/cascade-runtime-js/perf/) draws a chart for each measurement over main's builds and the nightly runs: the headline times (a fresh pod's import and first screen, a reopened pod's first answer, a page of answers, closing) and the slowest stages inside each. Lower is better; hover a point for what it measures, its range over three runs and the commit. Nothing alerts or fails on a slowdown. [What the performance numbers mean](docs/perf-glossary.md) lists every scenario, data set and stage in plain words. `npm run perf` makes the same file locally; a pull request is shown its before and after against main in a comment.
+[Performance history](https://reference.cascadeprotocol.org/perf/) draws a chart for each measurement over main's builds and the nightly runs: the headline times (a fresh pod's import and first screen, a reopened pod's first answer, a page of answers, closing) and the slowest stages inside each. Lower is better; hover a point for what it measures, its range over three runs and the commit. Nothing alerts or fails on a slowdown. [What the performance numbers mean](docs/perf-glossary.md) lists every scenario, data set and stage in plain words. `npm run perf` makes the same file locally; a pull request is shown its before and after against main in a comment.
 
-To see where the time of a build went, [each build's flame graphs](https://the-cascade-protocol.github.io/cascade-runtime-js/perf/runs/) open in speedscope: a trace of a probed run, every step nested inside the step that called it (_Where the time went_), and a CPU profile of an unprobed run, every function the processor was sampled in (_Which code took it_). A pull request's are the artifact `perf-flame` of its `perf` run: download it, and drop a `.trace.json` or a `.cpuprofile` into [the viewer](https://the-cascade-protocol.github.io/cascade-runtime-js/perf/speedscope/). Locally, `npm run perf -- --profiles <folder>` writes them. The rows `<scenario>/self/<step>` of the file are each step's own time, which leaves out the steps inside it and so points at what to change.
+To see where the time of a build went, [each build's flame graphs](https://reference.cascadeprotocol.org/perf/runs/) open in speedscope: a trace of a probed run, every step nested inside the step that called it (_Where the time went_), and a CPU profile of an unprobed run, every function the processor was sampled in (_Which code took it_). A pull request's are the artifact `perf-flame` of its `perf` run: download it, and drop a `.trace.json` or a `.cpuprofile` into [the viewer](https://reference.cascadeprotocol.org/perf/speedscope/). Locally, `npm run perf -- --profiles <folder>` writes them. The rows `<scenario>/self/<step>` of the file are each step's own time, which leaves out the steps inside it and so points at what to change.
 
 ### The developer story
 

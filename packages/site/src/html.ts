@@ -39,8 +39,6 @@ export function markup(
   );
 }
 
-const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js";
-
 const GITHUB = "https://github.com/the-cascade-protocol";
 
 /** The stylesheet of the website's three faces. */
@@ -55,13 +53,15 @@ const MARK = new Html(
 export interface Chrome {
   /** The website's address, with no trailing slash, that the logo, nav, strip and footer link under; none links no page of the website. */
   readonly website?: string;
+  /** The hub's own address, with no trailing slash, that the Developers row's and the footer's "Reference" link; none links no page of the hub. */
+  readonly hub?: string;
   /** The date the pages were built, `YYYY-MM-DD`, from the commit they are built from; none writes no date. */
   readonly built?: string;
   /** Whether `search.json` and `search.js` stand at the hub's root beside the pages, so a page that knows where the root is gets the search box. */
   readonly search?: boolean;
 }
 
-/** No link to the website and no build date. */
+/** No link to the website or the hub and no build date. */
 export const PLAIN: Chrome = {};
 
 /** A website page's path per nav item; the hub is part of Developers. */
@@ -99,12 +99,21 @@ const navLinks = (chrome: Chrome, current: boolean) =>
 `,
   );
 
-const subnavLinks = (chrome: Chrome) =>
-  SUBNAV.map(([label, path]) =>
-    path !== null && chrome.website === undefined
+const subnavLinks = ({ website, hub }: Chrome) =>
+  SUBNAV.map(([label, path]) => {
+    const current = path === null ? new Html(' aria-current="page"') : "";
+    const href =
+      path === null
+        ? hub === undefined
+          ? undefined
+          : `${hub}/`
+        : website === undefined
+          ? undefined
+          : website + path;
+    return href === undefined
       ? markup`<span>${label}</span>`
-      : markup`<a href="${path === null ? `${HUB}/` : chrome.website + path}"${path === null ? new Html(' aria-current="page"') : ""}>${label}</a>`,
-  );
+      : markup`<a href="${href}"${current}>${label}</a>`;
+  });
 
 /** The box that searches the hub's terms, rules and pages: shown by `search.js` once it has loaded. */
 const searchBox = (hubRoot: string) => markup`<div class="sx-find-wrap">
@@ -143,16 +152,18 @@ ${chrome.search === true && hubRoot !== undefined && searchBox(hubRoot)}</header
 `;
 }
 
-/** A footer column: a website page's path, or an address of its own, per link. */
+/** A footer column: a website page's path, or an address of its own, per link; an address that is none is the label alone. */
 const column = (
   website: string,
   heading: string,
-  links: readonly (readonly [string, string])[],
+  links: readonly (readonly [string, string | undefined])[],
 ) =>
   markup`<div><h2>§ ${heading}</h2><ul>
-${links.map(
-  ([label, path]) =>
-    markup`<li><a href="${path.startsWith("/") ? website + path : path}">${label}</a></li>
+${links.map(([label, path]) =>
+  path === undefined
+    ? markup`<li>${label}</li>
+`
+    : markup`<li><a href="${path.startsWith("/") ? website + path : path}">${label}</a></li>
 `,
 )}</ul></div>
 `;
@@ -176,7 +187,7 @@ ${column(website, "Cascade Protocol", [
     ["Start building", "/developers/build/"],
     ["Guides", "/developers/guides/"],
     ["Built on standards", "/developers/standards/"],
-    ["Reference", `${HUB}/`],
+    ["Reference", chrome.hub === undefined ? undefined : `${chrome.hub}/`],
     ["For AI agents (llms.txt)", "/llms.txt"],
   ])}${column(website, "Community", [
     ["Partner with us", "/community/partners/"],
