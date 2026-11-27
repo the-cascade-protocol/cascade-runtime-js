@@ -43,7 +43,7 @@ export const SQL_STATIC_CHECKS: Readonly<Record<string, string>> = {
 /** The checks of what the comparisons of a whole run saw, by the fragment of their test. */
 export const SQL_WHOLE_RUN_CHECKS: Readonly<Record<string, string>> = {
   "each-query-gives-a-row":
-    "each ported .rq gives a row on some fixture it is compared on",
+    "each ported .rq gives a row on some fixture it is compared on, and each view's screen holds one on some fixture the screens are filled keyed on",
   "each-kind-of-keyed-change":
     "each kind of keyed change is made to some fixture the screens are filled on",
 };
@@ -283,20 +283,31 @@ export function sqlWholeRunAssertions(
   if (compared.size === 0) return [];
   const rows = seen("rows:");
   const kept = seen("kept:");
+  const screened = seen("screen:");
   const named = (check: string, lines: readonly string[]): Assertion =>
     assertionOf(vocabulary, check, SQL_WHOLE_RUN_CHECKS[check] ?? check, lines);
   const silent = [...compared].filter((rq) => !rows.has(rq)).sort();
+  const unfilled = [...compared]
+    .filter((rq) => rq.startsWith(VIEWS) && !screened.has(rq))
+    .sort();
   const missing = [...compared].some((rq) => rq.startsWith(VIEWS))
     ? Object.keys(KEYED_KINDS).filter((kind) => !kept.has(kind))
     : [];
   return [
     named(
       "each-query-gives-a-row",
-      silent.length === 0
-        ? []
-        : [
-            `each gives no row on any fixture it is compared on, so is compared with nothing: ${silent.join(", ")}`,
-          ],
+      [
+        ...(silent.length === 0
+          ? []
+          : [
+              `each gives no row on any fixture it is compared on, so is compared with nothing: ${silent.join(", ")}`,
+            ]),
+        ...(unfilled.length === 0
+          ? []
+          : [
+              `no fixture whose screens are filled keyed gives its screen a row: ${unfilled.join(", ")}`,
+            ]),
+      ],
     ),
     named(
       "each-kind-of-keyed-change",

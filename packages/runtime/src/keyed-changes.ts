@@ -1,5 +1,11 @@
 import type { Database } from "./database.js";
-import { BLANK, dayKey, instantKey, parsedNt } from "./statements.js";
+import {
+  BLANK,
+  dayKey,
+  instantKey,
+  parsedNt,
+  wholeScope,
+} from "./statements.js";
 
 const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
 const XSD = "http://www.w3.org/2001/XMLSchema#";
@@ -286,6 +292,7 @@ export function keyedChanges(
         name: `a record with no reason taken out of entry ${lex(entry)}, which is renamed, it alone in scope`,
         make: (c) => {
           const record = joined(c, entry, like);
+          wholeScope(c);
           refill(c);
           c.prepare(
             "DELETE FROM quad WHERE (? = s OR ? = o) AND p IN (?, ?, ?)",

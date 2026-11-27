@@ -274,7 +274,7 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
     )
       .filter(({ outcome }) => outcome === "failed")
       .map(({ why }) => why);
-    assert.equal(addressed.length, 2);
+    assert.equal(addressed.length, 1);
     assert.match(
       addressed[0] ?? "",
       /filled whole though the layout places the view at two addresses/,

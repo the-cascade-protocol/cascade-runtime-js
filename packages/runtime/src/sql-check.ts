@@ -772,7 +772,42 @@ function asText(term: string | null, read: TextRead): string | null {
   return text;
 }
 
-const FIRST_BOUND = /COALESCE\s*\(\s*(\?\w+(?:\s*,\s*\?\w+)*)\s*\)/;
+/**
+ * What follows an ORDER BY's conditions is not one: comments, and a LIMIT or an OFFSET, are cut, outside the strings
+ * a condition holds; `$a`, the same variable as `?a`, is written `?a`.
+ */
+function withoutLimit(clause: string): string {
+  let kept = "";
+  let quote: string | undefined;
+  for (let at = 0; at < clause.length; at += 1) {
+    const character = clause[at] ?? "";
+    if (quote !== undefined) {
+      if (character === "\\") {
+        kept += character + (clause[(at += 1)] ?? "");
+        continue;
+      }
+      if (character === quote) quote = undefined;
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === "#") {
+      const end = clause.indexOf("\n", at);
+      if (end === -1) break;
+      at = end - 1;
+      continue;
+    } else if (
+      /^(?:LIMIT|OFFSET)\b/i.test(clause.slice(at)) &&
+      !/\w/.test(clause[at - 1] ?? " ")
+    )
+      break;
+    else if (character === "$" && /\w/.test(clause[at + 1] ?? "")) {
+      kept += "?";
+      continue;
+    }
+    kept += character;
+  }
+  return kept.trim();
+}
+
+const FIRST_BOUND =/COALESCE\s*\(\s*(\?\w+(?:\s*,\s*\?\w+)*)\s*\)/;
 
 /**
  * The keys the query's rows are ordered by, after its last brace, one for each condition of its ORDER BY, each the
@@ -788,10 +823,12 @@ export function finalOrder(
   const tail = text.slice(text.lastIndexOf("}"));
   const clause = /ORDER\s+BY\s/.exec(tail);
   if (clause === null) return undefined;
-  let rest = tail.slice(clause.index + clause[0].length).trim();
+  let rest = withoutLimit(tail.slice(clause.index + clause[0].length));
   const keys: OrderKey[] = [];
   const refused = (condition: string): Error =>
-    new Error(`no key can be read from the ORDER BY condition ${condition}`);
+    new Error(
+      `no key can be read from the ORDER BY condition ${condition}; write a projected variable, or a COALESCE of them, alone or inside STR, SUBSTR, DESC or ASC, and nothing else`,
+    );
   while (rest !== "") {
     let condition: string;
     const variable = /^\?(\w+)/.exec(rest);
@@ -1216,7 +1253,7 @@ export async function sqlFailures(
   ported: Ported,
   sql: string = ported.sql,
   observed?: string[],
-  _checked?: Set<string>,
+  twoAddressed?: Set<string>,
 ): Promise<string[]> {
   const { name: fixture, lens, union, db } = built;
   const where = `${fixture}, under ${lens}, ${ported.rq}`;
@@ -1343,7 +1380,7 @@ export async function sqlFailures(
           `${fixture}, ${entry.name}, under ${lens}, ${ported.rq}: ${kind}: ${row}`,
         );
   }
-  lines.push(...twoAddressFailures(built, ported, where));
+  lines.push(...twoAddressFailures(built, ported, where, twoAddressed));
   const left = leftIn(db, before);
   if (left.length > 0)
     lines.push(
@@ -1397,14 +1434,28 @@ function leftIn(db: Database, before: ReadonlySet<string>): string[] {
  * Why the screens, filled whole over the fixture's pod under its lens, are not what a whole fill of the pod gives once
  * a change a keyed run may be given is made to its statements and the screens are filled again with scope holding what
  * the change touched: for each change, each screen table that holds other rows, as lines. Each kind of change it made
- * is given as `kinds`; a change of no kind is a line.
+ * is given as `kinds`, and each of the `views` whose screen tables hold rows over the fixture as `screens`; a change of
+ * no kind is a line.
  */
-export function keyedFillFailures(built: BuiltFixture): {
+export function keyedFillFailures(
+  built: BuiltFixture,
+  views: readonly Ported[] = [],
+): {
   lines: string[];
   kinds: string[];
+  screens: string[];
 } {
   const { db, name: fixture, lens } = built;
   const filled = screenTables(db);
+  const screens = views
+    .filter(
+      ({ rq, sql }) =>
+        rq.startsWith(VIEWS) &&
+        tablesOf(sqlParts(sql)).some(
+          (table) => (filled.get(table)?.length ?? 0) > 0,
+        ),
+    )
+    .map(({ rq }) => rq);
   const lines: string[] = [];
   const kinds = new Set<string>();
   for (const { name, make } of keyedChanges(db, () => built.refill())) {
@@ -1437,7 +1488,7 @@ export function keyedFillFailures(built: BuiltFixture): {
       }
     });
   }
-  return { lines, kinds: [...kinds] };
+  return { lines, kinds: [...kinds], screens };
 }
 
 /** The name of a view, by its `.rq`: `allergies` of `queries/views/allergies.rq`. */
@@ -1446,14 +1497,17 @@ const viewNamed = (rq: string): string => rq.slice(VIEWS.length, -".rq".length);
 /**
  * Why a view's screen, whose entries the pod holds, is filled whole though the layout places the view at a second address,
  * where it should fail rather than name the view's entries after either address: the second address given, the screens'
- * rows deleted and every screen filled again, all put back after.
+ * rows deleted and every screen filled again, all put back after. Whether the fill refuses is a property of its text once
+ * the pod holds entries, so a view is tried once for each run: `tried` holds the views that were, and is added to. A
+ * refusal is a constraint's failure; any other error is the fill's own and is thrown.
  */
 function twoAddressFailures(
   built: BuiltFixture,
   ported: Ported,
   where: string,
+  tried?: Set<string>,
 ): string[] {
-  if (!ported.rq.startsWith(VIEWS)) return [];
+  if (!ported.rq.startsWith(VIEWS) || tried?.has(ported.rq)) return [];
   const { db } = built;
   const tables = tablesOf(sqlParts(ported.sql));
   const screens = screenTables(db);
@@ -1464,6 +1518,7 @@ function twoAddressFailures(
     )
     .get(`<${WRITTEN_BY}>`, `"views/${viewNamed(ported.rq)}.rq"`);
   if (registered === undefined) return [];
+  tried?.add(ported.rq);
   return undone(db, () => {
     const make = termIdsOf(db);
     db.prepare("INSERT INTO quad (s, p, o, g) VALUES (?, ?, ?, ?)").run(
@@ -1476,8 +1531,14 @@ function twoAddressFailures(
     wholeScope(db);
     try {
       built.refill();
-    } catch {
-      return [];
+    } catch (error) {
+      if (
+        String((error as { code?: unknown }).code).startsWith(
+          "SQLITE_CONSTRAINT",
+        )
+      )
+        return [];
+      throw error;
     }
     return [
       `${where}: its screen is filled whole though the layout places the view at two addresses`,
@@ -1544,6 +1605,7 @@ export async function sqlCheckAssertions(
   const context = await sqlCheckContext(options);
   if (context.ported.length === 0) return [];
   const assertions: Assertion[] = [];
+  const twoAddressed = new Set<string>();
   const chosen = await sqlComparisons(
     options.vocabulary,
     options.newStore,
@@ -1578,6 +1640,7 @@ export async function sqlCheckAssertions(
                     ported,
                     given[ported.rq],
                     observed,
+                    twoAddressed,
                   );
           } catch (error) {
             lines = [
@@ -1595,11 +1658,12 @@ export async function sqlCheckAssertions(
         if (only === undefined && built?.screensFilled) {
           let found: ReturnType<typeof keyedFillFailures>;
           try {
-            found = keyedFillFailures(built);
+            found = keyedFillFailures(built, context.ported);
           } catch (error) {
             found = {
               lines: [`${fixture}, under ${lens}: ${messageOf(error)}`],
               kinds: [],
+              screens: [],
             };
           }
           assertions.push({
@@ -1609,7 +1673,10 @@ export async function sqlCheckAssertions(
             ...(found.lines.length === 0
               ? {}
               : { why: found.lines.join("\n") }),
-            observed: found.kinds.map((kind) => `kept:${kind}`),
+            observed: [
+              ...found.kinds.map((kind) => `kept:${kind}`),
+              ...found.screens.map((rq) => `screen:${rq}`),
+            ],
           });
         }
       } finally {
