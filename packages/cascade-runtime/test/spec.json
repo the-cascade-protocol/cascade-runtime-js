@@ -15,7 +15,8 @@
     "Starter copies of the reference tables, as the package is built with them",
     "Transpiling before the tests · scripts/transpile.mjs",
     "Breaking changes in a build's notes · breakingOf(), mergedPullRequests(), breakingNotes(), breakingSince()",
-    "A build's release notes and the builds it was tested with · releaseNotes(), testedBuilds()",
+    "Installing the newest builds of the tables and the sandbox · scripts/builds.mjs",
+    "A build's release notes and the builds it was tested with · releaseNotes(), testedBuilds(), testedLine()",
     "Dependencies of the packed package · mergedDependencies(), undeclaredImports(), vendored()",
     "The browser build's entries and their chunks · bundlePages()",
     "Annotating a red run's failures · failure-annotations.ts",
@@ -24,6 +25,7 @@
   ],
   "randomOrder": [
     "browser-types.test.ts",
+    "builds.test.ts",
     "changes.test.ts",
     "check.test.ts",
     "citations.test.ts",

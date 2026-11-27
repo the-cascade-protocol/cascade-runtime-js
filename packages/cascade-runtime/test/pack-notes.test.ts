@@ -3,12 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
+import { releaseNotes } from "../pack/notes.js";
 import {
   RECORD,
-  releaseNotes,
   testedBuilds,
+  testedLine,
   type TestedBuild,
-} from "../pack/notes.js";
+} from "../pack/tested.js";
 
 const TABLES = "a".repeat(40);
 const SANDBOX = "b".repeat(40);
@@ -22,11 +23,15 @@ after(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true });
 });
 
-/** A checkout whose node_modules holds the tables at `tables` and the sandbox at `sandbox`, with the lock naming `LOCKED`. */
+/**
+ * A checkout whose node_modules holds the tables at `tables` and the sandbox at `sandbox`, with the lock naming `LOCKED`.
+ * `held` is the integrity npm wrote for each package into node_modules/.package-lock.json when it installed it.
+ */
 async function checkout(
   tables: string,
   sandbox: string,
   record?: unknown,
+  held?: Record<string, string>,
 ): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "cr-notes-"));
   roots.push(root);
@@ -63,8 +68,25 @@ async function checkout(
   }
   if (record !== undefined)
     await writeFile(join(root, RECORD), JSON.stringify(record));
+  if (held !== undefined)
+    await writeFile(
+      join(root, "node_modules", ".package-lock.json"),
+      JSON.stringify({
+        packages: Object.fromEntries(
+          Object.entries(held).map(([name, integrity]) => [
+            `node_modules/${name}`,
+            { integrity },
+          ]),
+        ),
+      }),
+    );
   return root;
 }
+
+const HELD = {
+  "cascade-reference-tables": "sha512-tables",
+  "@the-cascade-protocol/sandbox": "sha512-sandbox",
+};
 
 const RECORDED = {
   "cascade-reference-tables": {
@@ -90,11 +112,11 @@ const RECORDED = {
  * What a release of the package says about itself: each file it holds with its integrity, what it carries, and the
  * builds of the reference tables and the sandbox it was tested and packed with, which an app installs beside it.
  */
-describe("A build's release notes and the builds it was tested with · releaseNotes(), testedBuilds()", () => {
+describe("A build's release notes and the builds it was tested with · releaseNotes(), testedBuilds(), testedLine()", () => {
   describe("testedBuilds(root)", () => {
     it("returns each build as scripts/builds.mjs recorded it, when node_modules holds the builds the record names", async () => {
       const tested = await testedBuilds(
-        await checkout(TABLES, SANDBOX, RECORDED),
+        await checkout(TABLES, SANDBOX, RECORDED, HELD),
       );
       assert.deepEqual(
         tested.map(({ name, commit, file, address, integrity }) => ({
@@ -123,6 +145,13 @@ describe("A build's release notes and the builds it was tested with · releaseNo
       );
     });
 
+    it("returns the builds as recorded when npm wrote no integrity for the installed ones to compare them with", async () => {
+      const [tables] = await testedBuilds(
+        await checkout(TABLES, SANDBOX, RECORDED),
+      );
+      assert.equal(tables?.commit, TABLES);
+    });
+
     it("returns each build package-lock.json names, as `npm ci` installed it, when nothing was recorded", async () => {
       const [tables] = await testedBuilds(await checkout(LOCKED, LOCKED));
       assert.deepEqual(tables, {
@@ -138,7 +167,13 @@ describe("A build's release notes and the builds it was tested with · releaseNo
     });
 
     it("refuses a package node_modules holds at a build neither the record nor package-lock.json names", async () => {
-      const refused: [string, string, string, unknown][] = [
+      const refused: [
+        string,
+        string,
+        string,
+        unknown,
+        Record<string, string>?,
+      ][] = [
         [
           "a sandbox the record does not name",
           TABLES,
@@ -169,13 +204,49 @@ describe("A build's release notes and the builds it was tested with · releaseNo
           SANDBOX,
           { ...RECORDED, "cascade-reference-tables": { commit: TABLES } },
         ],
+        [
+          "the recorded file's name, installed from other bytes",
+          TABLES,
+          SANDBOX,
+          RECORDED,
+          { ...HELD, "cascade-reference-tables": "sha512-another-tarball" },
+        ],
       ];
-      for (const [why, tables, sandbox, record] of refused)
+      for (const [why, tables, sandbox, record, held] of refused)
         await assert.rejects(
-          testedBuilds(await checkout(tables, sandbox, record)),
+          testedBuilds(await checkout(tables, sandbox, record, held)),
           /node_modules holds \S+ 0\.0\.0-commit-[0-9a-f]{40}, which is neither the build .* records nor the one package-lock\.json names/,
           why,
         );
+    });
+  });
+
+  describe("testedLine(root)", () => {
+    it("says a run on the committed defaults is on them, and how to pick the newest", async () => {
+      const line = await testedLine(await checkout(LOCKED, LOCKED));
+      assert.match(
+        line,
+        new RegExp(
+          `cascade-reference-tables ${LOCKED.slice(0, 8)} \\(the committed default.*npm run builds`,
+        ),
+      );
+    });
+
+    it("says a run on picked builds is on them, and which", async () => {
+      const line = await testedLine(
+        await checkout(TABLES, SANDBOX, RECORDED, HELD),
+      );
+      assert.ok(
+        line.includes(
+          `cascade-reference-tables ${TABLES.slice(0, 8)} (picked: the newest build of its default branch)`,
+        ),
+        line,
+      );
+    });
+
+    it("says a run on builds nothing names is on none it can name, and what to run", async () => {
+      const line = await testedLine(await checkout(TABLES, LOCKED));
+      assert.match(line, /neither the build .* records nor the one .* names/);
     });
   });
 
@@ -223,12 +294,13 @@ describe("A build's release notes and the builds it was tested with · releaseNo
       );
     });
 
-    it("says how each build was picked", () => {
-      assert.ok(
-        lines.includes(
-          "How each was picked: cascade-reference-tables, the newest build of its default branch; @the-cascade-protocol/sandbox, pull request #7, the package artifact of its run at its head.",
-        ),
-      );
+    it("says how each build was picked, on a line of its own, whatever punctuation the picker's words hold", () => {
+      const at = lines.indexOf("How each was picked:");
+      assert.ok(at >= 0);
+      assert.deepEqual(lines.slice(at + 2, at + 4), [
+        "- cascade-reference-tables: the newest build of its default branch",
+        "- @the-cascade-protocol/sandbox: pull request #7, the package artifact of its run at its head",
+      ]);
     });
   });
 });
