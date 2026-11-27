@@ -3433,11 +3433,12 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
       );
     });
 
-    it("throws a `Refusal` carrying the sentence PodApi refused with, such as `there is no pod nobody; the pods are ...`, when PodApi refuses", async () => {
+    it("throws a `Refusal` of the class cascade-runtime/app exports, carrying the sentence PodApi refused with, such as `there is no pod nobody; the pods are ...`, when PodApi refuses", async () => {
       const { built: inner, over } = local(table());
       const own = await caught(inner.answers({ pod: "nobody" }));
       const crossed = await caught(over.answers({ pod: "nobody" }));
       assert.equal(crossed.name, "Refusal");
+      assert.ok(crossed instanceof Refusal);
       assert.equal(crossed.message, own.message);
     });
 

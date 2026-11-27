@@ -53,8 +53,8 @@ describe("A page that talks to a server, bundled from the packed package · casc
     await writeFile(
       join(folder, "main.js"),
       [
-        `import { personName, remoteApi } from "cascade-runtime/app";`,
-        `remoteApi(location.href).pods({}).then(({ pods }) => { document.title = personName(pods[0].name); });`,
+        `import { personName, Refusal, remoteApi } from "cascade-runtime/app";`,
+        `remoteApi(location.href).pods({}).then(({ pods }) => { document.title = personName(pods[0].name); }, (error) => { document.title = String(error instanceof Refusal); });`,
       ].join("\n"),
     );
     const { cascadeRuntime } = (await import(
@@ -119,6 +119,16 @@ describe("A page that talks to a server, bundled from the packed package · casc
         (id) => !id.startsWith(`${page}/`) && !budget.modules.has(id),
       ),
       [],
+    );
+  });
+
+  it("holds one `Refusal`, the class `cascade-runtime/app` exports, for the one `remoteApi` throws", () => {
+    const code = output
+      .flatMap((each) => (each.type === "chunk" ? [each.code] : []))
+      .join("\n");
+    assert.equal(
+      [...code.matchAll(/\bname\s*=\s*["'`]Refusal["'`]/g)].length,
+      1,
     );
   });
 
