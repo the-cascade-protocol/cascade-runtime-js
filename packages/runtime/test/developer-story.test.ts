@@ -42,15 +42,15 @@ const DRUG_PRODUCTS = join(
 type StoryRow = Record<string, string | readonly string[]>;
 
 /**
- * Each row the script printed, run from a fresh folder, or the app's, on the arguments; its pod is removed after. A
+ * What the script printed, run from a fresh folder, or the app's, on the arguments; its pod is removed after. A
  * fresh folder starts with `tables` as its `.tables/`; the app brings its own.
  */
-async function story(
+async function printedBy(
   script: string,
   pod: string,
   downloads: readonly string[],
   tables?: string,
-): Promise<StoryRow[]> {
+): Promise<string> {
   const folder = APP ?? (await mkdtemp(join(tmpdir(), "developer-story-")));
   if (APP === undefined && tables !== undefined)
     await cp(tables, join(folder, ".tables"), { recursive: true });
@@ -78,11 +78,27 @@ async function story(
         `the script stopped (code ${String(error.code)}, signal ${String(error.signal)}): ${error.stderr || String(error)}`,
       );
     });
-    const printed = stdout
-      .split("\n")
-      .filter((line) => line !== "")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    return printed.map((row) =>
+    return stdout;
+  } finally {
+    await rm(APP === undefined ? folder : join(APP, pod), {
+      recursive: true,
+      force: true,
+    });
+  }
+}
+
+/** Each row the script printed, a line of JSON each. */
+async function story(
+  script: string,
+  pod: string,
+  downloads: readonly string[],
+  tables?: string,
+): Promise<StoryRow[]> {
+  return (await printedBy(script, pod, downloads, tables))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .map((row) =>
       Object.fromEntries(
         Object.entries(row).map(([column, value]) => {
           assert.ok(
@@ -95,12 +111,6 @@ async function story(
         }),
       ),
     );
-  } finally {
-    await rm(APP === undefined ? folder : join(APP, pod), {
-      recursive: true,
-      force: true,
-    });
-  }
 }
 
 /** The row with its entry as the path inside its pod: the replay's pod and the script's have different addresses. */
@@ -201,6 +211,32 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
     it('prints the rows that "My active allergies" answers on the kit\'s replay through step J1', (t) => {
       for (const row of printed) t.diagnostic(JSON.stringify(row));
       assert.deepEqual(multiset(printed.map(inPod)), multiset(expected));
+    });
+  });
+
+  describe("when `first.mjs`, the get-started page's script, is run on Alex's sample export", () => {
+    let printed: string;
+
+    before(async () => {
+      printed = await printedBy("first.mjs", "pods", []);
+    });
+
+    it("prints one source, Meridian Health System, then Codeine, Latex, Penicillin G and Sulfamethoxazole", (t) => {
+      t.diagnostic(printed);
+      const at = (text: string) => printed.indexOf(text);
+      assert.equal(printed.split("Meridian Health System").length, 2);
+      const order = [
+        "Meridian Health System",
+        "Codeine",
+        "Latex",
+        "Penicillin G",
+        "Sulfamethoxazole",
+      ].map(at);
+      assert.deepEqual(
+        order,
+        [...order].sort((a, b) => a - b),
+      );
+      assert.ok(!order.includes(-1), `the script printed ${printed}`);
     });
   });
 
