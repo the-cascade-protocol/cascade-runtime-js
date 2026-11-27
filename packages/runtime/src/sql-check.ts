@@ -199,17 +199,18 @@ async function manifestOf(
  * The comparisons the fixtures' manifests choose, by fixture: each ported `.rq` compared with its `.sql` over the
  * fixture, with the lenses it is compared under. A manifest chooses a `.rq` under each lens where it names the `.rq`, or
  * a folder holding it, by ctm:comparesSqlWithSparqlUnderEveryLens, and otherwise under the lens of each of its entries that runs the `.rq`.
- * A fixture that chooses none is left out. Of the fixtures given, or of all of them.
+ * A fixture that chooses none is left out. Of the fixtures given, or of all of them, and of the queries given, or of all of them.
  */
 export async function sqlComparisons(
   vocabulary: Files,
   newStore: StoreFactory,
   ported?: readonly Ported[],
   fixtures?: readonly string[],
+  only?: readonly string[],
 ): Promise<Map<string, Map<string, string[]>>> {
-  const queries = (ported ?? (await portedQueries(vocabulary))).map(
-    ({ rq }) => rq,
-  );
+  const queries = (ported ?? (await portedQueries(vocabulary)))
+    .map(({ rq }) => rq)
+    .filter((rq) => only === undefined || only.includes(rq));
   const every = await lenses(vocabulary);
   const chosen = new Map<string, Map<string, string[]>>();
   const store = newStore();
@@ -1254,6 +1255,8 @@ export async function sqlCheckAssertions(
   fixtures?: readonly string[],
   /** A `.sql`'s text to check in place of the vocabulary's, by its `.rq`'s path. */
   given: Readonly<Record<string, string>> = {},
+  /** The `.rq` paths whose comparisons are made, of those the fixtures choose. */
+  only?: readonly string[],
 ): Promise<Assertion[]> {
   if ((await options.vocabulary.read(STATEMENTS_SCHEMA)) === undefined)
     return [];
@@ -1265,6 +1268,7 @@ export async function sqlCheckAssertions(
     options.newStore,
     context.ported,
     fixtures,
+    only,
   );
   for (const [fixture, queries] of chosen)
     for (const lens of await lenses(options.vocabulary)) {
@@ -1308,9 +1312,71 @@ export async function sqlCheckAssertions(
         built?.close();
       }
     }
-  if (fixtures === undefined)
+  if (fixtures === undefined && only === undefined)
     assertions.push(...unchosen(options.vocabulary, context.ported, chosen));
   return assertions;
+}
+
+/**
+ * The comparisons the names choose, made: a name ending in `.sql` or `.rq` is a ported query, by its path, and any
+ * other is a fixture, by its folder under `tests/fixtures/`. A fixture chooses its comparisons and a query the
+ * comparisons that are made of it, and the two together only the comparisons of both. A name that chooses none is
+ * refused, each said by name in one error, so that a check never passes over nothing.
+ */
+export async function sqlNamedAssertions(
+  options: SqlCheckOptions,
+  names: readonly string[],
+  given?: Readonly<Record<string, string>>,
+): Promise<Assertion[]> {
+  const { vocabulary, newStore } = options;
+  if ((await vocabulary.read(STATEMENTS_SCHEMA)) === undefined)
+    throw new Error(`the vocabulary has no ${STATEMENTS_SCHEMA} to compare`);
+  const ported = await portedQueries(vocabulary);
+  const known = await fixtureNames(vocabulary);
+  const refused: string[] = [];
+  const fixtures: string[] = [];
+  const queries: string[] = [];
+  for (const name of new Set(names)) {
+    const rq = /\.(sql|rq)$/.test(name)
+      ? `${name.slice(0, name.lastIndexOf("."))}.rq`
+      : undefined;
+    if (rq === undefined) {
+      if (known.includes(name)) fixtures.push(name);
+      else
+        refused.push(
+          `"${name}" is no fixture of ${FIXTURES} (a query is named by the path of its .sql or .rq)`,
+        );
+    } else if (ported.some((each) => each.rq === rq)) queries.push(rq);
+    else refused.push(`"${name}" is no .rq with a .sql beside it`);
+  }
+  const chosen = await sqlComparisons(
+    vocabulary,
+    newStore,
+    ported,
+    fixtures.length > 0 ? fixtures : undefined,
+    queries.length > 0 ? queries : undefined,
+  );
+  const wanted = queries.length > 0 ? ` of ${queries.join(", ")}` : "";
+  for (const fixture of fixtures)
+    if (!chosen.has(fixture))
+      refused.push(
+        `${fixture}: its manifest chooses no comparison${wanted} (ctm:comparesSqlWithSparqlUnderEveryLens, or an entry that runs the .rq)`,
+      );
+  const compared = new Set(
+    [...chosen.values()].flatMap((here) => [...here.keys()]),
+  );
+  for (const rq of queries)
+    if (!compared.has(rq))
+      refused.push(
+        `${rq}: ${fixtures.length > 0 ? "none of the fixtures named chooses" : "no fixture chooses"} a comparison of it`,
+      );
+  if (refused.length > 0) throw new Error(refused.join("\n"));
+  return sqlCheckAssertions(
+    options,
+    [...chosen.keys()],
+    given,
+    queries.length > 0 ? queries : undefined,
+  );
 }
 
 /** The test of a function against its vectors. */

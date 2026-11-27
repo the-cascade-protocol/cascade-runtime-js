@@ -51,6 +51,9 @@ describe("Checking one SQL comparison alone · npm run conformance -- --sql-only
   it("compares the named fixture's `.sql` files under each lens and nothing else, and the named `.sql` over each fixture that compares it", async () => {
     const found = await sqlNamedAssertions(await options(), ["allergies-view"]);
     assert.deepEqual(passed(found), [
+      "passed: queries/questions/entry/What it shows.sql over allergies-view under everyday",
+      "passed: queries/questions/entry/Where it came from.sql over allergies-view under everyday",
+      "passed: queries/questions/pod/My active allergies.sql over allergies-view under everyday",
       `passed: ${ALLERGIES}.sql over allergies-view under everyday`,
       `passed: ${ALLERGIES}.sql over allergies-view under export`,
     ]);
@@ -67,7 +70,7 @@ describe("Checking one SQL comparison alone · npm run conformance -- --sql-only
           `${ALLERGIES}.sql`,
         ]),
       ),
-      passed(found),
+      passed(found).filter((line) => line.includes(ALLERGIES)),
     );
   });
 
@@ -113,11 +116,20 @@ describe("Checking one SQL comparison alone · npm run conformance -- --sql-only
 
     it("runs the comparisons the name selects and says each, with no feature file, SQL function or other comparison", () => {
       assert.equal(one.code, 0, one.stderr);
-      assert.match(
-        one.stderr,
-        /^passed: .*allergies\.sql over allergies-view under everyday$/m,
+      assert.deepEqual(
+        one.stderr
+          .split("\n")
+          .filter((line) => /^(passed|failed|inapplicable): /.test(line))
+          .map((line) => line.replace(/^passed: .*\.sql over /, "")),
+        [
+          "allergies-view under everyday",
+          "allergies-view under everyday",
+          "allergies-view under everyday",
+          "allergies-view under everyday",
+          "allergies-view under export",
+        ],
       );
-      assert.match(one.stderr, /^2 tests: 2 passed, 0 failed, 0 inapplicable/m);
+      assert.match(one.stderr, /^5 tests: 5 passed, 0 failed, 0 inapplicable/m);
     });
 
     it("exits non-zero, naming a fixture that matches none", () => {
