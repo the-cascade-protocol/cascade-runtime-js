@@ -239,6 +239,14 @@ describe("Checking a site's links · scripts/link-check.mjs", () => {
     });
   });
 
+  describe("with no `--site`", () => {
+    it("exits 1 and says to give it, since the script holds no address of its own for the site", async () => {
+      const { code, said } = await run(["--crawl"]);
+      assert.equal(code, 1);
+      assert.match(said, /give --site <url>/);
+    });
+  });
+
   describe("with dead links", () => {
     let result: Checked;
 

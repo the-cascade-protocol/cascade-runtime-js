@@ -2,6 +2,7 @@
 //
 //   node scripts/link-check.mjs --tree <folder> --site <url> [options]    the built tree, as served at <url>
 //   node scripts/link-check.mjs --crawl --site <url> [options]            the deployed site, from its front page
+//   node scripts/link-check.mjs --only-external <file> --site <url>       the addresses a run saved, asked as <url> would
 //
 //   --checkout <owner/repo>=<folder>  a GitHub blob/tree link into this repository is checked in the folder, at the
 //                                     commit it names when the folder is at that commit; repeatable
@@ -45,12 +46,10 @@ const ALLOWED = new Map([
 /** Addresses known dead and not ours to fix here, each with the issue that tracks it; an entry goes when its issue closes. */
 const KNOWN_DEAD = new Map([]);
 
-const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js/";
 const RAW = "https://raw.githubusercontent.com/";
 const BACKOFF = Number(process.env["LINK_CHECK_BACKOFF_MS"] ?? 1000);
 const ATTEMPTS = 4;
 const TIMEOUT = 20_000;
-const HEADERS = { "user-agent": "cascade-link-check (+" + HUB + ")" };
 const SKIPPED = /^(?:mailto|tel|data|javascript|blob):/i;
 /** Errors that say the address is gone or its host cannot be trusted, as opposed to a host that is slow or down. */
 const GONE = new Set([
@@ -64,7 +63,7 @@ const HTML = /(?:\/|\.html?)$/;
 const TEXT = /\.(?:txt|md)$/;
 
 function options(argv) {
-  const found = { checkout: [], ref: new Map(), readmesFrom: RAW, site: HUB };
+  const found = { checkout: [], ref: new Map(), readmesFrom: RAW };
   for (let at = 0; at < argv.length; at += 1) {
     const flag = argv[at];
     const value = () => {
@@ -86,6 +85,8 @@ function options(argv) {
       found.ref.set(name, ref);
     } else throw new Error(`unknown option ${flag}`);
   }
+  if (found.site === undefined)
+    throw new Error("give --site <url>, the address the site is served at");
   if (
     found.onlyExternal === undefined &&
     (found.tree === undefined) === (found.crawl === undefined)
@@ -189,6 +190,7 @@ function once() {
 }
 
 const settings = options(process.argv.slice(2));
+const HEADERS = { "user-agent": `cascade-link-check (+${settings.site})` };
 const failures = [];
 /** Addresses that did not answer, with no word from the host that they are gone: a down host is no dead link. */
 const unverified = [];

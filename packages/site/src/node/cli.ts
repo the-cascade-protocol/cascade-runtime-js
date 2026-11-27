@@ -86,8 +86,6 @@ const SPEC = join(ROOT, "build", "spec");
 const BRIDGE_SPEC = {
   repository: "https://github.com/the-cascade-protocol/cascade-bridge-spec",
 };
-/** Where an adapter explorer's link to the hub's conformance report for the adapter points. */
-const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js/";
 const log = (line: string): void => console.error(line);
 /** The hub's folders of the term reference, the spec's pages and the queries' pages. */
 const TERMS = "terms/";
@@ -117,25 +115,32 @@ function target(name: string | undefined, pod: string | undefined): Target {
 
 /**
  * The options that set the chrome of every page: the website's address, which every link of the chrome to the website is
- * built from (none, or an empty one, links no page of it), and the build date, which the caller reads from the commit and
- * the build never from the clock.
+ * built from, the hub's own address, which every link of the chrome to the hub is built from (for each, none or an empty
+ * one links no page of it), and the build date, which the caller reads from the commit and the build never from the clock.
  */
 const CHROME_OPTIONS = {
   website: { type: "string" },
+  hub: { type: "string" },
   built: { type: "string" },
 } as const;
 
 function chromeOf(values: {
   readonly website?: string | undefined;
+  readonly hub?: string | undefined;
   readonly built?: string | undefined;
 }): Chrome {
-  const { built, website } = values;
+  const { built, website, hub } = values;
   if (built !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(built))
     throw new Error(`--built is ${built}, not a date as YYYY-MM-DD`);
-  if (website && !/^https?:\/\/[^/\s]+(\/\S*)?$/.test(website))
-    throw new Error(`--website is ${website}, not an http(s) address`);
+  for (const [flag, address] of [
+    ["--website", website],
+    ["--hub", hub],
+  ])
+    if (address && !/^https?:\/\/[^/\s]+(\/\S*)?$/.test(address))
+      throw new Error(`${flag} is ${address}, not an http(s) address`);
   return {
     ...(website && { website: website.replace(/\/+$/, "") }),
+    ...(hub && { hub: hub.replace(/\/+$/, "") }),
     ...(built !== undefined && { built }),
   };
 }
@@ -423,7 +428,7 @@ async function explorerOf(
         adapterFolder: folder,
         vocabularyFolder,
         repository: adapter,
-        report: `${HUB}conformance/tests/${repositoryName({ repository: adapter })}/`,
+        report: `../../conformance/tests/${repositoryName({ repository: adapter })}/`,
         out,
       }),
       { maxBuffer: 1 << 26 },

@@ -278,9 +278,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           path,
         );
         assert.ok(
-          subbar(html).includes(
-            `<span aria-current="page">Reference ↗</span>`,
-          ),
+          subbar(html).includes(`<span aria-current="page">Reference ↗</span>`),
           path,
         );
       }
