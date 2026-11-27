@@ -4,6 +4,20 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HtmlTagDescriptor, Plugin } from "vite";
 import { acceptOptions } from "../options.js";
+import type { Pod } from "../pod.js";
+import type { Tables } from "../tables.js";
+import { aboutBody, DEMO_WORKER, demoFiles } from "./app/build.js";
+import { devOptions, under } from "./app/dev-options.js";
+
+export { DEMO_WORKER, devOptions, under };
+
+/**
+ * What the pod's page asks the tables of it, asked as the page asks it, through PodApi, for `samplesToPublish`'s
+ * `lookups`: the names a first visit draws before the engine. A lookup PodApi swallows fails the build.
+ */
+export async function looks(pod: Pod, tables: Tables): Promise<void> {
+  return (await import("./app/first-paint.js")).looks(pod, tables);
+}
 
 /** Where the runtime's files go under the base, as `configureRuntime({ base })` names them. */
 export const RUNTIME_FOLDER = "cascade-runtime/";
@@ -23,6 +37,13 @@ export interface CascadeRuntimeOptions {
   folder?: string;
   /** The folder of the `cascade-runtime` package to serve. Default the one this plugin is in. */
   from?: string;
+  /**
+   * Whether this is an app on `cascade-runtime/app`, which adds what such an app carries: the About box's attributes on
+   * the body (`CASCADE_NAME`, `CASCADE_VERSION`, `CASCADE_CODE`, `CASCADE_HUB`, and for the browser build
+   * `CASCADE_SAMPLES`) and, in the browser build, the demo hospitals' service worker with their data, the demo people
+   * and the page a sign-in returns to. It needs the `@the-cascade-protocol/sandbox` package the app depends on. Default false.
+   */
+  app?: boolean;
 }
 
 /** The folder of the package this file is in, the one named `cascade-runtime`. */
@@ -83,11 +104,18 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
     browser: true,
     folder: true,
     from: true,
+    app: true,
   });
-  const { browser = true, folder = RUNTIME_FOLDER, from } = options;
+  const {
+    browser = true,
+    folder = RUNTIME_FOLDER,
+    from,
+    app = false,
+  } = options;
   const source = from ?? installed();
   let base = "/";
   let out = "";
+  let root = "";
   return {
     name: "cascade-runtime",
     config: () =>
@@ -102,10 +130,20 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
         : {},
     configResolved(config) {
       base = config.base;
+      root = config.root;
       out = resolve(config.root, config.build.outDir);
     },
-    async transformIndexHtml(_html, { bundle }) {
-      if (!browser) return [];
+    async transformIndexHtml(html, { bundle }) {
+      const about = app
+        ? await aboutBody(html, {
+            root,
+            runtime: (
+              await json<{ version: string }>(join(source, "package.json"))
+            ).version,
+            browser,
+          })
+        : html;
+      if (!browser) return app ? about : [];
       const entry = `${base}${folder}index.js`;
       const closures = await json<Record<string, string[]>>(
         join(source, "dist", "browser", PRELOADS),
@@ -141,7 +179,12 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
           injectTo: "head",
         })),
       ];
-      return tags;
+      return app ? { html: about, tags } : tags;
+    },
+    async generateBundle() {
+      if (!app || !browser) return;
+      for (const [fileName, source] of await demoFiles(folder))
+        this.emitFile({ type: "asset", fileName, source });
     },
     async writeBundle() {
       if (!browser) return;

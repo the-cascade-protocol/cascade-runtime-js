@@ -95,11 +95,22 @@ const {
   IDLE_LOCK_MS,
   remoteApi,
   nodeHost,
-  INPUT_SCHEMAS,
-  refusalOf,
+  appHandler,
+  newLaunch,
+  launchCookie,
   entryId,
   testsIn,
 } = (await import(APP)) as {
+  /** What an app's server mounts: a request in, a response out. */
+  appHandler: (options: {
+    api: Api;
+    own: () => { hosts: Set<string>; origins: Set<string> };
+    launch: Launch;
+    address: { home: string; connection: () => string };
+    back: () => undefined;
+  }) => (request: Request) => Promise<Response>;
+  newLaunch: () => Launch;
+  launchCookie: (url: URL) => string;
   WAIT_MS: number;
   IDLE_CHECK_MS: number;
   IDLE_LOCK_MS: number;
@@ -124,13 +135,13 @@ const {
       remove(names: string[], options: { all: boolean }): Promise<void>;
     };
   };
-  INPUT_SCHEMAS: Record<
-    string,
-    { safeParse(value: unknown): { success: boolean; error?: unknown } }
-  >;
-  refusalOf: (error: unknown) => string;
 };
-/** What answers a request: the stand-in for the Node server's `/api/` routes. */
+/** What proves a request comes from the page the launch opened: the token the printed address carries, spent for a cookie. */
+interface Launch {
+  readonly token: string;
+  exchange(given: string | undefined): string | undefined;
+}
+/** What answers a request: the app's handler, as `app.request()` puts a request to it. */
 interface App {
   request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
@@ -320,58 +331,47 @@ const made: Api[] = [];
 /** What each call that reached the server's instance came back with, in order, for `both()` to compare. */
 type Call = PromiseSettledResult<Output>;
 
-/**
- * The `/api/` routes over `built`, and what `built` answered each call: a stand-in for the Node server's handler, which
- * is not in this package yet, answering as it does. `POST /api/<operation>` takes the input as JSON, checked against
- * the operation's schema, and answers 200 with the output; 400 `{ refused }` for a body that is no JSON, an input its
- * schema refuses or a `Refusal`; 423 `{ unopened, refused }` for an `Unopened`; 500 for anything else.
- */
-function served(built: Api): [App, Call[]] {
+/** The handler over `built`, answering as `app.test`, and what `built` answered each call. */
+function served(built: Api): [App, Call[], Launch] {
+  const launch = newLaunch();
   const calls: Call[] = [];
-  const app: App = {
-    async request(input, init) {
-      const operation = new URL(String(input)).pathname.replace(/^\/api\//, "");
-      const run = built[operation as keyof Api] as Operation | undefined;
-      const schema = INPUT_SCHEMAS[operation];
-      if (init?.method !== "POST" || run === undefined || schema === undefined)
-        return Response.json({ refused: "no such operation" }, { status: 404 });
-      let body: unknown;
+  const recording = { ...built } as Api;
+  for (const name of Object.keys(built) as (keyof Api)[]) {
+    if (name === "close") continue;
+    recording[name] = async (input: Input) => {
       try {
-        body = JSON.parse(String(init.body));
-      } catch {
-        return Response.json(
-          { refused: "the body must be JSON" },
-          { status: 400 },
-        );
-      }
-      const checked = schema.safeParse(body);
-      if (!checked.success)
-        return Response.json(
-          { refused: refusalOf(checked.error) },
-          { status: 400 },
-        );
-      try {
-        const value = await run(body as Input);
+        const value = await built[name](input);
         calls.push({ status: "fulfilled", value });
-        return Response.json(value);
+        return value;
       } catch (reason) {
         calls.push({ status: "rejected", reason });
-        if (isRefusal(reason))
-          return reason.outcome === undefined
-            ? Response.json({ refused: reason.message }, { status: 400 })
-            : Response.json(
-                { unopened: reason.outcome, refused: reason.message },
-                { status: 423 },
-              );
-        console.error(`/api/${operation} failed:`, reason);
-        return Response.json(
-          { error: "the server failed; its log says why" },
-          { status: 500 },
-        );
+        throw reason;
       }
-    },
-  };
-  return [app, calls];
+    };
+  }
+  const handle = appHandler({
+    api: recording,
+    own: () => ({
+      hosts: new Set([new URL(ORIGIN).host]),
+      origins: new Set([ORIGIN]),
+    }),
+    launch,
+    address: { home: "/", connection: () => "/" },
+    back: () => undefined,
+  });
+  return [
+    { request: (input, init) => handle(new Request(input, init)) },
+    calls,
+    launch,
+  ];
+}
+const ORIGIN = "http://app.test";
+
+/** The cookie a page of the server holds once it has opened the address the server printed. */
+function cookieOf(launch: Launch): string {
+  const session = launch.exchange(launch.token);
+  assert.ok(session, "the token was spent already");
+  return `${launchCookie(new URL(ORIGIN))}=${session}`;
 }
 
 /** A refusal as the app tells it, by its name; an `Unopened` carries its `outcome`. */
@@ -382,18 +382,18 @@ const unopened = (error: unknown, outcome: string) =>
   isRefusal(error) && error.outcome === outcome;
 
 /**
- * `built` over HTTP: through the `/api/` routes, by `app.request()`, with the app's own client.
+ * `built` over HTTP: through the handler, by `app.request()`, with the app's own client.
  * A call over HTTP runs once, on `built`, unless its route refuses the input first, as PodApi would refuse it; what
  * comes back must be what `built` answered that call, after a JSON round trip, and what is thrown a refusal of the
  * same name with the same message. What `built` threw other than a `Refusal` crosses as a 500 naming the operation.
  */
 function crossing(built: Api): Api {
-  const origin = "http://app.test";
-  const [app, calls] = served(built);
+  const origin = ORIGIN;
+  const [app, calls, launch] = served(built);
   const remote = remoteApi(`${origin}/`, {
     fetch: (input: RequestInfo | URL, init?: RequestInit) =>
       app.request(input, init),
-    headers: { origin },
+    headers: { origin, cookie: cookieOf(launch) },
   });
   const over = {} as Api;
   for (const name of Object.keys(remote) as (keyof Api)[]) {
@@ -3236,5 +3236,127 @@ describe("Calling PodApi over HTTP · /api/, INPUT_SCHEMAS, refusalOf()", () => 
         assert.deepEqual(urls, ["http://h/app/api/pod"], base);
       }
     });
+  });
+});
+
+/** `name` as a model runs it through `POST /tools/<name>` on the handler over `built`, as a page that holds the cookie. */
+function toolsOf(built: Api) {
+  const [app, , launch] = served(built);
+  const cookie = cookieOf(launch);
+  return (name: string, input: object) =>
+    app.request(`${ORIGIN}/tools/${name}`, {
+      method: "POST",
+      headers: {
+        origin: ORIGIN,
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify(input),
+    });
+}
+
+/** The statin story's pod with its lab results repeated on other days, so that the compact read of it is two pages. */
+const paged = once(async () => {
+  const at = await mkdtemp(join(tmpdir(), "pod-api-paged-"));
+  folders.push(at);
+  const { pull } = await pulled(north, STATIN);
+  const files = pullFiles(pull, "north");
+  const bundle = JSON.parse(
+    new TextDecoder().decode(files.get("north/bundle.json")),
+  );
+  const labs = bundle.entry.filter(
+    ({ resource }: Output) => resource.resourceType === "Observation",
+  );
+  for (let day = 0; day < 12; day += 1)
+    for (const lab of labs)
+      bundle.entry.push({
+        ...lab,
+        fullUrl: `${lab.fullUrl}-${day}`,
+        resource: {
+          ...lab.resource,
+          id: `${lab.resource.id}-${day}`,
+          effectiveDateTime: new Date(Date.UTC(2020, 0, 1 + day)).toISOString(),
+        },
+      });
+  const pod = await openPod(join(at, "paged"));
+  const imported = await importClaimingEveryProfile(
+    pod,
+    new Map([
+      ...files,
+      ["north/bundle.json", new TextEncoder().encode(JSON.stringify(bundle))],
+    ]),
+  );
+  assert.equal(imported.refused, undefined);
+  await pod.close();
+  await settled(at);
+  return toolsOf(api(host(at)));
+});
+
+/** The pages of the paged pod's compact read, each asked for with the `next` of the page before. */
+const pagesOnce = once(async () => {
+  const run = await paged();
+  const pages: Output[] = [];
+  let input: Input | undefined = { pod: "paged", format: "compact" };
+  while (input !== undefined && pages.length < 10) {
+    const response = await run("ask", input);
+    assert.equal(response.status, 200);
+    const page: Output = await response.json();
+    pages.push(page);
+    input = page.next;
+  }
+  return pages;
+});
+
+/**
+ * The read tools run over the handler on pods the app holds: a page that carries no runtime of its own asks the server
+ * for them. (The refusals, and the tools' list, are tested over a stub in `handler.test.ts`.)
+ */
+describe("Running the read tools over HTTP on a pod · POST /tools/<name>", () => {
+  it("runs `reference_table_checks` on a pod with the host's reference tables", async () => {
+    const checked = await toolsOf(inProcess)("reference_table_checks", {
+      pod: STATIN,
+    });
+    assert.equal(checked.status, 200);
+    assert.equal(((await checked.json()) as { tables: string }).tables, "on");
+  });
+
+  it("runs `ask` for a pod's compact read", async () => {
+    const compact = await toolsOf(inProcess)("ask", {
+      pod: STATIN,
+      format: "compact",
+    });
+    assert.equal(compact.status, 200);
+    assert.equal(
+      ((await compact.json()) as { format: string }).format,
+      "compact",
+    );
+  });
+
+  it("responds 423 with `{ unopened, refused }`, as `/api/` does, for an encrypted pod that is not open", async () => {
+    const locked = await toolsOf(inProcess)("ask", {
+      pod: SEALED,
+      format: "compact",
+    });
+    assert.equal(locked.status, 423);
+    const body = (await locked.json()) as { unopened: string; refused: string };
+    assert.equal(body.unopened, "secret needed");
+    assert.equal(typeof body.refused, "string");
+  });
+
+  it("returns a larger pod's compact read in two pages or more, each page's `next` being the input of the one after", async () => {
+    const pages = await pagesOnce();
+    assert.ok(pages.length >= 2, "the pod is read in more than one page");
+    assert.equal(pages.at(-1)!.next, undefined);
+  });
+
+  it("returns every row of every view once across those pages", async () => {
+    const shown = new Map<string, number>();
+    const total = new Map<string, number>();
+    for (const { views } of await pagesOnce())
+      for (const view of views) {
+        shown.set(view.question, (shown.get(view.question) ?? 0) + view.shown);
+        total.set(view.question, view.total);
+      }
+    assert.deepEqual(shown, total);
   });
 });
