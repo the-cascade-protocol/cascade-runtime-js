@@ -299,11 +299,12 @@ describe("Printing Claude Desktop's settings · cascade-mcp --settings", () => {
         dirname(folder),
       );
       const [server] = Object.values((JSON.parse(stdout) as Block).mcpServers);
-      assert.deepEqual(server!.args.slice(1), [
-        "--pods",
-        resolve(folder),
-        "--check-tables",
-      ]);
+      const [option, printed, kept] = server!.args.slice(1);
+      assert.ok(isAbsolute(printed!));
+      assert.deepEqual(
+        [option, realpathSync(printed!), kept],
+        ["--pods", realpathSync(folder), "--check-tables"],
+      );
     });
   });
 
