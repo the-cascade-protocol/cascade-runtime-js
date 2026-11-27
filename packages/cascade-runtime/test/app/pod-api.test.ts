@@ -27,7 +27,12 @@ import { loadSample } from "cascade-runtime/samples";
 import { trendOf } from "cascade-runtime/tools";
 import { partsOf } from "../../src/node/resolved.js";
 import { openPodWith } from "../../src/pod.js";
-import { Tables, versionName, writeStarterCopies } from "../../src/tables.js";
+import {
+  type About,
+  Tables,
+  versionName,
+  writeStarterCopies,
+} from "../../src/tables.js";
 import { importClaimingEveryProfile } from "../claiming.js";
 import {
   type Alter,
@@ -1084,22 +1089,33 @@ describe("Asking a pod a named question, and running a tool on it · api.ask(), 
       await settled(at);
       const rxnorm = "https://ns.cascadeprotocol.org/codes/rxnorm/";
       const ingredient = `${rxnorm}83367`;
-      const about = (code: string): object | undefined =>
+      const notation = (code: string) => code.slice(rxnorm.length);
+      const about = (code: string): About | undefined =>
         code === ingredient
-          ? named("atorvastatin")
+          ? {
+              notation: notation(code),
+              name: {
+                label: "atorvastatin",
+                altLabels: [],
+                origin: "urn:test:names",
+              },
+            }
           : code.startsWith(rxnorm)
             ? {
+                notation: notation(code),
                 ingredients: {
                   codes: [ingredient],
                   origin: "urn:test:ingredients",
                 },
               }
             : undefined;
-      const tables = {
+      // What the tables say of these codes is written here, in the shape `Tables` gives; that the real tables say it stays
+      // with the kit's case, on the packed runtime.
+      const tables: Pick<Tables, "held" | "about"> = {
         held: async () => [],
-        about: async (codes: string[]) =>
+        about: async (codes) =>
           new Map(
-            codes.flatMap((code): [string, object][] => {
+            codes.flatMap((code): [string, About][] => {
               const said = about(code);
               return said === undefined ? [] : [[code, said]];
             }),

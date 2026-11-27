@@ -8,6 +8,14 @@ import { acceptOptions } from "../options.js";
 /** Where the runtime's files go under the base, as `configureRuntime({ base })` names them. */
 export const RUNTIME_FOLDER = "cascade-runtime/";
 
+/** The file of the browser build that lists, for each entry, the files a page loads with it. */
+const PRELOADS = "preloads.json";
+/** What an app imports to load each entry of the browser build. */
+const IMPORTS: Record<string, string> = {
+  index: "cascade-runtime",
+  app: "cascade-runtime/app",
+};
+
 export interface CascadeRuntimeOptions {
   /** Whether this is the build that runs the runtime in the page; the plugin does nothing for another. Default true. */
   browser?: boolean;
@@ -66,8 +74,9 @@ async function components(folder: string): Promise<string[]> {
 
 /**
  * A Vite plugin that serves the runtime's browser build beside an app's bundle. The app's bundle keeps
- * `cascade-runtime` external; the build copies the package's browser build and the components it reads under the
- * base, and an import map in the page loads the entry from there, so the runtime keeps its own `import.meta.url`.
+ * `cascade-runtime` and `cascade-runtime/app` external; the build copies the package's browser build and the components
+ * it reads under the base, and an import map in the page loads each entry from there, so the runtime keeps its own
+ * `import.meta.url` and the two entries share one copy of it.
  */
 export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
   acceptOptions("cascadeRuntime", options, {
@@ -83,27 +92,54 @@ export function cascadeRuntime(options: CascadeRuntimeOptions = {}): Plugin {
     name: "cascade-runtime",
     config: () =>
       browser
-        ? { build: { rolldownOptions: { external: ["cascade-runtime"] } } }
+        ? {
+            build: {
+              rolldownOptions: {
+                external: ["cascade-runtime", "cascade-runtime/app"],
+              },
+            },
+          }
         : {},
     configResolved(config) {
       base = config.base;
       out = resolve(config.root, config.build.outDir);
     },
-    transformIndexHtml() {
+    async transformIndexHtml(_html, { bundle }) {
       if (!browser) return [];
       const entry = `${base}${folder}index.js`;
+      const closures = await json<Record<string, string[]>>(
+        join(source, "dist", "browser", PRELOADS),
+      );
+      const imported = new Set(
+        Object.values(bundle ?? {}).flatMap((file) =>
+          file.type === "chunk" ? file.imports : [],
+        ),
+      );
+      const entries = bundle === undefined ? ["index"] : Object.keys(closures);
+      const preloaded = new Set(
+        entries
+          .filter(
+            (name) => bundle === undefined || imported.has(IMPORTS[name] ?? ""),
+          )
+          .flatMap((name) => closures[name] ?? []),
+      );
       const tags: HtmlTagDescriptor[] = [
         {
           tag: "script",
           attrs: { type: "importmap" },
-          children: JSON.stringify({ imports: { "cascade-runtime": entry } }),
+          children: JSON.stringify({
+            imports: {
+              "cascade-runtime": entry,
+              "cascade-runtime/app": `${base}${folder}app.js`,
+            },
+          }),
           injectTo: "head-prepend",
         },
-        {
+        ...[...preloaded].map((file): HtmlTagDescriptor => ({
           tag: "link",
-          attrs: { rel: "modulepreload", href: entry },
+          attrs: { rel: "modulepreload", href: `${base}${folder}${file}` },
           injectTo: "head",
-        },
+        })),
       ];
       return tags;
     },
