@@ -98,7 +98,7 @@ export async function downloadsImportedBy(
   const downloads = new Map<string, string>();
   for (const { happened } of steps)
     if (happened.kind === "import") {
-      const name = happened.export.split("/")[0]!;
+      const [, name] = happened.export.split("/") as [string, string];
       if (!downloads.has(name))
         downloads.set(name, `${person.folder}/${happened.export}`);
     }
