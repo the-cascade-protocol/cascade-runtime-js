@@ -1216,6 +1216,7 @@ export async function sqlFailures(
   ported: Ported,
   sql: string = ported.sql,
   observed?: string[],
+  _checked?: Set<string>,
 ): Promise<string[]> {
   const { name: fixture, lens, union, db } = built;
   const where = `${fixture}, under ${lens}, ${ported.rq}`;

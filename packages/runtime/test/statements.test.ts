@@ -1069,8 +1069,25 @@ describe("Answering the vocabulary's SQL from a pod's statements · loadStatemen
             "a",
             "b",
           ]),
-        /no key can be read from the ORDER BY condition/,
+        /no key can be read from the ORDER BY condition .*; write a projected variable, or a COALESCE of them, alone or inside STR, SUBSTR, DESC or ASC, and nothing else/,
         condition,
+      );
+    for (const tail of [
+      "?a LIMIT 10",
+      "?a LIMIT 10 OFFSET 5",
+      "?a OFFSET 5",
+      "?a # the first key\n",
+      '?a # a "quote, and LIMIT 2\nLIMIT 3',
+      "$a",
+      "DESC($a) ?b",
+    ])
+      assert.deepEqual(
+        finalOrder(`SELECT ?a ?b WHERE { } ORDER BY ${tail}`, [
+          "a",
+          "b",
+        ])?.map(({ columns }) => columns),
+        tail.startsWith("DESC") ? [[0], [1]] : [[0]],
+        tail,
       );
     const later = at("2024-01-03T00:00:00Z");
     const firstBound = [

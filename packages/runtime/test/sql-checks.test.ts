@@ -6,7 +6,9 @@ import { OxigraphStore } from "../src/oxigraph-store.js";
 import { literal, written } from "../src/rdf.js";
 import {
   type BuiltFixture,
+  fixtureBuilt,
   sqlCheckAssertions,
+  sqlCheckContext,
   type SqlCheckOptions,
   sqlFailures,
   sqlFunctionAssertions,
@@ -227,17 +229,34 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
     const over = async (
       texts: Readonly<Record<string, string>>,
       fixture: string,
-    ): Promise<{ test: string; outcome: string; why?: string }[]> =>
+    ): Promise<
+      {
+        test: string;
+        outcome: string;
+        why?: string;
+        observed?: readonly string[];
+      }[]
+    > =>
       sqlCheckAssertions(
         await optionsOver(overlaid(real, texts)),
         [fixture],
         {},
       );
+    const whole = await over({}, "conditions-view");
     assert.deepEqual(
-      (await over({}, "conditions-view")).filter(
-        ({ outcome }) => outcome !== "passed",
-      ),
+      whole.filter(({ outcome }) => outcome !== "passed"),
       [],
+    );
+    assert.deepEqual(
+      whole
+        .filter(({ test }) => test.includes("#keyed/"))
+        .map(({ observed }) =>
+          (observed ?? []).filter((each) => each.startsWith("screen:")),
+        ),
+      [
+        ["screen:queries/views/conditions.rq"],
+        ["screen:queries/views/conditions.rq"],
+      ],
     );
     const keyed = (await over({ [CONDITIONS]: forgetting }, "conditions-view"))
       .filter(({ outcome }) => outcome === "failed")
@@ -260,6 +279,56 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
       addressed[0] ?? "",
       /filled whole though the layout places the view at two addresses/,
     );
+  });
+
+  it("refuses a view's fill at two addresses once for the whole run, and by a constraint's failure alone", async () => {
+    const real = await vocabulary();
+    const context = await sqlCheckContext(await optionsOver(real));
+    const view = "queries/views/allergies.rq";
+    const ported = context.ported.find(({ rq }) => rq === view);
+    assert.ok(ported !== undefined);
+    const built = await fixtureBuilt(context, "allergies-view", "everyday");
+    try {
+      let refills = 0;
+      let failing: Error | undefined;
+      const counting: BuiltFixture = {
+        ...built,
+        refill: () => {
+          refills += 1;
+          if (failing !== undefined) throw failing;
+          built.refill();
+        },
+      };
+      const checked = new Set<string>();
+      for (let again = 0; again < 3; again += 1)
+        assert.deepEqual(
+          await sqlFailures(
+            real,
+            counting,
+            ported,
+            undefined,
+            undefined,
+            checked,
+          ),
+          [],
+        );
+      assert.equal(refills, 1, "refilled once for three comparisons");
+      assert.deepEqual([...checked], [view]);
+      failing = Object.assign(new Error("NOT NULL constraint failed"), {
+        code: "SQLITE_CONSTRAINT_NOTNULL",
+      });
+      assert.deepEqual(
+        await sqlFailures(real, counting, ported, undefined, undefined),
+        [],
+      );
+      failing = new Error("disk I/O error");
+      await assert.rejects(
+        sqlFailures(real, counting, ported, undefined, undefined),
+        /disk I\/O error/,
+      );
+    } finally {
+      built.close();
+    }
   });
 
   it("fails the checks of the SQL files themselves for a .sql in the wrong parts, a screen table never emptied, an index with no statistics row, a .rq changed without its pin, and a .rq with no .sql unlisted", async () => {
@@ -369,10 +438,24 @@ SELECT 1;
         ["passed", undefined],
       ],
     );
+    const unscreened = sqlWholeRunAssertions(files, [
+      compared("queries/views/v.rq", "rows:queries/views/v.rq"),
+      compared(
+        "queries/views/w.rq",
+        "rows:queries/views/w.rq",
+        "screen:queries/views/w.rq",
+      ),
+    ]);
+    assert.equal(unscreened[0]?.outcome, "failed");
+    assert.match(
+      unscreened[0]?.why ?? "",
+      /no fixture whose screens are filled keyed gives its screen a row: queries\/views\/v\.rq$/,
+    );
     const views = sqlWholeRunAssertions(files, [
       compared(
         "queries/views/v.rq",
         "rows:queries/views/v.rq",
+        "screen:queries/views/v.rq",
         "kept:unchanged",
         "kept:moved",
       ),
