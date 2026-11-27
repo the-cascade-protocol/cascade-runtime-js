@@ -34,7 +34,9 @@ async function holdsAnything(folder: string): Promise<boolean> {
   try {
     return (await readdir(folder)).length > 0;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return false;
+    if (code === "ENOTDIR") return true;
     throw error;
   }
 }
@@ -80,27 +82,27 @@ export async function withKit(
 }
 
 /**
- * The downloads a kit's story imports, each once, in the order it first imports it: the path of each in the vocabulary,
- * which is a folder for an Apple Health export or a saved pull and a file for a C-CDA document.
+ * The downloads a kit's story imports, each once, in the order it first imports it: the name the kit gives the
+ * download (its folder, or the C-CDA file, in the person's `downloads`) and the path of what is imported in the
+ * vocabulary, which is a folder for an Apple Health export or a saved pull and a file for a C-CDA document.
  */
 export async function downloadsImportedBy(
   local: LocalVocabulary,
   kit: string,
-): Promise<string[]> {
+): Promise<{ readonly name: string; readonly path: string }[]> {
   const { person, steps } = await featureStory(
     local.files,
     `${KITS}${kit}/${kit}.feature`,
     () => new OxigraphStore(),
   );
-  return [
-    ...new Set(
-      steps.flatMap(({ happened }) =>
-        happened.kind === "import"
-          ? [`${person.folder}/${happened.export}`]
-          : [],
-      ),
-    ),
-  ];
+  const downloads = new Map<string, string>();
+  for (const { happened } of steps)
+    if (happened.kind === "import") {
+      const name = happened.export.split("/")[0]!;
+      if (!downloads.has(name))
+        downloads.set(name, `${person.folder}/${happened.export}`);
+    }
+  return [...downloads].map(([name, path]) => ({ name, path }));
 }
 
 async function kitVocabulary(kit: string): Promise<LocalVocabulary> {
@@ -204,7 +206,7 @@ export async function replayKitFrom(
 ): Promise<readonly KitStep[]> {
   const target = absolute(folder);
   if (await holdsAnything(target))
-    throw new Error(`${target} holds files already`);
+    throw new Refusal(`${folder} must be an empty or absent folder`);
   const path = `${KITS}${kit}/${kit}.feature`;
   const through =
     options.through === undefined ? {} : { through: options.through };

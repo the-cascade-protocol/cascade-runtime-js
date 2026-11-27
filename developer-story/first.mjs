@@ -2,7 +2,7 @@ import { openPod } from "cascade-runtime";
 import { sampleExport } from "cascade-runtime/samples";
 
 const pod = await openPod("pods/alex", { title: "Alex Rivera" });
-const folder = await sampleExport("alex-rivera", "first export");
+const folder = await sampleExport("alex-rivera", "x-e2");
 console.log(await pod.look(folder)); // what the export holds; writes nothing
 
 // Your app asks the person here whether these records are theirs, and stops on a no.

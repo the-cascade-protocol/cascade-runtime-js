@@ -705,18 +705,19 @@ await pod.close();
 
 `cascade-runtime/samples`, in Node, carries the made-up people the package ships, for a first run, a demo
 or a test of an app. `await samplePeople()` lists them: each `person`'s name (`alex-rivera`), their own name
-(`title`) and the plain names of the `exports` their story brings in, in its order (`first export`, `second export`).
+(`title`) and the `exports` their story brings in, in its order, each by the name of its download in the person's kit
+(`harbourline-2022`, `st-columba-2024`).
 `await sampleExport(person, name)` is the path of one export, which `look` and `import` take: the folder of an Apple
 Health export, a C-CDA file or the folder of a saved pull, as a person's phone or portal handed it out.
 `await loadSample(person, folder, { through })` makes the person's pod in a missing or empty folder on the tables
 of the folder it is in, performing their story to its end or through the step `through` names, as the starter's
 `npm run reset` does; it returns the steps performed. A person or an export the package does not carry is a
-`Refusal` naming those it does. `cascade-runtime/fixtures` is for tests only: what a test of the package builds
+`Refusal` naming those it does, and so is a folder that is not empty or absent. `cascade-runtime/fixtures` is for tests only: what a test of the package builds
 on, which an app does not import.
 
 ```js
 import { loadSample, sampleExport } from "cascade-runtime/samples";
-const firstExport = await sampleExport("alex-rivera", "first export");
+const firstExport = await sampleExport("alex-rivera", "x-e2");
 await loadSample("alex-rivera", "pods/alex-rivera", { through: "J1" });
 const her = await openPod("pods/alex-rivera");
 await showPerson(await her.ask("pod/My active allergies", { lens: "export" }));

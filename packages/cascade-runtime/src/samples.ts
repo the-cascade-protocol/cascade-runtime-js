@@ -11,29 +11,6 @@ import { installedParts, resolved } from "./node/resolved.js";
 import { acceptOptions } from "./options.js";
 import type { Tables } from "./tables.js";
 
-const ORDINALS = [
-  "first",
-  "second",
-  "third",
-  "fourth",
-  "fifth",
-  "sixth",
-  "seventh",
-  "eighth",
-  "ninth",
-  "tenth",
-  "eleventh",
-  "twelfth",
-  "thirteenth",
-  "fourteenth",
-  "fifteenth",
-  "sixteenth",
-  "seventeenth",
-  "eighteenth",
-  "nineteenth",
-  "twentieth",
-];
-
 export type SampleStep = KitStep;
 
 export interface SamplePerson {
@@ -41,18 +18,8 @@ export interface SamplePerson {
   readonly person: string;
   /** The person's own name, as `Alex Rivera`. */
   readonly title: string;
-  /** The names `sampleExport` takes for this person, in the order the person's story brings them in: `first export`, `second export`. */
+  /** The names `sampleExport` takes for this person, in the order the person's story brings them in: each is the name of the download in the kit, as `harbourline-2022`. */
   readonly exports: readonly string[];
-}
-
-/** The name of the export at a position in a story's order, from 0. */
-function exportNamed(position: number): string {
-  const ordinal = ORDINALS[position];
-  if (ordinal === undefined)
-    throw new Error(
-      `a sample person has more than ${ORDINALS.length} exports, which no plain name is given`,
-    );
-  return `${ordinal} export`;
 }
 
 /** Refuses a person the package does not carry, naming those it does. */
@@ -78,17 +45,17 @@ export async function samplePeople(): Promise<readonly SamplePerson[]> {
     people.push({
       person: name,
       title: await titleOf(local.files, folder),
-      exports: (await downloadsImportedBy(local, name)).map((_, position) =>
-        exportNamed(position),
+      exports: (await downloadsImportedBy(local, name)).map(
+        (download) => download.name,
       ),
     });
   return people;
 }
 
 /**
- * The path of one export of a sample person, by the name `samplePeople` gives it, as `first export`: the folder of an
- * Apple Health export, a C-CDA file a portal handed out, or the folder of a saved pull. It is what `look` and `import`
- * take. A person or an export it does not have is refused, naming those it does.
+ * The path of one export of a sample person, by the name of its download in the kit, which `samplePeople` lists: the
+ * folder of an Apple Health export, a C-CDA file a portal handed out, or the folder of a saved pull. It is what `look`
+ * and `import` take. A person or an export it does not have is refused, naming those it does.
  */
 export async function sampleExport(
   person: string,
@@ -97,13 +64,12 @@ export async function sampleExport(
   const { local } = await installedParts();
   await knownPerson(local, person);
   const downloads = await downloadsImportedBy(local, person);
-  const names = downloads.map((_, position) => exportNamed(position));
-  const found = downloads[names.indexOf(name)];
+  const found = downloads.find((download) => download.name === name);
   if (found === undefined)
     throw new Refusal(
-      `${person} has no export ${name}; ${person} has ${names.join(", ")}`,
+      `${person} has no export ${name}; ${person} has ${downloads.map((download) => download.name).join(", ")}`,
     );
-  return join(local.files.folder, ...found.split("/"));
+  return join(local.files.folder, ...found.path.split("/"));
 }
 
 /**

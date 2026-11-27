@@ -5280,12 +5280,12 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
 
 /**
  * `cascade-runtime/samples` is how an app reaches the made-up people the package carries: who they are, one of their
- * exports to bring in by a plain name, and a pod made as theirs. An app imports it, where `cascade-runtime/fixtures`
+ * exports to bring in by the name of its download in the kit, and a pod made as theirs. An app imports it, where `cascade-runtime/fixtures`
  * is for tests.
  */
 describe("Sample people for an app to start from · samplePeople(), sampleExport(), loadSample()", () => {
   describe("samplePeople()", () => {
-    it("lists each person the package carries, with their own name and a plain name for each export their story brings in, in order", async () => {
+    it("lists each person the package carries, with their own name and the kit's name for each download their story brings in, in order", async () => {
       const people = await samplePeople();
       const carried = (
         await readdir(inKit("conformance"), { withFileTypes: true })
@@ -5301,15 +5301,12 @@ describe("Sample people for an app to start from · samplePeople(), sampleExport
         {
           person: "alex-rivera",
           title: "Alex Rivera",
-          exports: [
-            "first export",
-            "second export",
-            "third export",
-            "fourth export",
-            "fifth export",
-            "sixth export",
-          ],
+          exports: ["x-e2", "x-e4", "x-e6", "x-e10", "x-e12", "x-e15"],
         },
+      );
+      assert.deepEqual(
+        people.find(({ person }) => person === "martin-okafor")?.exports,
+        ["harbourline-2022", "st-columba-2024"],
       );
     });
 
@@ -5328,7 +5325,7 @@ describe("Sample people for an app to start from · samplePeople(), sampleExport
         import { configureTables } from "cascade-runtime";
         import { sampleExport, samplePeople } from "cascade-runtime/samples";
         await samplePeople();
-        await sampleExport("alex-rivera", "first export");
+        await sampleExport("alex-rivera", "x-e2");
         configureTables({});
       `;
       await promisify(execFile)(
@@ -5341,13 +5338,13 @@ describe("Sample people for an app to start from · samplePeople(), sampleExport
 
   describe("sampleExport(person, name)", () => {
     it("returns what `look` and `import` take: the folder of an Apple Health export, a C-CDA file, or the folder of a saved pull", async () => {
-      assert.equal(
-        await sampleExport("alex-rivera", "first export"),
-        exported("x-e2"),
-      );
+      assert.equal(await sampleExport("alex-rivera", "x-e2"), exported("x-e2"));
       assert.match(
         await readFile(
-          await sampleExport("priya-natarajan", "second export"),
+          await sampleExport(
+            "priya-natarajan",
+            "kestrel-harbor-health-summary.xml",
+          ),
           "utf8",
         ),
         /<ClinicalDocument/,
@@ -5355,7 +5352,7 @@ describe("Sample people for an app to start from · samplePeople(), sampleExport
       );
       assert.ok(
         (
-          await readdir(await sampleExport("martin-okafor", "first export"))
+          await readdir(await sampleExport("martin-okafor", "harbourline-2022"))
         ).includes("bundle.json"),
         "a saved pull",
       );
@@ -5365,18 +5362,18 @@ describe("Sample people for an app to start from · samplePeople(), sampleExport
       for (const [name, refused, reason] of [
         [
           "a person it doesn't carry",
-          () => sampleExport("no-such-person", "first export"),
+          () => sampleExport("no-such-person", "x-e2"),
           /no sample person no-such-person; there are .*alex-rivera/,
         ],
         [
-          "an export beyond the person's last",
-          () => sampleExport("alex-rivera", "seventh export"),
-          /alex-rivera has no export seventh export; alex-rivera has first export, second export/,
+          "a download the person doesn't have",
+          () => sampleExport("alex-rivera", "first export"),
+          /alex-rivera has no export first export; alex-rivera has x-e2, x-e4/,
         ],
         [
-          "a story's name for an export, which is for tests",
-          () => sampleExport("alex-rivera", "x-e2"),
-          /has no export x-e2/,
+          "another person's download",
+          () => sampleExport("alex-rivera", "harbourline-2022"),
+          /has no export harbourline-2022/,
         ],
       ] as const)
         await assert.rejects(
@@ -5420,6 +5417,33 @@ describe("Sample people for an app to start from · samplePeople(), sampleExport
           /there are .*alex-rivera/.test(error.message),
       );
       await assert.rejects(stat(empty), { code: "ENOENT" });
+    });
+
+    it("throws `Refusal`, naming the folder as given, for a folder that holds anything, even only `.DS_Store`, and leaves it as it was", async () => {
+      const held = join(pods, "samples", "held");
+      await mkdir(held, { recursive: true });
+      await writeFile(join(held, ".DS_Store"), "");
+      await assert.rejects(
+        loadSample("alex-rivera", held),
+        (error) =>
+          error instanceof Refusal &&
+          error.message.includes(held) &&
+          /empty or absent/.test(error.message),
+      );
+      assert.deepEqual(await readdir(held), [".DS_Store"]);
+    });
+
+    it("throws `Refusal`, naming the path as given, for a path that is a file", async () => {
+      const file = join(pods, "samples", "a-file");
+      await mkdir(join(pods, "samples"), { recursive: true });
+      await writeFile(file, "");
+      await assert.rejects(
+        loadSample("alex-rivera", file),
+        (error) =>
+          error instanceof Refusal &&
+          error.message.includes(file) &&
+          /empty or absent/.test(error.message),
+      );
     });
   });
 });
