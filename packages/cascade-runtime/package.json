@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./dist/browser/*"
+  ],
   "description": "What an app imports: a pod it opens, looks into an export with, imports, enters, judges, matches and asks.",
   "license": "Apache-2.0",
   "repository": {
@@ -70,7 +73,7 @@
     "./app": {
       "browser": {
         "types": "./dist/src/browser/app.d.ts",
-        "default": "./dist/browser/app.js"
+        "default": "./dist/src/browser/app.js"
       },
       "types": "./dist/src/node/app.d.ts",
       "default": "./dist/src/node/app.js"

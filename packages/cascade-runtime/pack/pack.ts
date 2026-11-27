@@ -111,7 +111,14 @@ const VENDORED: readonly Carried[] = [
     buildOnly: ["node-addon-api"],
   },
 ];
-const KEPT_BY_BUNDLED = ["name", "version", "type", "exports", "license"];
+const KEPT_BY_BUNDLED = [
+  "name",
+  "version",
+  "type",
+  "sideEffects",
+  "exports",
+  "license",
+];
 const KEPT_BY_PACKAGE = [
   "name",
   "description",
@@ -119,6 +126,7 @@ const KEPT_BY_PACKAGE = [
   "repository",
   "engines",
   "type",
+  "sideEffects",
   "exports",
   "files",
   "peerDependencies",

@@ -727,18 +727,22 @@ await her.close();
 
 ## The app's core
 
-`cascade-runtime/app` is what every screen of an app reads and writes through, with no framework: `podApi(host)`
+`cascade-runtime/app` is this runtime's convenience for app builders, not part of what a conforming runtime must
+provide. It is what every screen of an app reads and writes through, with no framework: `podApi(host)`
 gives each operation of the starter's app (`pods`, `answers`, `ask`, `makePod`, `unlock`, `connect`, `bring` and
-the rest), each taking and giving plain JSON and refusing bad input with a `Refusal`. In Node, `nodeHost({ folder })`
+the rest), each taking and giving plain JSON and refusing bad input with a `Refusal`, which it exports. In Node, `nodeHost({ folder })`
 is the host whose pods are the folders in `folder`, with the reference tables beside them. In a browser the same import
 gives `browserHost({ samples })`, whose pods are the IndexedDB databases and whose samples are the pods published at
-`samples.at`, and `popupSignIns()`, which signs in at a hospital in a popup; it shares its modules with
-`cascade-runtime`, so serve both from the one `dist/browser/` (`cascadeRuntime()` of `cascade-runtime/vite` maps both). Each entry
+`samples.at`, and `popupSignIns()`, which signs in at a hospital in a popup. A page that runs pods loads it from the
+package's browser build, which shares its modules with `cascade-runtime`, so serve both from the one `dist/browser/`
+(`cascadeRuntime()` of `cascade-runtime/vite` maps both). Each entry
 is a short file that imports shared chunks: `cascadeRuntime()` preloads them, and a page without it lists the files of
 each entry it imports from `dist/browser/preloads.json` as `<link rel="modulepreload">`.
 `remoteApi(base)` calls the
 same operations at a server's `POST /api/<operation>`, `INPUT_SCHEMAS` are what each operation may be sent, and `TOOLS`
-are the tools a model reaches the app by, each at its consent tier. Close it once, as a pod is closed.
+are the tools a model reaches the app by, each at its consent tier. Close it once, as a pod is closed. A page whose
+pods are at its server bundles `cascade-runtime/app` itself (`cascadeRuntime({ browser: false })`), and carries only
+what it imports of it: `remoteApi`, the wording and the page's functions below, never the engine.
 
 ```js
 import { nodeHost, podApi } from "cascade-runtime/app";
@@ -781,7 +785,8 @@ its bundle: the About box's attributes on the body (`CASCADE_NAME`, `CASCADE_VER
 for a browser build `CASCADE_SAMPLES`) and, in the browser build, the demo hospitals' service worker with their data, the
 demo people and the page a sign-in returns to; it needs the `@the-cascade-protocol/sandbox` package the app depends on.
 `devOptions(root, pods)` gives development's Vite options with the pods folder never served or watched, and `looks` is
-what `samplesToPublish({ lookups: looks })` keeps for a first visit's first paint.
+what `samplesToPublish({ lookups: looks })` keeps for a first visit's first paint; an app with its own tiles gives
+them as `podApi` takes them, `lookups: (pod, tables) => looks(pod, tables, { sections })`.
 
 ## In a browser
 
