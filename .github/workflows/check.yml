@@ -76,6 +76,74 @@ jobs:
             echo "install=$(touches "$INSTALL")"
           } | tee -a "$GITHUB_OUTPUT"
 
+  # The reference tables' and the sandbox's builds this run tests with, picked once so that every job tests, and the package
+  # is packed, with the same two: the newest build of each default branch, or the `package` artifact of a pull request of
+  # either that a Depends-On: line names, as cascade-bridge-spec's compatibility.md says a consumer picks a package. Each job
+  # that types, tests or packs installs them over the builds package-lock.json names (.github/actions/builds), which are
+  # only what a fresh clone's `npm ci` gets so that it builds; the pack writes these two into the release's notes. The
+  # conformance jobs read neither package and do not wait for this one. A named pull request's build is waited for while
+  # its run packs it, up to 20 minutes for each of the two.
+  builds:
+    name: builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - id: tables
+        uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
+        with:
+          repository: the-cascade-protocol/cascade-reference-tables
+          package: cascade-reference-tables-*.tgz
+      - id: sandbox
+        uses: the-cascade-protocol/cascade-bridge-spec/.github/actions/pick@main
+        with:
+          repository: the-cascade-protocol/cascade-sandbox
+          package: the-cascade-protocol-sandbox-*.tgz
+      # builds.json: for each package by its npm name, what scripts/builds.mjs records. A build has an address only where
+      # its file is a release's asset, as a default branch's build is; a pull request's artifact is at none.
+      - name: The two files and the record of each pick
+        shell: bash
+        env:
+          TABLES_PATH: ${{ steps.tables.outputs.path }}
+          TABLES_COMMIT: ${{ steps.tables.outputs.commit }}
+          TABLES_HOW: ${{ steps.tables.outputs.how }}
+          SANDBOX_PATH: ${{ steps.sandbox.outputs.path }}
+          SANDBOX_COMMIT: ${{ steps.sandbox.outputs.commit }}
+          SANDBOX_HOW: ${{ steps.sandbox.outputs.how }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/builds"
+          mkdir -p "$out"
+          # entry <npm name> <repository> <the release a default branch's build of this file is an asset of> <path> <commit> <how>
+          entry() {
+            local file integrity url address=""
+            file=$(basename "$4")
+            cp "$4" "$out/$file"
+            integrity="sha512-$(openssl dgst -sha512 -binary "$4" | base64 -w0)"
+            url="https://github.com/$2/releases/download/$3/$file"
+            if curl -fsSL -r 0-0 -o /dev/null "$url"; then address="$url"; fi
+            jq -n --arg name "$1" --arg repository "https://github.com/$2" --arg commit "$5" --arg how "$6" \
+              --arg file "$file" --arg integrity "$integrity" --arg address "$address" \
+              '{($name): {$repository, $commit, $how, $file, $integrity, address: (if $address == "" then null else $address end)}}'
+          }
+          sandbox_file=$(basename "$SANDBOX_PATH")
+          [[ $sandbox_file =~ -commit-([0-9a-f]{40})\.tgz$ ]] || { echo "::error::$sandbox_file names no commit"; exit 1; }
+          {
+            entry cascade-reference-tables the-cascade-protocol/cascade-reference-tables package-builds \
+              "$TABLES_PATH" "$TABLES_COMMIT" "$TABLES_HOW"
+            entry @the-cascade-protocol/sandbox the-cascade-protocol/cascade-sandbox "build-${BASH_REMATCH[1]}" \
+              "$SANDBOX_PATH" "$SANDBOX_COMMIT" "$SANDBOX_HOW"
+          } | jq -s add > "$out/builds.json"
+          cat "$out/builds.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: builds
+          path: ${{ runner.temp }}/builds
+          if-no-files-found: error
+
   # What a mistake of a minute's mending shows red from, about two minutes in, while the long jobs go on: the website's
   # chrome copied stale, a type error, a lint or formatting error. Nothing here waits for another job; `compatibility`
   # waits for it and requires it. The steps run whatever the one before found, so one run shows every red there is, except
@@ -83,6 +151,7 @@ jobs:
   # website's preview cannot be read (it now answers with a Cloudflare Access sign-in page).
   fast:
     name: lint and types
+    needs: builds
     if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -112,17 +181,21 @@ jobs:
       - id: install
         run: npm ci
         if: ${{ !cancelled() }}
-      - name: Types
+      - id: builds
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: ./cascade-runtime-js/.github/actions/builds
+      - name: Types
+        if: ${{ !cancelled() && steps.builds.outcome == 'success' }}
         run: npm run typecheck
       - name: Lint and formatting
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.builds.outcome == 'success' }}
         run: npm run lint
 
   # Before a merge and nightly: a pair of pull requests is proven together before either merges. The suite and the conformance
   # run are jobs side by side, whose results `compatibility`, the required check, reports.
   tests:
     name: tests and conformance
+    needs: builds
     if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     # A job that runs tests or the conformance command is timed out at about twice the longest green run among the last
@@ -223,6 +296,10 @@ jobs:
           name: spec
           path: cascade-runtime-js/build/spec
           if-no-files-found: warn
+      # After the start step, whose host setup runs `npm ci` again off a pull request.
+      - id: builds
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: ./cascade-runtime-js/.github/actions/builds
       # The suite is run once, in two parts. First the test files each package's test/spec.json lists as randomOrder, in a
       # random order: one that needs another to run first fails here. The seed is in the log; rerun with
       # --test-random-seed=N to repeat it. The type check and the lint are the `lint and types` job's.
@@ -231,14 +308,14 @@ jobs:
       # scripts/test.mjs skips the cases that read it unless CASCADE_CONFORMANCE_REPORT names one, as it does here off a
       # pull request.
       - name: Tests in random order
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
+        if: ${{ !cancelled() && steps.builds.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') }}
         shell: bash
         run: |
           node scripts/transpile.mjs
           node scripts/test.mjs --listed --test-randomize --test-reporter=spec --test-reporter-destination=stdout
       # Then the files that are not listed, as written. Nightly, the `runtime-tests` job runs the suite: once a night, not twice.
       - name: The tests not listed as randomOrder
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
+        if: ${{ !cancelled() && steps.builds.outcome == 'success' && (github.event_name == 'pull_request' || env.CASCADE_CONFORMANCE_REPORT != '') && github.event_name != 'schedule' }}
         shell: bash
         run: node scripts/test.mjs --unlisted --test-reporter=spec --test-reporter-destination=stdout
         env:
@@ -366,6 +443,7 @@ jobs:
   # read the conformance report are `conformance (native)`'s.
   tests-native:
     name: tests (native)
+    needs: builds
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -409,6 +487,7 @@ jobs:
         with:
           checkout-only: "true"
       - run: npm ci
+      - uses: ./cascade-runtime-js/.github/actions/builds
       - run: npm run --silent bridge
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -425,7 +504,7 @@ jobs:
   # (`changes`).
   browser:
     name: docs site
-    needs: changes
+    needs: [changes, builds]
     if: ${{ needs.changes.outputs.docs == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -456,6 +535,7 @@ jobs:
         with:
           checkout-only: "true"
       - run: npm ci
+      - uses: ./cascade-runtime-js/.github/actions/builds
       # The Pages tree's adapter explorers are made by cascade-bridge-spec's generator, which needs Python and rdflib.
       - run: python3 -m pip install rdflib==7.6.0
       # The reference tables' row files are named by their content, so a copy kept from an earlier run is as good as a
@@ -819,6 +899,7 @@ jobs:
     needs:
       [
         changes,
+        builds,
         fast,
         tests,
         conformance-native,
@@ -838,6 +919,7 @@ jobs:
     steps:
       - env:
           CHANGES: ${{ needs.changes.result }}
+          BUILDS: ${{ needs.builds.result }}
           FAST: ${{ needs.fast.result }}
           TESTS: ${{ needs.tests.result }}
           CONFORMANCE_NATIVE: ${{ needs.conformance-native.result }}
@@ -856,7 +938,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          echo "changes: ${CHANGES}; lint and types: ${FAST}; tests and conformance: ${TESTS}; conformance on the native build: ${CONFORMANCE_NATIVE}; tests on the native build: ${TESTS_NATIVE}; package: ${PACKAGE}; docs site: ${BROWSER} (wanted: ${RUN_DOCS}); starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS} (wanted: ${RUN_STARTER}); database on each system: ${DATABASE}, package installed on linux: ${LINUX}, on the other systems: ${OTHER_SYSTEMS} (wanted: ${RUN_INSTALL}); runtime tests: ${RUNTIME_TESTS}"
+          echo "changes: ${CHANGES}; builds: ${BUILDS}; lint and types: ${FAST}; tests and conformance: ${TESTS}; conformance on the native build: ${CONFORMANCE_NATIVE}; tests on the native build: ${TESTS_NATIVE}; package: ${PACKAGE}; docs site: ${BROWSER} (wanted: ${RUN_DOCS}); starter-kit: ${STARTER}; starter on the other systems: ${STARTER_SYSTEMS} (wanted: ${RUN_STARTER}); database on each system: ${DATABASE}, package installed on linux: ${LINUX}, on the other systems: ${OTHER_SYSTEMS} (wanted: ${RUN_INSTALL}); runtime tests: ${RUNTIME_TESTS}"
           bad=0
           # A job that runs on every event.
           always() { [ "$2" = success ] || { echo "::error title=compatibility::$1 is $2, not success"; bad=1; }; }
@@ -870,6 +952,7 @@ jobs:
             fi
           }
           always changes "${CHANGES}"
+          always builds "${BUILDS}"
           always "lint and types" "${FAST}"
           always "tests and conformance" "${TESTS}"
           always "conformance (native)" "${CONFORMANCE_NATIVE}"
@@ -958,6 +1041,7 @@ jobs:
   # Nightly this is the one run of the suite: `tests and conformance` leaves it out then, and `compatibility` waits for this job.
   runtime-tests:
     name: runtime tests
+    needs: builds
     if: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1005,6 +1089,7 @@ jobs:
         with:
           checkout-only: "true"
       - run: npm ci
+      - uses: ./cascade-runtime-js/.github/actions/builds
       # The Bridge's build, which the suite's Bridge tests read.
       - run: npm run --silent bridge
         env:
@@ -1036,8 +1121,8 @@ jobs:
   # finished run, at most one push behind), so the deploy waits no longer than the conformance job.
   build-pages:
     name: build-pages
-    needs: [conformance]
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+    needs: [conformance, builds]
+    if: ${{ !cancelled() && needs.builds.result == 'success' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     # `actions` lets the test reports' lookup list this repository's runs, which a private one would refuse by default.
     permissions:
@@ -1054,6 +1139,9 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      - uses: ./.github/actions/builds
+        with:
+          directory: .
       # The Pages tree's adapter explorers are made by cascade-bridge-spec's generator, which needs Python and rdflib.
       - run: python3 -m pip install rdflib==7.6.0
       # The reference tables' row files are named by their content, so a copy kept from an earlier run is as good as a
@@ -1337,6 +1425,7 @@ jobs:
   # head of every default branch.
   package:
     name: package
+    needs: builds
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -1360,6 +1449,7 @@ jobs:
         with:
           checkout-only: "true"
       - run: npm ci
+      - uses: ./cascade-runtime-js/.github/actions/builds
       # The reference tables' row files are named by their content, so a copy kept from an earlier run is as good as a
       # fresh download, and a Pages blip cannot fail a run. What a run fetched anew is saved; a push to main saves where a pull request reads.
       - id: rows

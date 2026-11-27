@@ -1,0 +1,20 @@
+name: builds
+description: >
+  The reference tables' and the sandbox's builds the `builds` job of check.yml picked for this run, installed over the
+  ones package-lock.json names, with the record of each pick written to node_modules/.cascade-builds.json, where the
+  pack reads it for the release's notes. Run after `npm ci`, which deletes node_modules and so the record with it.
+inputs:
+  directory:
+    description: The checkout of this repository, relative to the workspace.
+    default: cascade-runtime-js
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v7
+      with:
+        name: builds
+        path: ${{ runner.temp }}/builds
+    - shell: bash
+      working-directory: ${{ inputs.directory }}
+      run: node scripts/builds.mjs --install "$RUNNER_TEMP/builds"

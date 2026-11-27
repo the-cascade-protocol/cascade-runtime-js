@@ -53,7 +53,11 @@ export default tseslint.config(
     languageOptions: { globals: { console: "readonly" } },
   },
   {
-    files: ["scripts/link-check.mjs", "scripts/sync-chrome.mjs"],
+    files: [
+      "scripts/builds.mjs",
+      "scripts/link-check.mjs",
+      "scripts/sync-chrome.mjs",
+    ],
     languageOptions: {
       globals: { URL: "readonly", fetch: "readonly", AbortSignal: "readonly" },
     },
