@@ -1,20 +1,16 @@
-// PodApi called at a server's `/api/`, through Hono's client typed by the server's routes; only their types come from
-// the server. What the server refuses is thrown as PodApi throws it in-process, by name.
-import {
-  hc,
-  type ClientRequestOptions,
-  type ClientResponse,
-} from "hono/client";
-import type { ApiRoutes, Output } from "../../server/api.ts";
-import type { Input as In, Operation } from "../../server/inputs.ts";
+// PodApi called at a server's `/api/`, `POST /api/<operation>` with the input as JSON, typed by PodApi's own inputs and
+// outputs. What the server refuses is thrown as PodApi throws it in-process, by name.
+import type { Input as In, Operation } from "./inputs.js";
+import type { Output } from "./pod-api.js";
 
-/** What a route answers with 200: its operation's output, as JSON. */
-type Ok<R> =
-  R extends ClientResponse<infer T, infer S>
-    ? S extends 200
-      ? T
-      : never
-    : never;
+/** What a client sends each request with: `fetch` in place of the global one, and headers beside its own. */
+export interface RemoteOptions {
+  readonly fetch?: (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+  readonly headers?: Readonly<Record<string, string>>;
+}
 
 /** PodApi's own errors, by the names the runtime's carry: the screens tell them apart by `name`. */
 class Refusal extends Error {
@@ -30,10 +26,10 @@ class Unopened extends Error {
 }
 
 /** What the server answered `operation`, or what it refused: 400 a `Refusal`, 423 an `Unopened`, else an `Error`. */
-async function answer<R extends ClientResponse<unknown, number>>(
-  operation: Operation,
-  sent: Promise<R>,
-): Promise<Ok<R>> {
+async function answer<K extends Operation>(
+  operation: K,
+  sent: Promise<Response>,
+): Promise<Output<K>> {
   const response = await sent;
   const parsed: unknown = await response.json().catch(() => undefined);
   if (response.ok) {
@@ -41,9 +37,9 @@ async function answer<R extends ClientResponse<unknown, number>>(
       throw new Error(
         `${operation}: the server answered ${response.status} with ${response.headers.get("content-type") ?? "no content type"}, not JSON`,
       );
-    return parsed as Ok<R>;
+    return parsed as Output<K>;
   }
-  const body = (parsed ?? {}) as Output;
+  const body = (parsed ?? {}) as Record<string, unknown>;
   if (typeof body.refused === "string") {
     if (response.status === 403) throw new Error(body.refused);
     if (response.status === 423)
@@ -54,49 +50,43 @@ async function answer<R extends ClientResponse<unknown, number>>(
 }
 
 /** Every operation of PodApi at the server whose app is at `base`. */
-export function remoteApi(base: string, options?: ClientRequestOptions) {
-  const { api } = hc<ApiRoutes>(base, options);
+export function remoteApi(base: string, options: RemoteOptions = {}) {
+  const root = base.endsWith("/") ? base : `${base}/`;
+  const send = <K extends Operation>(operation: K, json: In<K>) =>
+    answer(
+      operation,
+      (options.fetch ?? fetch)(new URL(`api/${operation}`, root), {
+        method: "POST",
+        headers: { ...options.headers, "content-type": "application/json" },
+        body: JSON.stringify(json),
+      }),
+    );
   return {
-    pods: (json: In<"pods"> = {}) => answer("pods", api.pods.$post({ json })),
-    held: (json: In<"held"> = {}) => answer("held", api.held.$post({ json })),
-    pod: (json: In<"pod">) => answer("pod", api.pod.$post({ json })),
-    answers: (json: In<"answers">) =>
-      answer("answers", api.answers.$post({ json })),
-    said: (json: In<"said">) => answer("said", api.said.$post({ json })),
-    trend: (json: In<"trend">) => answer("trend", api.trend.$post({ json })),
-    classes: (json: In<"classes">) =>
-      answer("classes", api.classes.$post({ json })),
-    panel: (json: In<"panel">) => answer("panel", api.panel.$post({ json })),
-    table: (json: In<"table"> = {}) =>
-      answer("table", api.table.$post({ json })),
-    ask: (json: In<"ask">) => answer("ask", api.ask.$post({ json })),
-    tool: (json: In<"tool">) => answer("tool", api.tool.$post({ json })),
-    makePod: (json: In<"makePod">) =>
-      answer("makePod", api.makePod.$post({ json })),
-    waiting: (json: In<"waiting">) =>
-      answer("waiting", api.waiting.$post({ json })),
-    waitingWords: (json: In<"waitingWords">) =>
-      answer("waitingWords", api.waitingWords.$post({ json })),
-    confirmWords: (json: In<"confirmWords">) =>
-      answer("confirmWords", api.confirmWords.$post({ json })),
-    unlock: (json: In<"unlock">) =>
-      answer("unlock", api.unlock.$post({ json })),
-    lock: (json: In<"lock"> = {}) => answer("lock", api.lock.$post({ json })),
-    deleteAll: (json: In<"deleteAll"> = {}) =>
-      answer("deleteAll", api.deleteAll.$post({ json })),
-    resetAll: (json: In<"resetAll"> = {}) =>
-      answer("resetAll", api.resetAll.$post({ json })),
-    checkTables: (json: In<"checkTables"> = {}) =>
-      answer("checkTables", api.checkTables.$post({ json })),
-    setWorldDate: (json: In<"setWorldDate">) =>
-      answer("setWorldDate", api.setWorldDate.$post({ json })),
-    hospitals: (json: In<"hospitals"> = {}) =>
-      answer("hospitals", api.hospitals.$post({ json })),
-    connect: (json: In<"connect">) =>
-      answer("connect", api.connect.$post({ json })),
-    connection: (json: In<"connection">) =>
-      answer("connection", api.connection.$post({ json })),
-    bring: (json: In<"bring">) => answer("bring", api.bring.$post({ json })),
+    pods: (json: In<"pods"> = {}) => send("pods", json),
+    held: (json: In<"held"> = {}) => send("held", json),
+    pod: (json: In<"pod">) => send("pod", json),
+    answers: (json: In<"answers">) => send("answers", json),
+    said: (json: In<"said">) => send("said", json),
+    trend: (json: In<"trend">) => send("trend", json),
+    classes: (json: In<"classes">) => send("classes", json),
+    panel: (json: In<"panel">) => send("panel", json),
+    table: (json: In<"table"> = {}) => send("table", json),
+    ask: (json: In<"ask">) => send("ask", json),
+    tool: (json: In<"tool">) => send("tool", json),
+    makePod: (json: In<"makePod">) => send("makePod", json),
+    waiting: (json: In<"waiting">) => send("waiting", json),
+    waitingWords: (json: In<"waitingWords">) => send("waitingWords", json),
+    confirmWords: (json: In<"confirmWords">) => send("confirmWords", json),
+    unlock: (json: In<"unlock">) => send("unlock", json),
+    lock: (json: In<"lock"> = {}) => send("lock", json),
+    deleteAll: (json: In<"deleteAll"> = {}) => send("deleteAll", json),
+    resetAll: (json: In<"resetAll"> = {}) => send("resetAll", json),
+    checkTables: (json: In<"checkTables"> = {}) => send("checkTables", json),
+    setWorldDate: (json: In<"setWorldDate">) => send("setWorldDate", json),
+    hospitals: (json: In<"hospitals"> = {}) => send("hospitals", json),
+    connect: (json: In<"connect">) => send("connect", json),
+    connection: (json: In<"connection">) => send("connection", json),
+    bring: (json: In<"bring">) => send("bring", json),
     close: async () => undefined,
   };
 }

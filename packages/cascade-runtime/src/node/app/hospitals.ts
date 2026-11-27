@@ -1,8 +1,8 @@
 // The Node app's part of a sign-in at a hospital: the person goes to the hospital's own page, and the hospital sends
 // them back to this app's `/callback`. And the world's date, which the demo hospitals answer as of.
 import { clearTimeout, setTimeout } from "node:timers";
-import { ConnectionFailure } from "cascade-runtime";
-import type { Hospitals, World } from "./pod-api.ts";
+import type { Hospitals, World } from "../../app/pod-api.js";
+import { ConnectionFailure } from "../../connect/index.js";
 
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 

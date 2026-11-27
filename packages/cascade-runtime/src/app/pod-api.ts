@@ -1,37 +1,32 @@
 // What the starter reads of its pods and its reference tables, once, for every host: the Node server, the browser
 // target, the chat, the MCP server and `npm run ask`. A host gives the pods, the tables and what only it knows;
 // every operation takes and gives plain JSON, and refuses bad input with a `Refusal`.
+import { Refusal, Unopened } from "@cascade-runtime/runtime";
 import {
   changesIn,
   changeTools,
-  checkInput,
+  findChanges,
+  labSeriesIn,
+  timelineIn,
+} from "../changes.js";
+import { checkInput, type InputSchema } from "../check.js";
+import {
   connect,
   ConnectionFailure,
   ConnectRefused,
   connectFiles,
   DEMO_PLAN,
-  findChanges,
-  labSeriesIn,
+  type DirectoryRow,
   pull,
+  type Pull,
   PullRefused,
   pullFiles,
-  Refusal,
+  type Registration,
   searchDirectory,
   serverReport,
-  sixWords,
-  timelineIn,
-  typedWords,
-  Unopened,
-  type Checked,
-  type DirectoryRow,
-  type ImportProgress,
-  type InputSchema,
-  type Pod,
-  type Pull,
-  type Registration,
   type SignIn,
-  type Tables,
-} from "cascade-runtime";
+} from "../connect/index.js";
+import type { ImportProgress, Pod } from "../pod.js";
 import {
   citedLabChange,
   type CompactAnswer,
@@ -40,7 +35,9 @@ import {
   type TableLookups,
   TOOLS as RUNTIME_TOOLS,
   unknownChangeTool,
-} from "cascade-runtime/tools";
+} from "../pod-tools.js";
+import { sixWords, typedWords } from "../six-words.js";
+import type { Checked, Tables } from "../tables.js";
 import {
   type Abouts,
   type Answers,
@@ -76,8 +73,8 @@ import {
   withImportHistory,
   worldInstant,
   worthALook,
-} from "./said.ts";
-import type { Input, Operation } from "./server/inputs.ts";
+} from "./said.js";
+import type { Input, Operation } from "./inputs.js";
 
 export { maps };
 

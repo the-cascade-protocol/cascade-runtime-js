@@ -66,6 +66,10 @@
     "./published": {
       "types": "./dist/src/node/published.d.ts",
       "default": "./dist/src/node/published.js"
+    },
+    "./app": {
+      "types": "./dist/src/node/app.d.ts",
+      "default": "./dist/src/node/app.js"
     }
   },
   "files": [
@@ -78,7 +82,8 @@
     "@cascade-runtime/fhir-pull": "0.0.0",
     "@cascade-runtime/runtime": "0.0.0",
     "ajv": "8.20.0",
-    "oxigraph": "0.5.11"
+    "oxigraph": "0.5.11",
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "vite": "^8.3.3"

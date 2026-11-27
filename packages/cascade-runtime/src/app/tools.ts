@@ -2,21 +2,21 @@
 // (`server/chat.ts`) and the MCP server (`mcp-server.ts`) when they are added, each offer those their door may. A tool
 // takes one `kind` of act, and its `tier`, the person's consent, is the protocol's for that kind (`TIER_OF_KIND`): `free`
 // reads or moves the app, `ask` writes once the person has said yes. The kinds at `never` are `NEVER`'s, which no tool takes.
-import { type InputSchema, type LabChange, Refusal } from "cascade-runtime";
+import { Refusal } from "@cascade-runtime/runtime";
+import type { LabChange } from "../changes.js";
+import type { InputSchema } from "../check.js";
 import {
   type CompactAnswer,
   type PodReads,
   type PodTool,
   TIER_OF_KIND,
+  type ToolInput,
   TOOLS as RUNTIME_TOOLS,
   type ToolKind,
   type ToolTier,
-} from "cascade-runtime/tools";
-import { POD_TOOLS, type PodApi } from "./pod-api.ts";
-import { PAGE_TOOLS, type PageDoor, type PageTool } from "./said.ts";
-
-/** A tool's input, as its door checked it against the tool's schema: `pod` beside it for a tool with `ofPod`. */
-export type ToolInput = Readonly<Record<string, unknown>>;
+} from "../pod-tools.js";
+import { POD_TOOLS, type PodApi } from "./pod-api.js";
+import { PAGE_TOOLS, type PageDoor, type PageTool } from "./said.js";
 
 /** What a door gives the tools: the builders of its own addresses it has, and `open`, where it moves its app. */
 export interface Door {

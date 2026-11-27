@@ -3,8 +3,7 @@
 // types, which are erased), which the view, PodApi, the chat, MCP and the tests all read, in Node and in a browser
 // alike.
 
-import type { DateIs } from "cascade-runtime";
-import { terms } from "cascade-runtime/terms";
+import type { DateIs } from "../changes.js";
 import {
   medicationsSharingAnIngredient,
   reportDiffers,
@@ -12,7 +11,8 @@ import {
   TIER_OF_KIND,
   type ToolKind,
   type ToolTier,
-} from "cascade-runtime/tools";
+} from "../pod-tools.js";
+import { terms } from "../terms.js";
 
 /** A row of a question as the pod gives it: each variable it binds, as text, or as its values for a declared list column. */
 export type AnsweredRow = Readonly<Record<string, string | readonly string[]>>;
@@ -483,12 +483,14 @@ const ENTERED_IN_ERROR = terms.MedicationEnteredInError;
  * The lifecycle classes of rule L1 a person is shown, in the order the Medications table opens in, each with its word.
  * A medication of any but the last is current. Entered in error is not among them: such a medication is not shown.
  */
-const LIFECYCLES = [
-  [ACTIVE, "Active"],
-  [terms.MedicationPaused, "Paused"],
-  [UNKNOWN, "Unknown"],
-  [STOPPED, "Stopped"],
-].map(([lifecycle, said], order) => ({ lifecycle, said, order }));
+const LIFECYCLES = (
+  [
+    [ACTIVE, "Active"],
+    [terms.MedicationPaused, "Paused"],
+    [UNKNOWN, "Unknown"],
+    [STOPPED, "Stopped"],
+  ] as const
+).map(([lifecycle, said], order) => ({ lifecycle, said, order }));
 
 /** A medication row's lifecycle class, as `LIFECYCLES` holds it: unknown when the row states none. */
 const lifecycleOf = (row: SectionRow) =>
@@ -523,7 +525,7 @@ export const SECTIONS: readonly Section[] = [
     field: "allergenName",
     codes: ["code"],
     columns: [
-      text("Allergen", (row) => row.allergenName),
+      text("Allergen", (row) => row.allergenName!),
       {
         head: "Severity",
         type: "number",
@@ -555,7 +557,7 @@ export const SECTIONS: readonly Section[] = [
     shows: (row) => row.lifecycle !== ENTERED_IN_ERROR,
     current: isCurrent,
     columns: [
-      text("Medication", (row) => row.medication),
+      text("Medication", (row) => row.medication!),
       {
         head: "Status",
         type: "text",
@@ -563,8 +565,8 @@ export const SECTIONS: readonly Section[] = [
           `${lifecycleOf(row).order} ${isCurrent(row) ? "" : (row.ended ?? "")} ${row.medication ?? ""}`,
         show: medicationStatus,
       },
-      date("Since", (row) => row.started),
-      date("Prescribed", (row) => row.written),
+      date("Since", (row) => row.started!),
+      date("Prescribed", (row) => row.written!),
     ],
     sortBy: 1,
   },
@@ -575,8 +577,8 @@ export const SECTIONS: readonly Section[] = [
     field: "condition",
     codes: ["conditionCode"],
     columns: [
-      text("Condition", (row) => row.condition),
-      date("Since", (row) => row.onset),
+      text("Condition", (row) => row.condition!),
+      date("Since", (row) => row.onset!),
     ],
     sortBy: 0,
   },
@@ -587,10 +589,10 @@ export const SECTIONS: readonly Section[] = [
     field: "test",
     codes: ["code"],
     columns: [
-      text("Test", (row) => row.test),
+      text("Test", (row) => row.test!),
       number("Value", (row) => row.value),
-      text("Unit", (row) => row.unit),
-      date("Date", (row) => row.performed),
+      text("Unit", (row) => row.unit!),
+      date("Date", (row) => row.performed!),
     ],
     sortBy: 3,
     newestFirst: true,
@@ -602,8 +604,8 @@ export const SECTIONS: readonly Section[] = [
     field: "vaccine",
     codes: ["code"],
     columns: [
-      text("Vaccine", (row) => row.vaccine),
-      date("Date", (row) => row.given),
+      text("Vaccine", (row) => row.vaccine!),
+      date("Date", (row) => row.given!),
     ],
     sortBy: 1,
     newestFirst: true,
@@ -615,8 +617,8 @@ export const SECTIONS: readonly Section[] = [
     field: "procedure",
     codes: ["procedureCode"],
     columns: [
-      text("Procedure", (row) => row.procedure),
-      date("Date", (row) => row.performed),
+      text("Procedure", (row) => row.procedure!),
+      date("Date", (row) => row.performed!),
     ],
     sortBy: 1,
     newestFirst: true,
@@ -628,7 +630,7 @@ export const SECTIONS: readonly Section[] = [
     codes: [],
     rows: variantRows,
     columns: [
-      text("Variant", (row) => row.variant),
+      text("Variant", (row) => row.variant!),
       number("Reports", (row) => row.reports),
     ],
     sortBy: 0,
@@ -741,7 +743,7 @@ export function codesOf(answers: Answers): string[] {
  * of its codes with a status, is retired.
  */
 function namingOf(section: Section, row: SectionRow, about: Abouts) {
-  const said = section.codes.map((column) => about.get(row[column]));
+  const said = section.codes.map((column) => about.get(row[column]!));
   const naming = said.find((each) => each?.name !== undefined);
   return {
     label: naming?.name!.label,
@@ -958,7 +960,7 @@ export function personName(pod: string, titles?: Titles): string {
     pod
       .split(/[-_.]+/)
       .filter(Boolean)
-      .map((word) => word[0].toUpperCase() + word.slice(1))
+      .map((word) => word[0]!.toUpperCase() + word.slice(1))
       .join(" ")
   );
 }
@@ -1025,7 +1027,7 @@ export function counted(records: Readonly<Record<string, number>>): string {
 const UNNAMED = "An entry";
 
 export const capitalised = (sentence: string) =>
-  sentence[0].toUpperCase() + sentence.slice(1);
+  sentence[0]!.toUpperCase() + sentence.slice(1);
 
 /** An entry as a sentence names it: its name, and what one of its kind is called. */
 interface Item {
@@ -1076,7 +1078,7 @@ const SAID_BUILT: readonly (readonly [
   [
     /^this source reports (\d+) records? at states older than it reported on (\S+)$/,
     ({ name, one }, [count, date]) =>
-      `The source reports ${whom(name, one)}${count === "1" ? "" : ` and ${Number(count) - 1} more`} at ${count === "1" ? "a state" : "states"} older than it reported on ${dayInWords(date)}.`,
+      `The source reports ${whom(name, one)}${count === "1" ? "" : ` and ${Number(count) - 1} more`} at ${count === "1" ? "a state" : "states"} older than it reported on ${dayInWords(date!)}.`,
   ],
   [
     /^this writer's clock was at least (\d+) days? behind$/,
@@ -1127,9 +1129,9 @@ export interface Seen {
 export function seenAt(answers: Answers): Map<string, Seen> {
   const seen = new Map<string, Seen>();
   for (const row of rowsOf(answers, SEEN)) {
-    if (!seen.has(row.entry))
-      seen.set(row.entry, { places: [], across: Number(row.places) });
-    const { places } = seen.get(row.entry)!;
+    if (!seen.has(row.entry!))
+      seen.set(row.entry!, { places: [], across: Number(row.places) });
+    const { places } = seen.get(row.entry!)!;
     const place = row.place === undefined ? undefined : placeName(row.place);
     if (place !== undefined && !places.includes(place)) places.push(place);
   }
@@ -1173,7 +1175,7 @@ export function worthALook(
   const entries = new Map<string, Item>();
   for (const section of SECTIONS)
     for (const row of sectionRows(section, answers))
-      entries.set(row.entry, {
+      entries.set(row.entry!, {
         name: row[section.field] || fromLabel(row.entryLabel).name,
         one: section.one,
       });
@@ -1182,9 +1184,9 @@ export function worthALook(
     review.set(reviewKey(row), {
       sentence: reviewSaid(
         row,
-        entries.get(row.entry) ?? fromLabel(row.entryLabel),
+        entries.get(row.entry!) ?? fromLabel(row.entryLabel),
       ),
-      entry: row.entry,
+      entry: row.entry!,
       tag: NEEDS_REVIEW,
     });
   const named = variantReports(answers, said);
@@ -1213,7 +1215,7 @@ export function worthALook(
     ...differing,
     ...sharedIngredients(answers, about).map(({ sentence, entries }) => ({
       sentence,
-      entry: entries[0].entry,
+      entry: entries[0]!.entry,
     })),
   ].map((line) => ({ ...line, sentence: capitalised(line.sentence) }));
 }
@@ -1229,9 +1231,9 @@ export function reviewKey(row: Row): string {
 
 /** The sentence a row of "What needs review" is told in, of `item`, the entry's `name` and what `one` of its kind is called. */
 export function reviewSaid(row: Row, item: Item): string {
-  if (Object.hasOwn(SAID, row.needs)) return SAID[row.needs]!(item, row);
+  if (Object.hasOwn(SAID, row.needs!)) return SAID[row.needs!]!(item, row);
   for (const [pattern, said] of SAID_BUILT) {
-    const found = pattern.exec(row.needs);
+    const found = pattern.exec(row.needs!);
     if (found !== null) return said(item, found.slice(1));
   }
   return `${item.name}: ${row.needs}.`;
@@ -1310,8 +1312,8 @@ export function variantsAsked(answers: Answers): Map<string, VariantAsked> {
   const asked = new Map<string, VariantAsked>();
   const genes = new Map<string, Set<string>>();
   for (const row of rowsOf(answers, VARIANTS)) {
-    const variant = asked.get(row.variant) ?? { hgvs: [], variations: [] };
-    asked.set(row.variant, variant);
+    const variant = asked.get(row.variant!) ?? { hgvs: [], variations: [] };
+    asked.set(row.variant!, variant);
     if (row.hgvs !== undefined && !variant.hgvs.includes(row.hgvs))
       variant.hgvs.push(row.hgvs);
     if (
@@ -1321,8 +1323,8 @@ export function variantsAsked(answers: Answers): Map<string, VariantAsked> {
       variant.variations.push(row.variation);
     if (row.gene !== undefined)
       genes.set(
-        row.variant,
-        new Set([...(genes.get(row.variant) ?? []), row.gene]),
+        row.variant!,
+        new Set([...(genes.get(row.variant!) ?? []), row.gene]),
       );
   }
   for (const [variant, symbols] of genes)
@@ -1413,7 +1415,7 @@ function clinvarSaid(
   if (says === undefined) return undefined;
   switch (says.found) {
     case "rows":
-      return rowSaid(says.rows[0]);
+      return rowSaid(says.rows[0]!);
     case "not found":
       return "ClinVar, as this app holds it, has no row for this variant.";
     case "not covered":
@@ -1466,15 +1468,15 @@ export function variantSaid({
   return {
     reports: ordered.map((report) => {
       const when = whenOf(report.date, dates);
-      const place = places.get(report.report);
+      const place = places.get(report.report!);
       const head = `${when === undefined ? "An undated report" : `Your ${when} report`}${place === undefined ? "" : ` from ${place}`}`;
       const sentence =
         report.classification === undefined
           ? `${head} gives no ACMG classification.`
           : `${head} said ${lowered(labels.get(report.classification) ?? wordsOf(report.classification))}.`;
-      const differs = reportDiffers(report.report, says, verdicts);
+      const differs = reportDiffers(report.report!, says, verdicts);
       return {
-        report: report.report,
+        report: report.report!,
         ...(when !== undefined && { when }),
         ...(place !== undefined && { place }),
         sentence,
@@ -1522,7 +1524,7 @@ export async function variantsSaid(
   const found = new Map(
     [...says].flatMap(([variant, each]) =>
       each.found === "rows" && each.rows.length === 1
-        ? [[variant, each.rows[0].variation] as const]
+        ? [[variant, each.rows[0]!.variation] as const]
         : [],
     ),
   );
@@ -1553,14 +1555,14 @@ export function variantReports(
   const sources = rowsOf(answers, SOURCES);
   const reported = new Map<string, Row[]>();
   for (const report of rowsOf(answers, REPORTS))
-    reported.set(report.variant, [
-      ...(reported.get(report.variant) ?? []),
+    reported.set(report.variant!, [
+      ...(reported.get(report.variant!) ?? []),
       report,
     ]);
   const labs = new Map<string, string[]>();
   for (const row of sources)
     if (row.hospital !== undefined)
-      labs.set(row.entry, [...(labs.get(row.entry) ?? []), placeOf(row)]);
+      labs.set(row.entry!, [...(labs.get(row.entry!) ?? []), placeOf(row)]);
   const places = new Map(
     [...labs].map(([report, each]) => [report, listed([...new Set(each)])]),
   );
@@ -1630,12 +1632,12 @@ export function openingOrder(
   rows: readonly SectionRow[],
 ): SectionRow[] {
   const column = section.columns[section.sortBy];
-  const key = (row: SectionRow) => String(column.key(row) ?? "");
+  const key = (row: SectionRow) => String(column!.key(row) ?? "");
   const order = section.newestFirst ? -1 : 1;
   return [...rows].sort(
     (a, b) =>
       Number(key(a) === "") - Number(key(b) === "") ||
-      order * compare(column.type, key(a), key(b)),
+      order * compare(column!.type, key(a), key(b)),
   );
 }
 
@@ -2100,13 +2102,13 @@ export function howOf(
     { label: string; started: string; records: Set<string> }
   >();
   for (const row of rowsOf(answers, IMPORTS)) {
-    const each = imports.get(row.import) ?? {
-      label: row.importLabel,
-      started: row.started,
+    const each = imports.get(row.import!) ?? {
+      label: row.importLabel!,
+      started: row.started!,
       records: new Set(),
     };
-    each.records.add(row.record);
-    imports.set(row.import, each);
+    each.records.add(row.record!);
+    imports.set(row.import!, each);
   }
   if (imports.size < 2) return undefined;
   const arrivals = rowsOf(answers, REVISIONS);
@@ -2138,12 +2140,12 @@ export function howOf(
   });
   const stated = new Map<string, Map<string, string[]>>();
   for (const row of rowsOf(answers, VERSIONS)) {
-    const fields = stated.get(row.version) ?? new Map<string, string[]>();
+    const fields = stated.get(row.version!) ?? new Map<string, string[]>();
     fields.set(
-      row.field,
-      [...(fields.get(row.field) ?? []), valueSaid(row)].sort(),
+      row.field!,
+      [...(fields.get(row.field!) ?? []), valueSaid(row)].sort(),
     );
-    stated.set(row.version, fields);
+    stated.set(row.version!, fields);
   }
   const statements = (version: string) =>
     stated.get(version) ?? new Map<string, string[]>();
@@ -2166,19 +2168,19 @@ export function howOf(
       const arrived = arrivals.filter(
         (row) =>
           row.record === record &&
-          !seen.has(row.revision) &&
-          seen.add(row.revision),
+          !seen.has(row.revision!) &&
+          seen.add(row.revision!),
       );
       const versions = [...new Set(arrived.map((row) => row.version))];
       const steps = arrived.slice(1).map((row, at) => ({
-        from: versions.indexOf(arrived[at].version) + 1,
+        from: versions.indexOf(arrived[at]!.version) + 1,
         to: versions.indexOf(row.version) + 1,
-        pull: ids.indexOf(row.import) + 1,
-        arrived: row.arrived,
-        asOf: pulls[ids.indexOf(row.import)]?.asOf,
+        pull: ids.indexOf(row.import!) + 1,
+        arrived: row.arrived!,
+        asOf: pulls[ids.indexOf(row.import!)]?.asOf,
         said: differences(
-          statements(arrived[at].version),
-          statements(row.version),
+          statements(arrived[at]!.version!),
+          statements(row.version!),
         ),
       }));
       return steps.length === 0 ? [] : [{ finding, steps }];
@@ -2286,7 +2288,7 @@ function linesOf(
     Omit<Where, "records"> & { records: Set<string> }
   >();
   for (const row of rows) {
-    const document = row.document ?? row.record;
+    const document = (row.document ?? row.record)!;
     const at = lines.get(document);
     if (at === undefined)
       lines.set(document, {
@@ -2296,10 +2298,10 @@ function linesOf(
         arrived: row.arrived,
         ...(row.hospital !== undefined &&
           row.importLabel !== undefined && { importLabel: row.importLabel }),
-        records: new Set([row.record]),
+        records: new Set([row.record!]),
       });
     else {
-      at.records.add(row.record);
+      at.records.add(row.record!);
       if (compare("date", row.arrived ?? "", at.arrived ?? "") < 0)
         at.arrived = row.arrived;
     }
@@ -2460,7 +2462,7 @@ export function entryOf(
   } = {},
 ): Entry | undefined {
   const sources = rowsOf(answers, SOURCES);
-  const entry = sources.find((row) => entryId(row.entry) === id)?.entry;
+  const entry = sources.find((row) => entryId(row.entry!) === id)?.entry;
   if (entry === undefined) return undefined;
   const ofEntry = <R extends Row>(rows: readonly R[]) =>
     rows.filter((row) => row.entry === entry);
@@ -2641,7 +2643,7 @@ export function demoPeople(demo: readonly Demo[]): Person[] {
       if (name === undefined) continue;
       const key = `${name}|${patientOf(bundle)!.birthDate}`;
       if (!people.has(key)) {
-        const { family = "", given = [] } = patientOf(bundle)!.name![0];
+        const { family = "", given = [] } = patientOf(bundle)!.name![0]!;
         people.set(key, { name, family, given: given.join(" "), at: [] });
       }
       people.get(key)!.at.push(hospital);
@@ -2947,7 +2949,7 @@ export async function classesSaid(
 ): Promise<Map<string, About>> {
   return tables.about([
     ...new Set(rows.flatMap((row) => [row.class, row.through]).filter(Boolean)),
-  ]);
+  ] as string[]);
 }
 
 /**
@@ -2965,7 +2967,7 @@ export async function classedElsewhere(
     ...new Set(
       medications
         .filter(({ entry, code }) => !classed.has(entry) && code !== undefined)
-        .map(({ code }) => code),
+        .map(({ code }) => code!),
     ),
   ];
   if (codes.length === 0) return new Map();
@@ -2991,7 +2993,7 @@ export async function panelSaid(
 ): Promise<Map<string, About>> {
   return tables.about([
     ...new Set([panel, ...rows.flatMap((row) => [row.member, row.via])]),
-  ]);
+  ] as string[]);
 }
 
 /** What a check of the feeds did, by feed, as `checkTables` gives it. */
