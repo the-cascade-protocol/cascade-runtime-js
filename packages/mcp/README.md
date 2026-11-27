@@ -40,21 +40,10 @@ Every row names the entry it is about, so an answer can cite it.
 A pod made from a person's own records is theirs to
 decide about: use a model that runs on their machine, or leave that pod out.
 
-**Claude Desktop.** Open Settings, Developer, Edit Config, and add the server to `claude_desktop_config.json`, with the
-absolute paths of the folder cascade-mcp is installed in and of the pods (forward slashes work on Windows too), then
-quit Claude Desktop and start it again:
+**Claude Desktop.** In the folder you installed in, print the server's block, with absolute paths:
 
-```json
-{
-  "mcpServers": {
-    "cascade": {
-      "command": "node",
-      "args": [
-        "C:/path/to/installed/node_modules/cascade-mcp/dist/src/cli.js",
-        "--pods",
-        "C:/path/to/pods"
-      ]
-    }
-  }
-}
+```sh
+npx --no-install cascade-mcp --pods <folder> --settings
 ```
+
+Add it to `claude_desktop_config.json` (Settings, Developer, Edit Config), then quit Claude Desktop and start it again.
