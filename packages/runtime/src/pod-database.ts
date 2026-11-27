@@ -167,6 +167,19 @@ async function screensOf(vocabulary: Files): Promise<Screens> {
 
 let functions: Promise<DatabaseFunction[]> | undefined;
 
+/** A connection to the database, and each part and each question's statement compiled on it, by its text. */
+interface Connection {
+  readonly db: Database;
+  readonly compiled: Map<string, Statement[]>;
+  readonly asked: Map<string, Statement>;
+}
+
+const connected = (db: Database): Connection => ({
+  db,
+  compiled: new Map(),
+  asked: new Map(),
+});
+
 /**
  * A pod's `pod.db`: the working store's graphs loaded into the vocabulary's statements schema, each screen the
  * vocabulary has a `.sql` for filled, and a ledger naming the fingerprint of the files it was built from. Built whole
@@ -178,12 +191,15 @@ export class PodDatabase {
   readonly #screens: Screens;
   readonly #functions: readonly DatabaseFunction[];
   readonly #key: Uint8Array | undefined;
-  #db: Database;
-  /** Each part run on this connection, its statements compiled the first time it runs and run again as compiled. */
-  #compiled = new Map<string, Statement[]>();
-  /** Each question's statement, by its `.sql`, prepared on this connection the first time the question is asked. */
-  #asked = new Map<string, Statement>();
-  /** Whether the connection is closed, for a build whole or for good, so that nothing is asked of it. */
+  /** The connection keyed runs and each question in no part are run on. */
+  #on: Connection;
+  /**
+   * The connection each question in parts is answered on, opened when one is first asked, so that what its prepare part
+   * makes and its cleanup drops never changes the schema of `#on`, which would have SQLite compile again every statement
+   * compiled there.
+   */
+  #apart: Connection | undefined;
+  /** Whether the connections are closed, for a build whole or for good, so that nothing is asked of them. */
   #shut = false;
 
   private constructor(
@@ -197,7 +213,25 @@ export class PodDatabase {
     this.#screens = screens;
     this.#functions = functionsGiven;
     this.#key = key;
-    this.#db = db;
+    this.#on = connected(db);
+  }
+
+  #opened(): Database {
+    return this.#beside.open({
+      ...(this.#key === undefined ? {} : { key: this.#key }),
+      functions: this.#functions,
+    });
+  }
+
+  #closed(): void {
+    this.#shut = true;
+    const apart = this.#apart;
+    this.#apart = undefined;
+    try {
+      apart?.db.close();
+    } finally {
+      this.#on.db.close();
+    }
   }
 
   /**
@@ -257,7 +291,7 @@ export class PodDatabase {
    */
   get fingerprint(): string | undefined {
     try {
-      return ledgerFingerprint(this.#db);
+      return ledgerFingerprint(this.#on.db);
     } catch {
       return undefined;
     }
@@ -273,10 +307,7 @@ export class PodDatabase {
     graphs: ReadonlySet<string>,
     fingerprint: string,
   ): Promise<void> {
-    this.#shut = true;
-    this.#db.close();
-    this.#compiled = new Map();
-    this.#asked = new Map();
+    this.#closed();
     try {
       await this.#beside.builtWhole({
         ...this.#screens,
@@ -286,10 +317,7 @@ export class PodDatabase {
         ...(this.#key === undefined ? {} : { key: this.#key }),
       });
     } finally {
-      this.#db = this.#beside.open({
-        ...(this.#key === undefined ? {} : { key: this.#key }),
-        functions: this.#functions,
-      });
+      this.#on = connected(this.#opened());
       this.#shut = false;
     }
   }
@@ -299,21 +327,25 @@ export class PodDatabase {
    * first `size` entries after the key, and the key of the last of them when another entry follows; a question that
    * is no list gives all its rows whatever the page. A question in the parts prepare, answer and cleanup runs the
    * statements of its prepare part first, each time, and those of its cleanup part once the rows are read, also when
-   * the answer fails. Each statement is compiled the first time the question is asked.
+   * the answer fails, on a connection of its own. Each statement is compiled the first time the question is asked.
    * None while the connection is closed, as during a build whole.
    */
   answer(sql: string, page?: PageAsked): DatabaseAnswer | undefined {
     if (this.#shut) return undefined;
     const parts = questionParts(sql);
+    const on =
+      parts === undefined
+        ? this.#on
+        : (this.#apart ??= connected(this.#opened()));
     let named: string[];
     let found: DatabaseRow[];
     try {
-      this.#ran(parts?.prepare);
+      PodDatabase.#ran(on, parts?.prepare);
       const text = parts?.answer ?? sql;
-      let statement = this.#asked.get(text);
+      let statement = on.asked.get(text);
       if (statement === undefined) {
-        statement = this.#db.prepare(text);
-        this.#asked.set(text, statement);
+        statement = on.db.prepare(text);
+        on.asked.set(text, statement);
       }
       named = statement.columns();
       found =
@@ -324,7 +356,7 @@ export class PodDatabase {
             })
           : statement.all();
     } finally {
-      this.#ran(parts?.cleanup);
+      PodDatabase.#ran(on, parts?.cleanup);
     }
     const paged = named.at(-1) === PAGE_KEY;
     const columns = paged ? named.slice(0, -1) : named;
@@ -391,7 +423,8 @@ export class PodDatabase {
     fingerprint: string,
     screened = true,
   ): void {
-    const db = this.#db;
+    const on = this.#on;
+    const { db } = on;
     db.transaction(() => {
       const keyed = new KeyedStatements(db);
       timedSync("pod-database.keyed.graphs", () => {
@@ -412,7 +445,8 @@ export class PodDatabase {
         timedSync("pod-database.keyed.screens", () => {
           keyed.scoped();
           for (const part of RUN_PARTS)
-            for (const view of this.#screens.views) this.#ran(view.get(part));
+            for (const view of this.#screens.views)
+              PodDatabase.#ran(on, view.get(part));
         });
       timedSync("pod-database.keyed.ledger", () =>
         ledgerNamed(db, fingerprint),
@@ -421,35 +455,34 @@ export class PodDatabase {
   }
 
   /**
-   * Runs a part's statements in order, each compiled when the part first runs on this connection, once those before it
+   * Runs a part's statements in order, each compiled when the part first runs on the connection, once those before it
    * have made what it names, and run again as compiled after.
    */
-  #ran(part: string | undefined): void {
+  static #ran(on: Connection, part: string | undefined): void {
     if (part === undefined) return;
-    const compiled = this.#compiled.get(part);
+    const compiled = on.compiled.get(part);
     if (compiled !== undefined) {
       for (const statement of compiled) statement.run();
       return;
     }
     const made: Statement[] = [];
     for (const text of sqlStatements(part)) {
-      const statement = this.#db.prepare(text);
+      const statement = on.db.prepare(text);
       statement.run();
       made.push(statement);
     }
-    this.#compiled.set(part, made);
+    on.compiled.set(part, made);
   }
 
   /** Makes the ledger name no fingerprint, so the database is built whole when next kept. */
   forget(): void {
     if (this.fingerprint !== undefined)
-      this.#db.prepare("DELETE FROM ledger").run();
+      this.#on.db.prepare("DELETE FROM ledger").run();
   }
 
-  /** Ends the connection, writing back what the write-ahead log holds. */
+  /** Ends the connections, writing back what the write-ahead log holds. */
   close(): void {
-    this.#shut = true;
-    this.#db.close();
+    this.#closed();
   }
 }
 
