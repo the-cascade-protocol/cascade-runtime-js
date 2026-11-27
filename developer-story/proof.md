@@ -36,7 +36,7 @@ An empty folder, inside no folder that holds an agent instructions file, under a
 user with no user-level instructions, memory or extra tools configured for the
 agent. The person runs the command in it, so the app is `my-app/`.
 
-- **Round 1:** the command exactly as https://the-cascade-protocol.github.io/cascade-runtime-js/start.html
+- **Round 1:** the command exactly as https://reference.cascadeprotocol.org/start.html
   gives it, of the form
   `npx --yes --package=<the starter kit's release address> create-cascade-app my-app`.
 - **A later round** (after a change to the guide or the prompt): at the pull

@@ -6,14 +6,14 @@ against the vocabulary's executable examples.
 
 ## Docs
 
-- [The Cascade hub](https://the-cascade-protocol.github.io/cascade-runtime-js/): where to go for each thing, and every repository.
-- [Quick start](https://the-cascade-protocol.github.io/cascade-runtime-js/start.html): how to start an app on the runtime.
-- [API](https://the-cascade-protocol.github.io/cascade-runtime-js/api/): the API an app calls.
-- [Agent guide](https://the-cascade-protocol.github.io/cascade-runtime-js/AGENTS.md): what a coding agent needs to build on the runtime.
-- [Example pods](https://the-cascade-protocol.github.io/cascade-runtime-js/examples.html): the example pods, with the stories they tell: Alex Rivera's, from Apple Health exports; Priya Natarajan's, from an export and C-CDA downloads together; Martin Okafor's, two FHIR reports of one variant beside what ClinVar says today; and Tamsin Vale's, one demo hospital's FHIR record pulled twice, a year apart, with a medication stopped between the pulls.
-- [Conformance](https://the-cascade-protocol.github.io/cascade-runtime-js/conformance/): the reference runtime's latest result on main for every example of the vocabulary's features and conformance kits.
-- [Unit-test report](https://the-cascade-protocol.github.io/cascade-runtime-js/conformance/tests/cascade-runtime-js/): each case of the runtime's tests, with its result and time, from the newest run on main. Each other Cascade repository has its own page beside it, at `conformance/tests/<repository>/`, listed on the [conformance page](https://the-cascade-protocol.github.io/cascade-runtime-js/conformance/).
-- [Evals](https://the-cascade-protocol.github.io/cascade-runtime-js/evals/): how the pod, through `cascade-mcp`, does against the same records pasted into a chat, on synthetic people, with every citation checked and every cost.
+- [The Cascade hub](https://reference.cascadeprotocol.org/): where to go for each thing, and every repository.
+- [Quick start](https://reference.cascadeprotocol.org/start.html): how to start an app on the runtime.
+- [API](https://reference.cascadeprotocol.org/api/): the API an app calls.
+- [Agent guide](https://reference.cascadeprotocol.org/AGENTS.md): what a coding agent needs to build on the runtime.
+- [Example pods](https://reference.cascadeprotocol.org/examples.html): the example pods, with the stories they tell: Alex Rivera's, from Apple Health exports; Priya Natarajan's, from an export and C-CDA downloads together; Martin Okafor's, two FHIR reports of one variant beside what ClinVar says today; and Tamsin Vale's, one demo hospital's FHIR record pulled twice, a year apart, with a medication stopped between the pulls.
+- [Conformance](https://reference.cascadeprotocol.org/conformance/): the reference runtime's latest result on main for every example of the vocabulary's features and conformance kits.
+- [Unit-test report](https://reference.cascadeprotocol.org/conformance/tests/cascade-runtime-js/): each case of the runtime's tests, with its result and time, from the newest run on main. Each other Cascade repository has its own page beside it, at `conformance/tests/<repository>/`, listed on the [conformance page](https://reference.cascadeprotocol.org/conformance/).
+- [Evals](https://reference.cascadeprotocol.org/evals/): how the pod, through `cascade-mcp`, does against the same records pasted into a chat, on synthetic people, with every citation checked and every cost.
 - [An app running in the browser](https://the-cascade-protocol.github.io/cascade-starter-kit/try/): try a pod in the browser.
 - [The starter kit](https://github.com/the-cascade-protocol/cascade-starter-kit): the app `create-cascade-app` makes, the command itself, and the page in the browser.
 
