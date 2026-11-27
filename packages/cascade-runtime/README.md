@@ -6,8 +6,9 @@ What an app imports to keep a Cascade pod: it opens a pod in a folder, looks
 into an Apple Health export or a C-CDA file a patient portal handed out,
 imports it, enters and judges records, runs the
 matcher and asks the vocabulary's questions. `openPod` is the whole interface;
-`cascade-runtime/fixtures` adds `replayKit`, which replays a conformance kit's
-story into a folder. `cascade-runtime/check` is `checkInput`, the checker of a
+`cascade-runtime/samples` is the made-up people the package carries: `samplePeople`,
+`sampleExport`, one of a person's exports by the name of its download in the kit, such as `harbourline-2022`, and `loadSample`, which makes
+a person's pod in a folder. `cascade-runtime/fixtures` is for tests only. `cascade-runtime/check` is `checkInput`, the checker of a
 tool's input against the JSON Schema subset the tools use, with nothing of the
 runtime behind it, in Node and in the page (in the page it carries its own
 `Refusal`, so tell a refusal by its `name`, never `instanceof`). `cascade-runtime/vite` is

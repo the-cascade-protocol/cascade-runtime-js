@@ -42,15 +42,15 @@ const DRUG_PRODUCTS = join(
 type StoryRow = Record<string, string | readonly string[]>;
 
 /**
- * Each row the script printed, run from a fresh folder, or the app's, on the arguments; its pod is removed after. A
+ * What the script printed, run from a fresh folder, or the app's, on the arguments; its pod is removed after. A
  * fresh folder starts with `tables` as its `.tables/`; the app brings its own.
  */
-async function story(
+async function printedBy(
   script: string,
   pod: string,
   downloads: readonly string[],
   tables?: string,
-): Promise<StoryRow[]> {
+): Promise<string> {
   const folder = APP ?? (await mkdtemp(join(tmpdir(), "developer-story-")));
   if (APP === undefined && tables !== undefined)
     await cp(tables, join(folder, ".tables"), { recursive: true });
@@ -78,11 +78,27 @@ async function story(
         `the script stopped (code ${String(error.code)}, signal ${String(error.signal)}): ${error.stderr || String(error)}`,
       );
     });
-    const printed = stdout
-      .split("\n")
-      .filter((line) => line !== "")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    return printed.map((row) =>
+    return stdout;
+  } finally {
+    await rm(APP === undefined ? folder : join(APP, pod), {
+      recursive: true,
+      force: true,
+    });
+  }
+}
+
+/** Each row the script printed, a line of JSON each. */
+async function story(
+  script: string,
+  pod: string,
+  downloads: readonly string[],
+  tables?: string,
+): Promise<StoryRow[]> {
+  return (await printedBy(script, pod, downloads, tables))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .map((row) =>
       Object.fromEntries(
         Object.entries(row).map(([column, value]) => {
           assert.ok(
@@ -95,12 +111,6 @@ async function story(
         }),
       ),
     );
-  } finally {
-    await rm(APP === undefined ? folder : join(APP, pod), {
-      recursive: true,
-      force: true,
-    });
-  }
 }
 
 /** The row with its entry as the path inside its pod: the replay's pod and the script's have different addresses. */
@@ -147,10 +157,10 @@ const AMLODIPINE = {
 };
 
 /**
- * The two scripts the README walks a developer through, run as that developer runs them: from a folder outside the
- * repository, on a kit's downloads, with the real Bridge.
+ * The scripts the README and the get-started page walk a developer through, run as that developer runs them: from a
+ * folder outside the repository, on a kit's downloads, with the real Bridge.
  */
-describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs", () => {
+describe("The developer story's scripts, run from a fresh folder · developer-story/allergies.mjs, developer-story/medications.mjs, developer-story/first.mjs", () => {
   describe("when `allergies.mjs` is run on Alex's first export", () => {
     let printed: StoryRow[];
     let expected: StoryRow[];
@@ -201,6 +211,45 @@ describe("The developer story's scripts, run from a fresh folder · developer-st
     it('prints the rows that "My active allergies" answers on the kit\'s replay through step J1', (t) => {
       for (const row of printed) t.diagnostic(JSON.stringify(row));
       assert.deepEqual(multiset(printed.map(inPod)), multiset(expected));
+    });
+  });
+
+  describe("when `first.mjs`, the get-started page's script, is run on Alex's sample export", () => {
+    let printed: string;
+
+    before(async () => {
+      printed = await printedBy("first.mjs", "pods", []);
+    });
+
+    it("prints one source, Meridian Health System", (t) => {
+      t.diagnostic(printed);
+      assert.deepEqual(
+        [...printed.matchAll(/^\s+name: '(.+)',$/gm)].map(([, name]) => name),
+        ["Meridian Health System"],
+      );
+    });
+
+    it("prints Codeine, Latex, Penicillin G and Sulfamethoxazole, each with the records it came from, all written by Meridian Health System", () => {
+      const allergies = [
+        ...printed.matchAll(
+          /^(.+?) (\S+) \[\r?\n((?:\s+'.*',?\r?\n)+)\]\r?$/gm,
+        ),
+      ].map(([, allergen, , records]) => ({
+        allergen,
+        records: (records ?? "").trim().split(/\r?\n/),
+      }));
+      assert.deepEqual(
+        allergies.map(({ allergen }) => allergen),
+        ["Codeine", "Latex", "Penicillin G", "Sulfamethoxazole"],
+      );
+      for (const { allergen, records } of allergies)
+        assert.ok(
+          records.length > 0 &&
+            records.every((record) =>
+              record.includes("written by Meridian Health System"),
+            ),
+          `${allergen}: ${records.join()}`,
+        );
     });
   });
 

@@ -684,9 +684,7 @@ between the import and its `match` is made good by the pod: the next open, and t
 `import`, `connect`, `enter` or `match()`, first match each arrival no matcher run took. `match()`
 with no argument is a recheck of the joins the pod holds: it takes no record of an arrival by itself,
 and it is the pod, before it, that matches the arrivals no run took. Then offer each counting join of the matcher's, a pair at a
-time, filing a Different over a pair the person says no to. `replayKit`, behind
-`npm run pod:load`, fills an empty folder with a kit's story on the tables of the
-folder it is in, for tests only.
+time, filing a Different over a pair the person says no to.
 
 ```js
 const fileOnly = { claim: false, match: false };
@@ -701,11 +699,29 @@ for (const records of (await machineJoins()).values())
       if (!(await askPerson("Are these the same?", [one, other])))
         await judged(different(pod, [one, other], "not the same"));
 await pod.close();
+```
 
-import { replayKit } from "cascade-runtime/fixtures"; // in a test only
-await replayKit("alex-rivera", "pods/alex-rivera", { through: "J1" });
+## Sample people
+
+`cascade-runtime/samples`, in Node, carries the made-up people the package ships, for a first run, a demo
+or a test of an app. `await samplePeople()` lists them: each `person`'s name (`alex-rivera`), their own name
+(`title`) and the `exports` their story brings in, in its order, each by the name of its download in the person's kit
+(`harbourline-2022`, `st-columba-2024`).
+`await sampleExport(person, name)` is the path of one export, which `look` and `import` take: the folder of an Apple
+Health export, a C-CDA file or the folder of a saved pull, as a person's phone or portal handed it out.
+`await loadSample(person, folder, { through })` makes the person's pod in a missing or empty folder on the tables
+of the folder it is in, performing their story to its end or through the step `through` names, as the starter's
+`npm run reset` does; it returns the steps performed. A person or an export the package does not carry is a
+`Refusal` naming those it does, and so is a folder that is not empty or absent. `cascade-runtime/fixtures` is for tests only: what a test of the package builds
+on, which an app does not import.
+
+```js
+import { loadSample, sampleExport } from "cascade-runtime/samples";
+const firstExport = await sampleExport("alex-rivera", "x-e2");
+await loadSample("alex-rivera", "pods/alex-rivera", { through: "J1" });
 const her = await openPod("pods/alex-rivera");
 await showPerson(await her.ask("pod/My active allergies", { lens: "export" }));
+await showPerson(await her.look(firstExport));
 await her.close();
 ```
 

@@ -59,6 +59,10 @@
       "types": "./dist/src/fixtures.d.ts",
       "default": "./dist/src/fixtures.js"
     },
+    "./samples": {
+      "types": "./dist/src/samples.d.ts",
+      "default": "./dist/src/samples.js"
+    },
     "./published": {
       "types": "./dist/src/node/published.d.ts",
       "default": "./dist/src/node/published.js"

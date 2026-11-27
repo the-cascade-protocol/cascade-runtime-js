@@ -17,6 +17,7 @@ import {
 } from "cascade-runtime";
 import { cascadeRuntime } from "cascade-runtime/vite";
 import { kitStory, replayKit } from "cascade-runtime/fixtures";
+import { loadSample } from "cascade-runtime/samples";
 import { podReads } from "cascade-runtime/tools/node";
 import { popupSignIn } from "../src/browser/sign-in.js";
 import { answersToPublish, samplesToPublish } from "../src/node/published.js";
@@ -72,6 +73,10 @@ describe("Refusing an option a call does not know · import(), openPod(), connec
       [
         "replayKit",
         (options) => replayKit("alex-rivera", join(scratch, "x"), options),
+      ],
+      [
+        "loadSample",
+        (options) => loadSample("alex-rivera", join(scratch, "y"), options),
       ],
       ["kitStory", (options) => kitStory("alex-rivera", options)],
       ["samplesToPublish", (options) => samplesToPublish(options)],

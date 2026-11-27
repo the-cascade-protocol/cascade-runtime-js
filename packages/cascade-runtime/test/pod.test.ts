@@ -72,6 +72,11 @@ import {
   Unopened,
 } from "cascade-runtime";
 import { kitDownload, kitStory, replayKit } from "cascade-runtime/fixtures";
+import {
+  loadSample,
+  sampleExport,
+  samplePeople,
+} from "cascade-runtime/samples";
 import { Answers } from "../src/answers.js";
 import { packedFolder } from "./packed.js";
 import { LOOKUPS, lookupsOf, withLookups } from "../src/lookups.js";
@@ -5256,7 +5261,7 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
       const empty = join(parent(), "next");
       await assert.rejects(
         replayKit("alex-rivera", at()),
-        /holds files/,
+        /must be an empty or absent folder/,
         "a folder that holds files",
       );
       await assert.rejects(
@@ -5268,6 +5273,176 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
         replayKit("alex-rivera", empty, { through: "no such step" }),
         /no such step/,
         "a step the story doesn't have",
+      );
+    });
+  });
+});
+
+/**
+ * `cascade-runtime/samples` is how an app reaches the made-up people the package carries: who they are, one of their
+ * exports to bring in by the name of its download in the kit, and a pod made as theirs. An app imports it, where `cascade-runtime/fixtures`
+ * is for tests.
+ */
+describe("Sample people for an app to start from · samplePeople(), sampleExport(), loadSample()", () => {
+  describe("samplePeople()", () => {
+    it("lists each person the package carries, with their own name and the kit's name for each download their story brings in, in order", async () => {
+      const people = await samplePeople();
+      const carried = (
+        await readdir(inKit("conformance"), { withFileTypes: true })
+      )
+        .filter((entry) => entry.isDirectory())
+        .map(({ name }) => name);
+      assert.deepEqual(
+        people.map(({ person }) => person).sort(),
+        carried.sort(),
+      );
+      assert.deepEqual(
+        people.find(({ person }) => person === "alex-rivera"),
+        {
+          person: "alex-rivera",
+          title: "Alex Rivera",
+          exports: ["x-e2", "x-e4", "x-e6", "x-e10", "x-e12", "x-e15"],
+        },
+      );
+      assert.deepEqual(
+        people.find(({ person }) => person === "martin-okafor")?.exports,
+        ["harbourline-2022", "st-columba-2024"],
+      );
+    });
+
+    it("gives each person's every export a path that exists, and no two the same path", async () => {
+      for (const { person, exports } of await samplePeople()) {
+        const paths = await Promise.all(
+          exports.map((name) => sampleExport(person, name)),
+        );
+        assert.equal(new Set(paths).size, paths.length, person);
+        for (const path of paths) await stat(path);
+      }
+    });
+
+    it("leaves `configureTables` open, since it makes no tables", async () => {
+      const script = `
+        import { configureTables } from "cascade-runtime";
+        import { sampleExport, samplePeople } from "cascade-runtime/samples";
+        await samplePeople();
+        await sampleExport("alex-rivera", "x-e2");
+        configureTables({});
+      `;
+      await promisify(execFile)(
+        process.execPath,
+        ["--input-type=module", "-e", script],
+        { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 120_000 },
+      );
+    });
+  });
+
+  describe("sampleExport(person, name)", () => {
+    it("returns what `look` and `import` take: the folder of an Apple Health export, a C-CDA file, or the folder of a saved pull", async () => {
+      assert.equal(await sampleExport("alex-rivera", "x-e2"), exported("x-e2"));
+      assert.match(
+        await readFile(
+          await sampleExport(
+            "priya-natarajan",
+            "kestrel-harbor-health-summary.xml",
+          ),
+          "utf8",
+        ),
+        /<ClinicalDocument/,
+        "a C-CDA document",
+      );
+      assert.ok(
+        (
+          await readdir(await sampleExport("martin-okafor", "harbourline-2022"))
+        ).includes("bundle.json"),
+        "a saved pull",
+      );
+    });
+
+    it("throws `Refusal`, naming the people or the exports there are, for a name it doesn't have", async () => {
+      for (const [name, refused, reason] of [
+        [
+          "a person it doesn't carry",
+          () => sampleExport("no-such-person", "x-e2"),
+          /no sample person no-such-person; there are .*alex-rivera/,
+        ],
+        [
+          "a download the person doesn't have",
+          () => sampleExport("alex-rivera", "first export"),
+          /alex-rivera has no export first export; alex-rivera has x-e2, x-e4/,
+        ],
+        [
+          "another person's download",
+          () => sampleExport("alex-rivera", "harbourline-2022"),
+          /has no export harbourline-2022/,
+        ],
+      ] as const)
+        await assert.rejects(
+          refused(),
+          (error) => error instanceof Refusal && reason.test(error.message),
+          name,
+        );
+    });
+  });
+
+  describe("loadSample(person, folder, { through })", () => {
+    const at = () => join(pods, "samples", "alex-rivera");
+
+    it("makes the person's pod in the folder, performing their story through the step named, and returns the steps", async () => {
+      const steps = await loadSample("alex-rivera", at(), { through: "J1" });
+      assert.deepEqual(
+        [steps[0]?.step, steps[0]?.kind, steps.at(-1)?.step],
+        ["E1", "creation", "J1"],
+      );
+      const loaded = await openPod(at());
+      try {
+        assert.equal(await loaded.opened, undefined);
+        assert.deepEqual(await allergens(loaded), [
+          "Codeine",
+          "Latex",
+          "Penicillin G",
+          "Sulfamethoxazole",
+        ]);
+      } finally {
+        await loaded.close();
+        await settled(join(pods, "samples"));
+      }
+    });
+
+    it("throws `Refusal`, naming the people there are, for a person it doesn't carry, and writes nothing", async () => {
+      const empty = join(pods, "samples", "nobody");
+      await assert.rejects(
+        loadSample("no-such-person", empty),
+        (error) =>
+          error instanceof Refusal &&
+          /there are .*alex-rivera/.test(error.message),
+      );
+      await assert.rejects(stat(empty), { code: "ENOENT" });
+    });
+
+    it("throws `Refusal`, naming the folder as given, for a folder that holds anything, even only `.DS_Store`, and leaves it as it was", async () => {
+      const held = join(pods, "samples", "held");
+      await mkdir(held, { recursive: true });
+      await writeFile(join(held, ".DS_Store"), "");
+      await assert.rejects(
+        loadSample("alex-rivera", held),
+        (error) =>
+          error instanceof Refusal &&
+          error.message.includes(held) &&
+          /empty or absent/.test(error.message),
+      );
+      assert.deepEqual(await readdir(held), [".DS_Store"]);
+    });
+
+    it("throws `Refusal`, naming the path as given, for a path that is a file", async () => {
+      const file = join(pods, "samples", "a-file");
+      await mkdir(join(pods, "samples"), { recursive: true });
+      await writeFile(file, "");
+      await assert.rejects(
+        loadSample("alex-rivera", file),
+        (error) =>
+          error instanceof Refusal &&
+          error.message.includes(file) &&
+          /empty or absent/.test(error.message),
       );
     });
   });
