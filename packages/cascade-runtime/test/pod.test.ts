@@ -5261,7 +5261,7 @@ describe("Sample pods and exports to build against · replayKit(), kitDownload()
       const empty = join(parent(), "next");
       await assert.rejects(
         replayKit("alex-rivera", at()),
-        /holds files/,
+        /must be an empty or absent folder/,
         "a folder that holds files",
       );
       await assert.rejects(
