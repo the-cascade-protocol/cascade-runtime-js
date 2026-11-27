@@ -239,6 +239,28 @@ describe("Checking a site's links · scripts/link-check.mjs", () => {
     });
   });
 
+  describe("with no `--site`", () => {
+    it("exits 1 and says to give it, since the script holds no address of its own for the site", async () => {
+      const { code, said } = await run(["--crawl"]);
+      assert.equal(code, 1);
+      assert.match(said, /give --site <url>/);
+    });
+
+    it("exits 1 and says so for a `--site` with no scheme, as a `--hub` is refused", async () => {
+      const { code, said } = await run([
+        "--crawl",
+        "--site",
+        "reference.cascadeprotocol.org",
+      ]);
+      assert.equal(code, 1);
+      assert.match(
+        said,
+        /--site is reference\.cascadeprotocol\.org, not an http\(s\) address/,
+      );
+      assert.ok(!said.includes("TypeError"), said);
+    });
+  });
+
   describe("with dead links", () => {
     let result: Checked;
 
