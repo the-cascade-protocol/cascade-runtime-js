@@ -5,14 +5,27 @@ import {
 } from "./bound-records.js";
 import { type VocabularyBuild, vocabularyBuild } from "./build.js";
 import type { Assertion } from "./conformance.js";
-import type { Database, DatabaseFunction } from "./database.js";
+import type { Database, DatabaseFunction, Statement } from "./database.js";
 import { addLayout } from "./dataset.js";
 import { type Files, MemoryFiles, readText } from "./files.js";
 import { Graph } from "./graph.js";
 import { keptMatcherJudgments } from "./kept.js";
+import {
+  keyedChanges,
+  keyedKind,
+  screenTables,
+  undone,
+} from "./keyed-changes.js";
 import type { Layout } from "./layout.js";
 import { lenses } from "./questions.js";
-import { iri, ntriples, RDF, type Term } from "./rdf.js";
+import {
+  iri,
+  literal,
+  ntriples,
+  RDF,
+  type Term,
+  written as ntWritten,
+} from "./rdf.js";
 import { References } from "./references.js";
 import {
   askedOf,
@@ -28,6 +41,7 @@ import {
   SqlFunctionRefused,
   sqlNt,
   sqlParts,
+  sqlStatements,
   sqlTermOf,
   SQL_FUNCTION_VECTORS,
   STATEMENTS_SCHEMA,
@@ -35,6 +49,7 @@ import {
   BLANK,
   IRI,
   sparqlCompare,
+  wholeScope,
 } from "./statements.js";
 import {
   RestorableUnion,
@@ -49,9 +64,9 @@ export const FIXTURES = "tests/fixtures/";
 const QUERIES = "queries/";
 const MATCHER = "queries/matcher/";
 const LENSES = "queries/lenses/";
-const VIEWS = "queries/views/";
+export const VIEWS = "queries/views/";
 const QUESTIONS = "queries/questions/";
-const LABELS = "queries/labels.rq";
+export const LABELS = "queries/labels.rq";
 const LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
 const WRITTEN_BY = "https://ns.cascadeprotocol.org/cascade#writtenByQueryPath";
 const INSTANCE = "http://www.w3.org/ns/solid/terms#instance";
@@ -91,6 +106,10 @@ export interface BuiltFixture {
   readonly entries: readonly ManifestEntry[];
   /** Why each ported `.sql` that cannot be answered cannot, by its `.rq`'s path: a screen that failed, or reads one. */
   readonly screens: ReadonlyMap<string, string>;
+  /** Whether the manifest names `queries/views/`, so that the screens are filled keyed over the fixture too. */
+  readonly screensFilled: boolean;
+  /** Fills every screen again for the entries in scope: each view's fill, the labels, then each view's finish. */
+  refill(): void;
   close(): void;
 }
 
@@ -207,6 +226,8 @@ export async function sqlComparisons(
   ported?: readonly Ported[],
   fixtures?: readonly string[],
   only?: readonly string[],
+  /** Told, by fixture, each file or folder its manifest names by ctm:comparesSqlWithSparqlUnderEveryLens. */
+  named?: Map<string, readonly string[]>,
 ): Promise<Map<string, Map<string, string[]>>> {
   const queries = (ported ?? (await portedQueries(vocabulary)))
     .map(({ rq }) => rq)
@@ -222,11 +243,12 @@ export async function sqlComparisons(
         store,
       );
       const here = new Map<string, string[]>();
+      named?.set(fixture, comparesSqlWithSparqlUnderEveryLens);
       for (const rq of queries) {
-        const named = comparesSqlWithSparqlUnderEveryLens.some(
+        const underEveryLens = comparesSqlWithSparqlUnderEveryLens.some(
           (path) => path === rq || (path.endsWith("/") && rq.startsWith(path)),
         );
-        const under = named
+        const under = underEveryLens
           ? every
           : every.filter((lens) =>
               entries.some(
@@ -247,18 +269,57 @@ export async function sqlComparisons(
 const unchosenSqlTest = (vocabulary: Files, rq: string): string =>
   `${vocabulary.iri}${encodeURI(sqlPath(rq))}#${encodeURI(sqlPath(rq))}`;
 
-/** A failed assertion for each ported `.sql` that no fixture's manifest chooses, so that none goes uncompared. */
+/** The test of a check over the vocabulary's SQL as a whole: the schema, and in its fragment the check. */
+export const sqlCheckTest = (vocabulary: Files, check: string): string =>
+  `${vocabulary.iri}${STATEMENTS_SCHEMA}#${check}`;
+
+export const MANIFESTS_CHECK = "manifests-name-only-ported-queries";
+
+/**
+ * A failed assertion for each ported `.sql` that no fixture's manifest chooses, so that none goes uncompared, and one
+ * assertion that no manifest names by ctm:comparesSqlWithSparqlUnderEveryLens a file that is no ported `.rq`, or a folder
+ * holding none, which would choose nothing for any fixture, silently.
+ */
 export async function unchosenSqlAssertions(
   options: Pick<SqlCheckOptions, "vocabulary" | "newStore">,
 ): Promise<Assertion[]> {
   const { vocabulary, newStore } = options;
   if ((await vocabulary.read(STATEMENTS_SCHEMA)) === undefined) return [];
   const ported = await portedQueries(vocabulary);
-  return unchosen(
+  const named = new Map<string, readonly string[]>();
+  const chosen = await sqlComparisons(
     vocabulary,
+    newStore,
     ported,
-    await sqlComparisons(vocabulary, newStore, ported),
+    undefined,
+    undefined,
+    named,
   );
+  const lines = [...named]
+    .flatMap(([fixture, paths]) =>
+      paths
+        .filter(
+          (path) =>
+            !ported.some(({ rq }) =>
+              path.endsWith("/") ? rq.startsWith(path) : rq === path,
+            ),
+        )
+        .map((path) => `${fixture}: ${path}`),
+    )
+    .sort();
+  return [
+    ...unchosen(vocabulary, ported, chosen),
+    {
+      test: sqlCheckTest(vocabulary, MANIFESTS_CHECK),
+      name: "each manifest names by ctm:comparesSqlWithSparqlUnderEveryLens only a .rq with a .sql beside it, or a folder holding one",
+      outcome: lines.length === 0 ? "passed" : "failed",
+      ...(lines.length === 0
+        ? {}
+        : {
+            why: `each names a file or folder that chooses nothing: ${lines.join(", ")}`,
+          }),
+    },
+  ];
 }
 
 function unchosen(
@@ -387,13 +448,18 @@ async function builtFixture(
       db.close();
       throw error;
     }
+    const manifest = await manifestOf(vocabulary, fixture, store);
+    const compiled = new Map<string, Statement>();
     return {
       name: fixture,
       lens,
       union,
       db,
-      entries: (await manifestOf(vocabulary, fixture, store)).entries,
+      entries: manifest.entries,
       screens: madeScreens(db, context.ported),
+      screensFilled:
+        manifest.comparesSqlWithSparqlUnderEveryLens.includes(VIEWS),
+      refill: () => refilled(db, context.ported, compiled),
       close: () => {
         db.close();
         store.free?.();
@@ -405,13 +471,13 @@ async function builtFixture(
   }
 }
 
-const sqlPath = (rq: string): string => `${rq.slice(0, -3)}.sql`;
+export const sqlPath = (rq: string): string => `${rq.slice(0, -3)}.sql`;
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /** The tables a view's `tables` part makes. */
-function tablesOf(parts: ReadonlyMap<string, string>): string[] {
+export function tablesOf(parts: ReadonlyMap<string, string>): string[] {
   return [
     ...(parts.get("tables") ?? "").matchAll(
       /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)/gi,
@@ -488,10 +554,14 @@ function termIdsOf(db: Database): (nt: string) => number {
  * file's labels deleted and its `triples` rows put in the file's graph, in one transaction. Left as it is where the pod has
  * no such graph.
  */
-function labelled(db: Database, labels: ReadonlyMap<string, string>): void {
+function labelled(
+  db: Database,
+  labels: ReadonlyMap<string, string>,
+  run: (script: string) => void = (script) => db.exec(script),
+): void {
   const file = labelsFile(db);
   if (file === undefined) return;
-  db.exec(labels.get("fill") ?? "");
+  run(labels.get("fill") ?? "");
   const { rows } = sqlAnswer(db, labels.get("triples") ?? "");
   const termId = termIdsOf(db);
   const clear = db.prepare(
@@ -591,6 +661,31 @@ export function madeScreens(
   return failed;
 }
 
+/**
+ * Fills each view's screen again for the entries in scope: every view's fill, then the labels, then every view's finish,
+ * each statement compiled once in `compiled`, as a runtime that fills keyed runs often does.
+ */
+function refilled(
+  db: Database,
+  ported: readonly Ported[],
+  compiled: Map<string, Statement>,
+): void {
+  const views = viewsOf(ported);
+  const labels = labelsOf(ported);
+  const run = (script: string): void => {
+    for (const text of sqlStatements(script)) {
+      let statement = compiled.get(text);
+      if (statement === undefined)
+        compiled.set(text, (statement = db.prepare(text)));
+      statement.run();
+    }
+  };
+  for (const part of ["fill", "finish"]) {
+    for (const { parts } of views) run(parts.get(part) ?? "");
+    if (part === "fill" && labels !== undefined) labelled(db, labels, run);
+  }
+}
+
 const CASCADE = "https://ns.cascadeprotocol.org/cascade#";
 
 const CONSTRUCT_FORM = /^\s*CONSTRUCT\b/i;
@@ -637,9 +732,12 @@ export interface TextRead {
   readonly unboundEmpty: boolean;
 }
 
-/** A key the rows are ordered by: a column, and how its condition reads it, or none where it orders the term itself. */
+/**
+ * A key the rows are ordered by: the columns whose first bound value it orders by, and how its condition reads that
+ * value, or none where it orders the term itself.
+ */
 export interface OrderKey {
-  readonly column: number;
+  readonly columns: readonly number[];
   readonly read?: TextRead;
 }
 
@@ -675,10 +773,48 @@ function asText(term: string | null, read: TextRead): string | null {
 }
 
 /**
- * The keys the query's rows are ordered by, after its last brace: its ORDER BY's leading conditions that are a
- * projected variable, alone or in an expression of it and of no other variable, such as DESC(COALESCE(STR(?a), "")),
- * each with how it reads the variable; the conditions after them order only rows these tie. None when the query has no
- * ORDER BY there.
+ * What follows an ORDER BY's conditions is not one: comments, and a LIMIT or an OFFSET, are cut, outside the strings
+ * a condition holds; `$a`, the same variable as `?a`, is written `?a`.
+ */
+function withoutLimit(clause: string): string {
+  let kept = "";
+  let quote: string | undefined;
+  for (let at = 0; at < clause.length; at += 1) {
+    const character = clause[at] ?? "";
+    if (quote !== undefined) {
+      if (character === "\\") {
+        kept += character + (clause[(at += 1)] ?? "");
+        continue;
+      }
+      if (character === quote) quote = undefined;
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === "#") {
+      const end = clause.indexOf("\n", at);
+      if (end === -1) break;
+      at = end - 1;
+      continue;
+    } else if (
+      /^(?:LIMIT|OFFSET)\b/i.test(clause.slice(at)) &&
+      !/\w/.test(clause[at - 1] ?? " ")
+    )
+      break;
+    else if (character === "$" && /\w/.test(clause[at + 1] ?? "")) {
+      kept += "?";
+      continue;
+    }
+    kept += character;
+  }
+  return kept.trim();
+}
+
+const FIRST_BOUND = /COALESCE\s*\(\s*(\?\w+(?:\s*,\s*\?\w+)*)\s*\)/;
+
+/**
+ * The keys the query's rows are ordered by, after its last brace, one for each condition of its ORDER BY, each the
+ * columns whose first bound value it orders by and how it reads that: a condition is a projected variable, or a COALESCE
+ * of projected variables, alone or in an expression of it and of no other variable, such as DESC(COALESCE(STR(?a), ""))
+ * or COALESCE(SUBSTR(STR(COALESCE(?a, ?b)), 1, 10), ""). None when the query has no ORDER BY there; a condition that is
+ * not one of these is refused, naming it, never a key left out.
  */
 export function finalOrder(
   text: string,
@@ -687,15 +823,19 @@ export function finalOrder(
   const tail = text.slice(text.lastIndexOf("}"));
   const clause = /ORDER\s+BY\s/.exec(tail);
   if (clause === null) return undefined;
-  let rest = tail.slice(clause.index + clause[0].length).trim();
+  let rest = withoutLimit(tail.slice(clause.index + clause[0].length));
   const keys: OrderKey[] = [];
+  const refused = (condition: string): Error =>
+    new Error(
+      `no key can be read from the ORDER BY condition ${condition}; write a projected variable, or a COALESCE of them, alone or inside STR, SUBSTR, DESC or ASC, and nothing else`,
+    );
   while (rest !== "") {
     let condition: string;
     const variable = /^\?(\w+)/.exec(rest);
     if (variable !== null) condition = variable[0];
     else {
       const call = /^\w+\s*\(/.exec(rest);
-      if (call === null) break;
+      if (call === null) throw refused(rest.split(/\s/)[0] ?? "");
       let depth = 0;
       let at = call[0].length - 1;
       for (; at < rest.length; at += 1) {
@@ -704,17 +844,27 @@ export function finalOrder(
       }
       condition = rest.slice(0, at + 1);
     }
-    const mentioned = new Set(
-      [...condition.replace(/"[^"]*"/g, "").matchAll(/\?(\w+)/g)].map(
+    const coalesced = FIRST_BOUND.exec(condition);
+    const shape =
+      coalesced === null ? condition : condition.replace(FIRST_BOUND, "?_");
+    const others = new Set(
+      [...shape.replace(/"[^"]*"/g, "").matchAll(/\?(\w+)/g)].map(
         (found) => found[1] ?? "",
       ),
     );
-    const [found] = mentioned;
-    if (mentioned.size !== 1 || found === undefined || !names.includes(found))
-      break;
-    const read = readAsText(condition);
+    const found =
+      coalesced === null
+        ? [...others].sort()
+        : [...(coalesced[1] ?? "").matchAll(/\w+/g)].map((word) => word[0]);
+    if (
+      others.size !== 1 ||
+      (coalesced !== null && !others.has("_")) ||
+      !found.every((name) => names.includes(name))
+    )
+      throw refused(condition);
+    const read = readAsText(shape);
     keys.push({
-      column: names.indexOf(found),
+      columns: found.map((name) => names.indexOf(name)),
       ...(read === undefined ? {} : { read }),
     });
     rest = rest.slice(condition.length).trim();
@@ -744,9 +894,13 @@ function tied(left: string | null, right: string | null): boolean {
  * condition reads or else the term, holds two texts, or two terms SPARQL's `<` orders.
  */
 function ordered(one: Row, other: Row, keys: readonly OrderKey[]): boolean {
-  for (const { column, read } of keys) {
-    const a = one[column] ?? null;
-    const b = other[column] ?? null;
+  const bound = (row: Row, columns: readonly number[]): string | null =>
+    columns
+      .map((column) => row[column] ?? null)
+      .find((term) => term !== null) ?? null;
+  for (const { columns, read } of keys) {
+    const a = bound(one, columns);
+    const b = bound(other, columns);
     if (read !== undefined) {
       if (asText(a, read) !== asText(b, read)) return true;
     } else if (a !== b) return !tied(a, b);
@@ -1086,20 +1240,26 @@ export async function beforeLabels<T>(
  * Why the `.sql`, over the fixture's pod under its lens, does not give the rows of the `.rq` beside it, as lines: in a
  * whole run, in its order where it has one, a CONSTRUCT's as a set of triples and a view's through its `triples` part;
  * for a question that binds a record, asked through `asked` of each record a manifest entry binds and each record the
- * pod holds, for a list question of each record in an entry too, and for a `.sql` reading `asked` of a record no pod holds, against the `.rq` bound to it; through each page
- * of a list question; and the rows of each manifest entry under that lens that runs it. The vocabulary's
- * tests/test_sql.py makes the same check, and alone checks a view's screen filled keyed to a change against a whole fill.
+ * pod holds, for a list question of each record in an entry too, and for a `.sql` reading `asked` of a record no pod holds,
+ * and for a SELECT that binds no record and gives no `?record`, against the `.rq` bound to it; through each page
+ * of a list question; the rows of each manifest entry under that lens that runs it; a view's screen, which is not
+ * filled whole where the layout places the view at two addresses; and the objects the database holds, which are the
+ * same after all of these as before, the `.sql` leaving none. Where `observed` is given, it is told `rows:` and the `.rq`
+ * where the `.rq` gives a row, which a `.rq` binding a record does of a record the pod holds.
  */
 export async function sqlFailures(
   vocabulary: Files,
   built: BuiltFixture,
   ported: Ported,
   sql: string = ported.sql,
+  observed?: string[],
+  twoAddressed?: Set<string>,
 ): Promise<string[]> {
   const { name: fixture, lens, union, db } = built;
   const where = `${fixture}, under ${lens}, ${ported.rq}`;
   const screen = built.screens.get(ported.rq);
   if (screen !== undefined) return [`${where}: ${screen}`];
+  const before = schemaOf(db);
   const construct = isConstruct(ported.rqText);
   const wanted =
     ported.rq === LABELS && sqlParts(sql).size > 0
@@ -1147,20 +1307,32 @@ export async function sqlFailures(
   }
   // A question that gives a ?record column and binds none is never bound to a record: its binding would add the record
   // to each row that names none, as an entry's review would.
-  if (
-    ported.rq.startsWith(QUESTIONS) &&
-    !bindsARecord(ported.rqText) &&
-    answersWithARecord(ported.rqText)
-  )
+  const question = ported.rq.startsWith(QUESTIONS);
+  const asksOfARecord = question && bindsARecord(ported.rqText);
+  if (question && !asksOfARecord && answersWithARecord(ported.rqText))
     bound.clear();
-  for (const record of [...bound].sort())
+  else if (question && !construct && !asksOfARecord)
+    lines.push(
+      ...against(
+        `bound to ${NO_SUCH_RECORD}, against the .rq`,
+        (await rqAnswer(union, ported.rqText, NO_SUCH_RECORD)).rows,
+        found.rows,
+      ),
+    );
+  let gaveRows = !asksOfARecord && wanted.rows.length > 0;
+  for (const record of [...bound].sort()) {
+    const answer = (await rqAnswer(union, ported.rqText, record)).rows;
+    if (asksOfARecord && record !== NO_SUCH_RECORD && answer.length > 0)
+      gaveRows = true;
     lines.push(
       ...against(
         `keyed to ${record}, against the .rq`,
-        (await rqAnswer(union, ported.rqText, record)).rows,
+        answer,
         askedRows(db, sql, [record]),
       ),
     );
+  }
+  if (gaveRows) observed?.push(`rows:${ported.rq}`);
   for (const entry of built.entries) {
     if (entry.query !== ported.rq) continue;
     if (entry.result === undefined) {
@@ -1208,7 +1380,174 @@ export async function sqlFailures(
           `${fixture}, ${entry.name}, under ${lens}, ${ported.rq}: ${kind}: ${row}`,
         );
   }
+  lines.push(
+    ...twoAddressFailures(built, ported, where, twoAddressed, observed),
+  );
+  const left = leftIn(db, before);
+  if (left.length > 0)
+    lines.push(
+      `${where}: the .sql leaves in the database, or removes from it: ${left.join(", ")}`,
+    );
   return lines;
+}
+
+/**
+ * Each object, of every kind, that the connection's database and its temporary one hold, as its schema, type and name,
+ * but those SQLite makes of itself, such as the tables an ANALYZE of a temporary table writes its statistics in.
+ */
+function schemaOf(db: Database): Set<string> {
+  return new Set(
+    db
+      .prepare(
+        "SELECT 'temp' AS home, type, name FROM sqlite_temp_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' " +
+          "UNION ALL SELECT 'main', type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+      )
+      .all()
+      .map(
+        ({ home, type, name }) =>
+          `${String(home)} ${String(type)} ${String(name)}`,
+      ),
+  );
+}
+
+/**
+ * The objects the database holds now and did not before, and those it held and does not, each written `home type
+ * name`; the tables and views added are dropped, so that the `.sql` after one is not blamed for what it left.
+ */
+function leftIn(db: Database, before: ReadonlySet<string>): string[] {
+  const after = schemaOf(db);
+  const added = [...after].filter((object) => !before.has(object));
+  for (const object of added) {
+    const [home, type, name] = object.split(" ");
+    if (type === "table" || type === "view")
+      try {
+        db.exec(`DROP ${type.toUpperCase()} IF EXISTS ${home}."${name}"`);
+      } catch {
+        // an object another one's drop took with it
+      }
+  }
+  return [
+    ...added,
+    ...[...before].filter((object) => !after.has(object)),
+  ].sort();
+}
+
+/**
+ * Why the screens, filled whole over the fixture's pod under its lens, are not what a whole fill of the pod gives once
+ * a change a keyed run may be given is made to its statements and the screens are filled again with scope holding what
+ * the change touched: for each change, each screen table that holds other rows, as lines. Each kind of change it made
+ * is given as `kinds`, and each of the `views` whose screen tables hold rows over the fixture as `screens`; a change of
+ * no kind is a line.
+ */
+export function keyedFillFailures(
+  built: BuiltFixture,
+  views: readonly Ported[] = [],
+): {
+  lines: string[];
+  kinds: string[];
+  screens: string[];
+} {
+  const { db, name: fixture, lens } = built;
+  const filled = screenTables(db);
+  const screens = views
+    .filter(
+      ({ rq, sql }) =>
+        rq.startsWith(VIEWS) &&
+        tablesOf(sqlParts(sql)).some(
+          (table) => (filled.get(table)?.length ?? 0) > 0,
+        ),
+    )
+    .map(({ rq }) => rq);
+  const lines: string[] = [];
+  const kinds = new Set<string>();
+  for (const { name, make } of keyedChanges(db, () => built.refill())) {
+    const kind = keyedKind(name);
+    if (kind === undefined)
+      lines.push(`${fixture}, under ${lens}, ${name}: a change of no kind`);
+    else kinds.add(kind);
+    undone(db, () => {
+      const touched = make(db);
+      const kept = undone(db, () => {
+        db.exec("DELETE FROM scope");
+        const put = db.prepare("INSERT INTO scope (term) VALUES (?)");
+        for (const term of touched) put.run(term);
+        built.refill();
+        return screenTables(db);
+      });
+      let wanted = filled;
+      if (!name.endsWith(" unchanged")) {
+        for (const table of filled.keys()) db.exec(`DELETE FROM "${table}"`);
+        wholeScope(db);
+        built.refill();
+        wanted = screenTables(db);
+      }
+      for (const [table, rows] of wanted) {
+        const have = kept.get(table) ?? [];
+        if (JSON.stringify(have) === JSON.stringify(rows)) continue;
+        lines.push(
+          `${fixture}, under ${lens}, ${name}: ${table} holds ${JSON.stringify(have.filter((row) => !rows.includes(row)))} a whole fill does not, and lacks ${JSON.stringify(rows.filter((row) => !have.includes(row)))}`,
+        );
+      }
+    });
+  }
+  return { lines, kinds: [...kinds], screens };
+}
+
+/** The name of a view, by its `.rq`: `allergies` of `queries/views/allergies.rq`. */
+const viewNamed = (rq: string): string => rq.slice(VIEWS.length, -".rq".length);
+
+/**
+ * Why a view's screen, whose entries the pod holds, is filled whole though the layout places the view at a second address,
+ * where it should fail rather than name the view's entries after either address: the second address given, the screens'
+ * rows deleted and every screen filled again, all put back after. Whether the fill refuses is a property of its text once
+ * the pod holds entries, so a view is tried once for each run: `tried` holds the views that were, and is added to, and `observed` is told `two-addresses:` and the
+ * view's `.rq`. A refusal is a constraint's failure; any other error is the fill's own and is thrown.
+ */
+function twoAddressFailures(
+  built: BuiltFixture,
+  ported: Ported,
+  where: string,
+  tried?: Set<string>,
+  observed?: string[],
+): string[] {
+  if (!ported.rq.startsWith(VIEWS) || tried?.has(ported.rq)) return [];
+  const { db } = built;
+  const tables = tablesOf(sqlParts(ported.sql));
+  const screens = screenTables(db);
+  if (!tables.some((table) => (screens.get(table)?.length ?? 0) > 0)) return [];
+  const registered = db
+    .prepare(
+      "SELECT w.s AS s, w.g AS g FROM quad w JOIN term p ON p.id = w.p JOIN term o ON o.id = w.o WHERE p.nt = ? AND o.nt = ?",
+    )
+    .get(`<${WRITTEN_BY}>`, `"views/${viewNamed(ported.rq)}.rq"`);
+  if (registered === undefined) return [];
+  tried?.add(ported.rq);
+  observed?.push(`two-addresses:${ported.rq}`);
+  return undone(db, () => {
+    const make = termIdsOf(db);
+    db.prepare("INSERT INTO quad (s, p, o, g) VALUES (?, ?, ?, ?)").run(
+      registered.s,
+      make(`<${INSTANCE}>`),
+      make("<https://pod.example/elsewhere.ttl>"),
+      registered.g,
+    );
+    for (const table of screens.keys()) db.exec(`DELETE FROM "${table}"`);
+    wholeScope(db);
+    try {
+      built.refill();
+    } catch (error) {
+      if (
+        String((error as { code?: unknown }).code).startsWith(
+          "SQLITE_CONSTRAINT",
+        )
+      )
+        return [];
+      throw error;
+    }
+    return [
+      `${where}: its screen is filled whole though the layout places the view at two addresses`,
+    ];
+  });
 }
 
 /** The check's own context, read once: the build, the schema, the functions and the ported queries. */
@@ -1232,6 +1571,13 @@ export function fixtureBuilt(
 ): Promise<BuiltFixture> {
   return builtFixture(context, fixture, lens);
 }
+
+/** The test of the screens over a fixture under a lens, filled keyed to each change a run may be given. */
+export const sqlKeyedTest = (
+  vocabulary: Files,
+  fixture: string,
+  lens: string,
+): string => `${vocabulary.iri}${VIEWS}#keyed/${fixture}/${lens}`;
 
 /**
  * The test a `.sql` over a fixture under a lens is: the `.sql`, and in its fragment the `.sql` again, the fixture and the
@@ -1263,6 +1609,7 @@ export async function sqlCheckAssertions(
   const context = await sqlCheckContext(options);
   if (context.ported.length === 0) return [];
   const assertions: Assertion[] = [];
+  const twoAddressed = new Set<string>();
   const chosen = await sqlComparisons(
     options.vocabulary,
     options.newStore,
@@ -1286,6 +1633,7 @@ export async function sqlCheckAssertions(
       try {
         for (const ported of compared) {
           let lines: string[];
+          const observed = [`compared:${ported.rq}`];
           try {
             lines =
               built === undefined
@@ -1295,6 +1643,8 @@ export async function sqlCheckAssertions(
                     built,
                     ported,
                     given[ported.rq],
+                    observed,
+                    twoAddressed,
                   );
           } catch (error) {
             lines = [
@@ -1306,6 +1656,31 @@ export async function sqlCheckAssertions(
             name: `${ported.rq.slice(0, -3)}.sql over ${fixture} under ${lens}`,
             outcome: lines.length === 0 ? "passed" : "failed",
             ...(lines.length === 0 ? {} : { why: lines.join("\n") }),
+            observed,
+          });
+        }
+        if (only === undefined && built?.screensFilled) {
+          let found: ReturnType<typeof keyedFillFailures>;
+          try {
+            found = keyedFillFailures(built, context.ported);
+          } catch (error) {
+            found = {
+              lines: [`${fixture}, under ${lens}: ${messageOf(error)}`],
+              kinds: [],
+              screens: [],
+            };
+          }
+          assertions.push({
+            test: sqlKeyedTest(options.vocabulary, fixture, lens),
+            name: `the screens over ${fixture} under ${lens} filled keyed to each change are what a whole fill gives`,
+            outcome: found.lines.length === 0 ? "passed" : "failed",
+            ...(found.lines.length === 0
+              ? {}
+              : { why: found.lines.join("\n") }),
+            observed: [
+              ...found.kinds.map((kind) => `kept:${kind}`),
+              ...found.screens.map((rq) => `screen:${rq}`),
+            ],
           });
         }
       } finally {
@@ -1387,6 +1762,70 @@ interface Vector {
   readonly input: readonly unknown[];
   readonly output?: unknown;
   readonly refused?: string;
+  /** Oxigraph's own answer, where it is not the vector's output. */
+  readonly oxigraph?: unknown;
+}
+
+/** The test of a function's vectors against Oxigraph's SPARQL. */
+export const sqlVectorsInOxigraphTest = (
+  vocabulary: Files,
+  name: string,
+): string => `${vocabulary.iri}${SQL_FUNCTION_VECTORS}#${name}-in-oxigraph`;
+
+/** The SELECT of `?r` that gives what the function stands for over one vector's input, as SPARQL 1.1 gives it. */
+function sparqlOf(name: string, input: readonly unknown[]): string {
+  const text = (value: unknown): string => ntWritten(literal(String(value)));
+  let expression: string;
+  let values: string[];
+  if (name === "sparql_compare") {
+    expression = "IF(?a0 < ?a1, -1, IF(?a0 = ?a1, 0, IF(?a0 > ?a1, 1, 1/0)))";
+    values = input.map(String);
+  } else if (name === "sparql_decimal") {
+    const [operator, ...operands] = input.map(String);
+    expression = operator === "floor" ? "FLOOR(?a0)" : `?a0 ${operator} ?a1`;
+    values = operands.map((operand) =>
+      ntWritten(literal(operand, `${XSD}decimal`)),
+    );
+  } else {
+    const calls: Readonly<Record<string, string>> = {
+      sparql_replace: `REPLACE(${input.map((_, at) => `?a${at}`).join(", ")})`,
+      sparql_sha256: "SHA256(?a0)",
+      sparql_encode_for_uri: "ENCODE_FOR_URI(?a0)",
+      sparql_lcase: "LCASE(?a0)",
+    };
+    const call = calls[name];
+    if (call === undefined) throw new Error(`no SPARQL stands for ${name}`);
+    expression = call;
+    values = input.map(text);
+  }
+  const variables = values.map((_, at) => `?a${at}`).join(" ");
+  return `SELECT (${expression} AS ?r) WHERE { VALUES (${variables}) { (${values.join(" ")}) } }`;
+}
+
+/** Each vector, but one marked refused, whose output is not what Oxigraph's SPARQL gives, where it marks no answer of its own. */
+async function oxigraphFailures(
+  union: Union,
+  name: string,
+  vectors: readonly Vector[],
+): Promise<string[]> {
+  const lines: string[] = [];
+  for (const vector of vectors) {
+    if (vector.refused !== undefined) continue;
+    const { rows } = await union.select(sparqlOf(name, vector.input));
+    const term = rows[0]?.get("r");
+    const got =
+      term === undefined
+        ? null
+        : name === "sparql_compare"
+          ? Number(term.value)
+          : term.value;
+    const wanted = "oxigraph" in vector ? vector.oxigraph : vector.output;
+    if (got !== wanted)
+      lines.push(
+        `${JSON.stringify(vector.input)}: the vector gives ${JSON.stringify(wanted)}, Oxigraph ${JSON.stringify(got)}`,
+      );
+  }
+  return lines;
 }
 
 /** Each vector of the function whose output the TypeScript function does not give, or that it does not refuse. */
@@ -1415,9 +1854,14 @@ export function vectorFailures(
   });
 }
 
-/** One assertion for each function the vectors name: that it gives each vector's output and refuses each refused one. */
+/**
+ * One assertion for each function the vectors name: that it gives each vector's output and refuses each refused one;
+ * and, given a store, one that each vector is what Oxigraph's SPARQL gives, but where it marks Oxigraph's own answer,
+ * which Oxigraph must give.
+ */
 export async function sqlFunctionAssertions(
   vocabulary: Files,
+  newStore?: StoreFactory,
 ): Promise<Assertion[]> {
   const bytes = await vocabulary.read(SQL_FUNCTION_VECTORS);
   if (bytes === undefined) return [];
@@ -1425,15 +1869,35 @@ export async function sqlFunctionAssertions(
     functions: Record<string, { vectors: Vector[] }>;
   };
   const implemented = await sqlFunctions();
-  return Object.entries(functions)
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([name, { vectors }]) => {
+  const found: Assertion[] = [];
+  const store = newStore?.();
+  try {
+    for (const [name, { vectors }] of Object.entries(functions).sort(
+      ([a], [b]) => (a < b ? -1 : 1),
+    )) {
       const lines = vectorFailures(implemented[name], vectors);
-      return {
+      found.push({
         test: sqlFunctionTest(vocabulary, name),
         name: `${name} gives each vector's output`,
         outcome: lines.length === 0 ? "passed" : "failed",
         ...(lines.length === 0 ? {} : { why: lines.join("\n") }),
-      };
-    });
+      });
+      if (store === undefined) continue;
+      let said: string[];
+      try {
+        said = await oxigraphFailures(new Union(store), name, vectors);
+      } catch (error) {
+        said = [messageOf(error)];
+      }
+      found.push({
+        test: sqlVectorsInOxigraphTest(vocabulary, name),
+        name: `${name}'s vectors are Oxigraph's SPARQL answers`,
+        outcome: said.length === 0 ? "passed" : "failed",
+        ...(said.length === 0 ? {} : { why: said.join("\n") }),
+      });
+    }
+  } finally {
+    store?.free?.();
+  }
+  return found;
 }

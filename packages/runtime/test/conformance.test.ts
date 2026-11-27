@@ -13,7 +13,20 @@ import { KIT_FINDINGS_CHECK } from "../src/kit-findings.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { PERFORMERS } from "../src/replay.js";
 import { Shapes } from "../src/shapes.js";
-import { sqlComparisons, sqlFunctionTest, sqlTest } from "../src/sql-check.js";
+import {
+  MANIFESTS_CHECK,
+  sqlCheckTest,
+  sqlComparisons,
+  sqlFunctionTest,
+  sqlKeyedTest,
+  sqlTest,
+  sqlVectorsInOxigraphTest,
+  VIEWS,
+} from "../src/sql-check.js";
+import {
+  SQL_STATIC_CHECKS,
+  SQL_WHOLE_RUN_CHECKS,
+} from "../src/sql-static-check.js";
 import { SQL_FUNCTION_VECTORS } from "../src/statements.js";
 import { Union } from "../src/store.js";
 import { layout, RUNTIME, ROOT, vocabulary } from "./vocabulary.js";
@@ -651,12 +664,32 @@ describe("Reporting a conformance run · npm run conformance -- --report <file>"
       const { functions } = JSON.parse(
         new TextDecoder().decode(await files.read(SQL_FUNCTION_VECTORS)),
       ) as { functions: Record<string, unknown> };
-      for (const name of Object.keys(functions))
+      for (const name of Object.keys(functions)) {
         tested.set(sqlFunctionTest(files, name), name);
-      for (const [fixture, queries] of await sqlComparisons(files, newStore))
+        tested.set(sqlVectorsInOxigraphTest(files, name), name);
+      }
+      for (const check of [
+        MANIFESTS_CHECK,
+        ...Object.keys(SQL_STATIC_CHECKS),
+        ...Object.keys(SQL_WHOLE_RUN_CHECKS),
+      ])
+        tested.set(sqlCheckTest(files, check), check);
+      const named = new Map<string, readonly string[]>();
+      for (const [fixture, queries] of await sqlComparisons(
+        files,
+        newStore,
+        undefined,
+        undefined,
+        undefined,
+        named,
+      )) {
         for (const [rq, under] of queries)
           for (const lens of under)
             tested.set(sqlTest(files, { rq }, fixture, lens), rq);
+        if (named.get(fixture)?.includes(VIEWS))
+          for (const lens of [...queries.values()].flat())
+            tested.set(sqlKeyedTest(files, fixture, lens), `${fixture} keyed`);
+      }
     }
 
     /** What a run of one feature file says on stderr, started with the full run so that the two are not one after the other. */
