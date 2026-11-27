@@ -461,6 +461,27 @@ describe("What a pod's screen says is worth a look · worthALook()", () => {
   });
 
   describe("entryOf(answers, id, { about, held })", () => {
+    it("gives a lab result's codes as the test codes its panels are found by, and no other kind's, whatever its tile calls it", () => {
+      const POTASSIUM = `${codeStems.LOINC}2823-3`;
+      const answers = {
+        [LABS]: [{ entry: "l1", test: "K+", code: POTASSIUM }],
+        [ALLERGIES]: [{ entry: "e1", allergenName: "Latex" }],
+        [SOURCES]: [
+          { entry: "l1", record: "r1" },
+          { entry: "e1", record: "r2" },
+        ],
+      };
+      const renamed = TILES.map((tile) => ({ ...tile, one: "reading" }));
+      assert.deepEqual(
+        said.entryOf(answers, "l1", { sections: renamed }).testCodes,
+        [POTASSIUM],
+      );
+      assert.equal(
+        said.entryOf(answers, "e1", { sections: renamed }).testCodes,
+        undefined,
+      );
+    });
+
     it("says a pair's sentence among what is known of each of its two view entries", () => {
       assert.deepEqual(
         sharedOf("e2", [RXNORM_SERIES]).map(({ sentence }) => sentence),
@@ -1826,5 +1847,372 @@ describe("Setting the day the demo hospitals answer as of · worldInstant(), utc
       );
       assert.equal(said.pulledAsOfSaid(undefined), undefined);
     });
+  });
+});
+
+const CHOLESTEROL = `${codeStems.LOINC}2093-3`;
+const ATORVASTATIN = `${RXNORM}617310`;
+/** A finding as `changesIn` gives it, as far as the sentences read it. */
+const finding = (direction: string, dateIs: string) => ({
+  direction,
+  test: { code: CHOLESTEROL, name: "Cholesterol", notation: "2093-3" },
+  medication: {
+    code: ATORVASTATIN,
+    name: "atorvastatin 20 MG Oral Tablet",
+    notation: "617310",
+    dateIs,
+    date: "2024-01-01",
+  },
+});
+const IMPORTS = "pod/What each import brought in";
+const REVISIONS = "record/Its revisions, in the order they arrived";
+
+/**
+ * What changed after a medication, the trend that shows it and the pulls that brought its records in are said the
+ * same way on every page: the tables' name for a code where they have one, the record's own text where they do not.
+ */
+describe("Saying a change, a trend and how a pod came to hold its records · changeSaid(), changeNames(), sentenceOf(), medicationDay(), trendOfFinding(), trendTitle(), therapiesOf(), therapyDays(), therapySpan(), leftSaid(), resultsSaid(), unitOf(), howOf(), pullSaid(), valuesSaid()", () => {
+  const about = new Map([
+    [ATORVASTATIN, { name: { label: "atorvastatin", altLabels: [] } }],
+  ]);
+
+  it("says a change by its direction and the medication's day, naming each by the tables where they can", () => {
+    assert.equal(
+      said.changeSaid(finding("down", "start of use")),
+      "Cholesterol was lower after atorvastatin 20 MG Oral Tablet started.",
+    );
+    assert.equal(
+      said.changeSaid(finding("up", "prescription written"), about),
+      "Cholesterol was higher after atorvastatin was prescribed.",
+    );
+    assert.deepEqual(said.changeNames(finding("down", "end of use"), about), {
+      test: "Cholesterol",
+      medication: "atorvastatin",
+    });
+    assert.equal(
+      said.sentenceOf(finding("down", "end of use"), {
+        test: "LDL",
+        medication: "a statin",
+      }),
+      "LDL was lower after a statin stopped.",
+    );
+    assert.deepEqual(said.medicationDay(finding("up", "end of use")), {
+      said: "stopped",
+      mark: "stop",
+    });
+  });
+
+  it("names a finding's trend by bare codes, and its title by the tables' name of the test where they have one", () => {
+    assert.deepEqual(said.trendOfFinding(finding("down", "start of use")), {
+      test: "2093-3",
+      medication: "617310",
+    });
+    const series = { test: { code: CHOLESTEROL, name: "Chol" } };
+    assert.equal(said.trendTitle(series), "Chol");
+    assert.equal(
+      said.trendTitle(
+        series,
+        new Map([
+          [CHOLESTEROL, { name: { label: "Cholesterol [Mass/volume]" } }],
+        ]),
+      ),
+      "Cholesterol [Mass/volume]",
+    );
+  });
+
+  it("makes one therapy of a drug's rows, from its earliest start and prescription to its latest stop, and says its days", () => {
+    const [therapy, ...others] = said.therapiesOf([
+      {
+        code: ATORVASTATIN,
+        notation: "617310",
+        name: "atorvastatin",
+        started: "2024-03-01",
+        written: "2024-02-01",
+      },
+      {
+        code: ATORVASTATIN,
+        notation: "617310",
+        name: "atorvastatin",
+        started: "2024-01-01",
+        ended: "2024-06-01",
+      },
+    ]);
+    assert.equal(others.length, 0);
+    assert.deepEqual(
+      said
+        .therapyDays(therapy)
+        .map(({ kind, day }: { kind: string; day: string }) => [kind, day]),
+      [
+        ["written", "2024-02-01"],
+        ["start", "2024-01-01"],
+        ["stop", "2024-06-01"],
+      ],
+    );
+    assert.equal(
+      said.therapySpan(therapy, said.dayOrAsWritten),
+      "prescribed 1 February 2024, from 1 January 2024 to 1 June 2024",
+    );
+    assert.equal(
+      said.therapySpan(
+        { key: "x", name: "x", written: "2024-02-01" },
+        said.dayOrAsWritten,
+      ),
+      "prescribed 1 February 2024, start of use not known, not stopped",
+    );
+  });
+
+  it("says what a trend left out, how many results it has, and the unit most of them carry", () => {
+    assert.equal(
+      said.leftSaid({ unparsed: 1, otherUnit: 2 }),
+      "Left out: 1 value that is not a number and 2 results in another unit.",
+    );
+    assert.equal(said.leftSaid({}), undefined);
+    assert.equal(said.resultsSaid(1), "1 result");
+    assert.equal(said.resultsSaid(3), "3 results");
+    assert.equal(
+      said.unitOf([{ unit: "mg/dL" }, { unit: "mmol/L" }, { unit: "mmol/L" }]),
+      "mmol/L",
+    );
+    assert.equal(said.unitOf([{ unit: "a" }, { unit: "b" }]), "a");
+  });
+
+  it("lists a pod's pulls once it holds two imports, each with where it came from, as of when, and what it brought", () => {
+    const one = {
+      [IMPORTS]: [
+        {
+          import: "i1",
+          importLabel: "Apple Health export",
+          started: "2026-10-01T10:00:00Z",
+          record: "r1",
+        },
+      ],
+    };
+    assert.equal(said.howOf(one, []), undefined);
+    const how = said.howOf(
+      {
+        [IMPORTS]: [
+          ...one[IMPORTS],
+          ...["r1", "r2"].map((record) => ({
+            import: "i2",
+            importLabel: "FHIR pull",
+            started: "2026-10-17T12:00:00Z",
+            record,
+          })),
+        ],
+        [REVISIONS]: [
+          {
+            import: "i2",
+            record: "r1",
+            revision: "rv2",
+            version: "v2",
+            previous: "rv1",
+            arrived: "2026-10-17T12:00:00Z",
+            hospital: "Cascade North Demo Hospital",
+            answeredAsOf: "2025-02-01T23:59:59Z",
+          },
+        ],
+      },
+      [],
+    );
+    assert.deepEqual(how, {
+      pulls: [
+        {
+          label: "Apple Health export",
+          started: "2026-10-01T10:00:00Z",
+          brought: 1,
+          revised: 0,
+        },
+        {
+          label: "FHIR pull",
+          started: "2026-10-17T12:00:00Z",
+          hospital: "Cascade North Demo Hospital",
+          asOf: "2025-02-01T23:59:59Z",
+          brought: 2,
+          revised: 1,
+        },
+      ],
+      revisions: [],
+    });
+    assert.equal(
+      said.pullSaid(how.pulls[1]),
+      "From Cascade North, as of 1 February 2025: 2 records, 1 of them a new version of one the pod already held.",
+    );
+    assert.equal(said.valuesSaid([]), "none");
+    assert.equal(said.valuesSaid(["a", "b"]), "a, b");
+  });
+});
+
+/**
+ * A reference table's page says how fresh its feed is, and a code's line what the tables say of its status and its
+ * relations, each in words a person reads.
+ */
+describe("Saying what the reference tables hold of a code · freshness(), statusOf(), tableId(), heldAt(), relationName(), notationOf()", () => {
+  it("says when the watcher and the app last looked at a feed, and when it last changed", () => {
+    const now = Date.parse("2026-10-08T22:00:00Z");
+    assert.equal(
+      said.freshness(
+        {
+          watched: { at: "2026-10-08T20:00:00Z", found: "new" },
+          checked: "2026-10-08T21:55:00Z",
+          modified: "2026-10-08",
+        },
+        now,
+      ),
+      "The watcher checked the publisher 2 hours ago: a new release. This app last read the feed 5 minutes ago. The feed last changed on 8 October 2026.",
+    );
+    assert.equal(
+      said.freshness({}, now),
+      "The feed does not say when its watcher last checked the publisher. This app has not read the feed yet.",
+    );
+  });
+
+  it("says a retired code's status with what replaced it, and nothing for one not retired", () => {
+    assert.equal(
+      said.statusOf({
+        status: {
+          deprecated: true,
+          replacedBy: ["urn:test:cvx/141"],
+          origin: "ni:///v2",
+        },
+      }),
+      "Retired, replaced by 141",
+    );
+    assert.equal(said.statusOf(undefined), "");
+  });
+
+  it("finds the held series and version a table version came from, and names a table in an address", () => {
+    assert.deepEqual(said.heldAt("ni:///v1", [GROUPS]), {
+      series: GROUPS,
+      version: GROUPS.versions[1],
+    });
+    assert.equal(said.heldAt("ni:///other", [GROUPS]), undefined);
+    assert.equal(
+      said.tableId(GROUPS.iri),
+      "c1a6678c-2b4d-4287-b852-9039e6a71afd",
+    );
+  });
+
+  it("names a drug class relation in words, and any other IRI by its bare code", () => {
+    assert.equal(
+      said.relationName(terms.mechanismOfActionClass),
+      "Mechanism of action",
+    );
+    assert.equal(said.relationName("https://example.org/x#Other"), "Other");
+    assert.equal(said.notationOf(CHOLESTEROL), "2093-3");
+    assert.equal(said.notationOf("https://example.org/a%20b"), "a b");
+    assert.equal(said.notationOf(undefined), undefined);
+  });
+});
+
+/** The small words every page uses: lists, a capital, a hospital's name, an import's progress, a day, a failure. */
+describe("Saying the small things every page says · listed(), capitalised(), hospitalName(), importPart(), dayOrAsWritten(), dayAtInWords(), onDaySaid(), failureSaid(), byFamily()", () => {
+  it("lists, capitalises, and names a demo hospital as a person says it", () => {
+    assert.equal(said.listed([]), "");
+    assert.equal(said.listed(["a"]), "a");
+    assert.equal(said.listed(["a", "b", "c"]), "a, b and c");
+    assert.equal(said.capitalised("sources disagree"), "Sources disagree");
+    assert.equal(
+      said.hospitalName("Cascade North Demo Hospital"),
+      "Cascade North",
+    );
+  });
+
+  it("says an import's part, with how many documents or steps are done when it knows", () => {
+    assert.equal(
+      said.importPart({ part: "converting", done: 3, of: 10 }),
+      "converting, 3 of 10 documents done",
+    );
+    assert.equal(
+      said.importPart({ part: "matching", done: 1, of: 2 }),
+      "matching, 1 of 2 steps done",
+    );
+    assert.equal(said.importPart({ part: "matching" }), "matching");
+  });
+
+  it("says a day in words, and text that is no day as written", () => {
+    assert.equal(
+      said.dayOrAsWritten("2024-02-01T10:00:00Z"),
+      "1 February 2024",
+    );
+    assert.equal(said.dayOrAsWritten("2024-13-45"), "2024-13-45");
+    assert.equal(said.dayAtInWords(Date.UTC(2024, 1, 1)), "1 February 2024");
+    assert.equal(said.onDaySaid("2026-10-17"), "on 17 October 2026");
+  });
+
+  it("says a connection's failure by its kind, or by the surface's own sentence for that kind, and nothing for a kind not known", () => {
+    assert.deepEqual(said.failureSaid("cancelled", "Cascade North"), {
+      said: "The sign-in at Cascade North was cancelled, so nothing was brought in. Sign in again when you are ready.",
+      again: true,
+    });
+    assert.deepEqual(
+      said.failureSaid("cancelled", "Cascade North", {
+        cancelled: { said: (name: string) => `${name} stopped.`, again: false },
+      }),
+      { said: "Cascade North stopped.", again: false },
+    );
+    assert.equal(said.failureSaid("no such kind", "Cascade North"), undefined);
+  });
+
+  it("sorts people by family name, then given name, a person with no family name by their name", () => {
+    assert.deepEqual(
+      said
+        .byFamily([
+          { name: "Zoe Adams", family: "Adams", given: "Zoe" },
+          { name: "Cher", family: "", given: "" },
+          { name: "Al Adams", family: "Adams", given: "Al" },
+        ])
+        .map(({ name }: { name: string }) => name),
+      ["Al Adams", "Zoe Adams", "Cher"],
+    );
+  });
+});
+
+/**
+ * The app's tiles decide which questions' rows a page names and shows: a row of a tile is read as text, the rows a
+ * tile hides are left out, and a credit is owed to a table that named a tile's row.
+ */
+describe("Reading the rows of the app's tiles · textOf(), rowsOf(), sectionRows(), namingCredits()", () => {
+  const PENICILLIN = `${codeStems.RxNorm}7980`;
+  const allergies = {
+    [ALLERGIES]: [{ entry: "e1", allergenName: "pcn", code: PENICILLIN }],
+  };
+  const about = new Map([
+    [
+      PENICILLIN,
+      { name: { label: "Penicillin", altLabels: [], origin: "ni:///v2" } },
+    ],
+  ]);
+
+  it("reads a row's text columns, leaving out a list column but keeping a tile's own tags", () => {
+    assert.deepEqual(
+      said.textOf({ entry: "e", sources: ["a"], tags: ["Needs review"] }),
+      { entry: "e", tags: ["Needs review"] },
+    );
+    assert.deepEqual(said.rowsOf({ q: [{ a: "x", l: ["y"] }] }, "q"), [
+      { a: "x" },
+    ]);
+    assert.deepEqual(said.rowsOf({}, "q"), []);
+  });
+
+  it("shows a tile's rows less those it hides: no medication entered in error", () => {
+    const medications = TILES.find(({ one }) => one === "medication")!;
+    assert.deepEqual(
+      said
+        .sectionRows(medications, {
+          [MEDICATIONS]: [
+            { entry: "m1", lifecycle: terms.MedicationEnteredInError },
+            { entry: "m2", lifecycle: terms.MedicationActive },
+          ],
+        })
+        .map(({ entry }: { entry: string }) => entry),
+      ["m2"],
+    );
+  });
+
+  it("owes the credit of a table that named a row of a tile, and none with no tiles", () => {
+    assert.deepEqual(said.namingCredits(allergies, about, [GROUPS], TILES), [
+      GROUPS.credit,
+    ]);
+    assert.deepEqual(said.namingCredits(allergies, about, [GROUPS]), []);
   });
 });

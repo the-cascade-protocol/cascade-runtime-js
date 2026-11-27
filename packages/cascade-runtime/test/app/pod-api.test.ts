@@ -621,9 +621,12 @@ async function clinvarTables() {
   return { tables, parts: { ...found, tables } };
 }
 
-/** A stub pod `reviewed`: one thing that needs review, and one table version the app does not hold. */
-const reviewing = () => {
+/** A stub pod `reviewed`: one allergy that needs review, and one table version the app does not hold. */
+const reviewing = (options?: Clocked) => {
   const answered: Record<string, unknown[]> = {
+    "pod/My active allergies": [
+      { entry: "urn:uuid:0e1f", allergenName: "Latex" },
+    ],
     "entry/What needs review": [
       {
         entry: "urn:uuid:0e1f",
@@ -633,18 +636,21 @@ const reviewing = () => {
     ],
   };
   return crossing(
-    api({
-      ...host(),
-      pods: {
-        names: async () => ["reviewed"],
-        title: async () => undefined,
-        open: async () => ({
-          ask: async (question: string) => answered[question] ?? [],
-          unheldTableVersions: async () => ["urn:x:ingredient-map-2"],
-          close: async () => {},
-        }),
+    api(
+      {
+        ...host(),
+        pods: {
+          names: async () => ["reviewed"],
+          title: async () => undefined,
+          open: async () => ({
+            ask: async (question: string) => answered[question] ?? [],
+            unheldTableVersions: async () => ["urn:x:ingredient-map-2"],
+            close: async () => {},
+          }),
+        },
       },
-    }),
+      options,
+    ),
   );
 };
 
@@ -1030,6 +1036,17 @@ describe("Asking a pod a named question, and running a tool on it · api.ask(), 
 
     it("names each line's view entry by its short id, as `entryId()` gives it", async () => {
       assert.equal((await lines()).value[0].entry, entryId("urn:uuid:0e1f"));
+    });
+
+    it("calls a line's entry what the app's tile calls one of its rows, as `podApi`'s `sections` give them", async () => {
+      const allergies = TILES.find(({ one }) => one === "allergy")!;
+      const { value } = await reviewing({
+        sections: [{ ...allergies, one: "reaction" }],
+      }).tool({ pod: "reviewed", tool: "worth_a_look" });
+      assert.equal(
+        value[0].sentence,
+        "Latex was marked as different, but is still shown as one reaction.",
+      );
     });
 
     it("returns none for a pod with nothing worth a look", async () => {

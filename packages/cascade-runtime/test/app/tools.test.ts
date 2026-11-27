@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { NEVER, TOOLS } from "cascade-runtime/app";
+import { NEVER, PAGE_TOOLS, TOOLS } from "cascade-runtime/app";
 import {
   QUESTIONS,
   TIER_OF_KIND,
@@ -85,10 +85,14 @@ describe("The tool list a model is offered · TOOLS, NEVER", () => {
       }
     });
 
-    it("holds exactly the tools `RUNS` has a row for", () => {
+    it("holds exactly the tools `RUNS` has a row for, the tools a page runs itself (`PAGE_TOOLS`) last", () => {
       assert.deepEqual(
         TOOLS.map(({ name }) => name).sort(),
         Object.keys(RUNS).sort(),
+      );
+      assert.deepEqual(
+        TOOLS.slice(-PAGE_TOOLS.length).map(({ name }) => name),
+        PAGE_TOOLS.map(({ name }) => name),
       );
     });
 
