@@ -18,7 +18,6 @@ import {
   ConnectionFailure,
   openPod,
   pullFiles,
-  Refusal,
   sixWords,
   timelineIn,
   Unopened,
@@ -100,7 +99,10 @@ const {
   launchCookie,
   entryId,
   testsIn,
+  Refusal,
 } = (await import(APP)) as {
+  /** What PodApi throws for input it refuses. */
+  Refusal: new (message?: string) => Error;
   /** What an app's server mounts: a request in, a response out. */
   appHandler: (options: {
     api: Api;
@@ -696,6 +698,67 @@ describe("Reading a pod for its screens · api.pods(), api.pod(), api.answers(),
       ).answers({ pod: STATIN });
       assert.ok(read.changes.length > 0);
       assert.deepEqual(untiled.changes, read.changes);
+    });
+
+    it("asks each record's revisions and what each version says, and returns them, only for a pod of two imports or more whose lab results show a change", async () => {
+      const history = [
+        "record/Its revisions, in the order they arrived",
+        "record/What each version says",
+      ];
+      type Row = Record<string, unknown>;
+      const read = async (imports: 1 | 2, labs: boolean) => {
+        const asked: string[] = [];
+        const given = host();
+        const pods = given.pods as unknown as {
+          open(
+            name: string,
+            options?: object,
+          ): Promise<{ ask(question: string): Promise<Row[]> }>;
+        };
+        const answered = await crossing(
+          api({
+            ...given,
+            pods: {
+              ...given.pods,
+              open: async (name: string, options?: object) => {
+                const pod = await pods.open(name, options);
+                const ask = pod.ask.bind(pod);
+                pod.ask = async (question) => {
+                  asked.push(question);
+                  const rows =
+                    question === LABS && !labs ? [] : await ask(question);
+                  return question === IMPORTS && imports === 2
+                    ? [
+                        ...rows,
+                        ...rows.map((row) => ({
+                          ...row,
+                          import: `${String(row.import)}-again`,
+                        })),
+                      ]
+                    : rows;
+                };
+                return pod;
+              },
+            },
+          } as Host),
+        ).answers({ pod: STATIN });
+        return {
+          asked: history.filter((question) => asked.includes(question)),
+          returned: history.filter((question) => question in answered.answers),
+        };
+      };
+      assert.deepEqual(
+        {
+          "one import": await read(1, true),
+          "no lab change": await read(2, false),
+          "two imports and a lab change": await read(2, true),
+        },
+        {
+          "one import": { asked: [], returned: [] },
+          "no lab change": { asked: [], returned: [] },
+          "two imports and a lab change": { asked: history, returned: history },
+        },
+      );
     });
 
     it("reads no reference table", () => {
