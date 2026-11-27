@@ -179,8 +179,6 @@ async function toolsAnswer(
         ofPod: ofPod === true,
       })),
     );
-  if (request.method !== "POST" || !path.startsWith("/tools/"))
-    return text("Not found", 404);
   const body = await bodyOf(request);
   if (body === undefined) return tooLong();
   const asked = path.slice("/tools/".length);
@@ -209,12 +207,6 @@ async function toolsAnswer(
     return failed(error, path);
   }
 }
-
-/** The path of the request without a closing slash, as the routes read it. */
-const routeOf = (url: URL) =>
-  url.pathname.length > 1 && url.pathname.endsWith("/")
-    ? url.pathname.slice(0, -1)
-    : url.pathname;
 
 /** Where `/world-date?back=` goes: `back` when it is a path of this app, with the world's date's form open; else home. */
 export function worldDateBack(home: string, back: string | null): string {
@@ -273,18 +265,18 @@ export function appHandler(
     const url = new URL(request.url);
     const turned = refusedBy(options.own(), request, url);
     if (turned !== undefined) return turned;
-    const path = routeOf(url);
+    const path = url.pathname;
     const cookie = cookieNamed(request, launchCookie(url));
     const get = request.method === "GET";
-    if (
-      (SERVED.test(url.pathname) || SERVED.test(path)) &&
-      !launch.holds(cookie)
-    )
+    if (SERVED.test(path) && !launch.holds(cookie))
       return json({ refused: NO_COOKIE }, 403);
     if (get && path === "/" && url.searchParams.has("launch"))
       return traded(launch, request, url);
-    if (url.pathname.startsWith("/api/")) return apiAnswer(api, request, path);
-    if (path === "/tools" || path.startsWith("/tools/"))
+    if (path.startsWith("/api/")) return apiAnswer(api, request, path);
+    if (
+      (get && path === "/tools") ||
+      (request.method === "POST" && /^\/tools\/[^/]+$/.test(path))
+    )
       return toolsAnswer(api, address, request, path);
     if (path === "/chat")
       return options.chat?.(request) ?? text("Not found", 404);

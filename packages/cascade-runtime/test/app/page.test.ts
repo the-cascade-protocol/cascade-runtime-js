@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 
 /** The entry point an app imports, read as loosely as the tests call it. */
@@ -370,6 +371,33 @@ describe("Warming the engine in the background · warmEngine(), whenNamed()", ()
     } finally {
       logged.mock.restore();
     }
+  });
+
+  it("gives what is unsaid, and never reads, once the engine has failed to warm, and does not warm the tables", () => {
+    const run = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `globalThis.document = { body: { dataset: {} }, querySelectorAll: () => [], querySelector: () => ({}) };
+         const { pageReady, warmEngine, whenNamed, engineWarming } = await import(${JSON.stringify(import.meta.resolve(APP))});
+         pageReady();
+         let tables = 0;
+         warmEngine({ engine: () => Promise.reject(new Error("no engine")), tables: async () => { tables += 1; } });
+         let read = 0;
+         const named = await whenNamed(async () => { read += 1; return "named"; }, "unsaid", "the names");
+         console.log(JSON.stringify({ named, read, tables, warming: engineWarming(), engine: document.body.dataset.engine ?? null }));`,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.deepEqual(JSON.parse(run.stdout), {
+      named: "unsaid",
+      read: 0,
+      tables: 0,
+      warming: false,
+      engine: null,
+    });
   });
 });
 
