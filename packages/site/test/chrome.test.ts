@@ -18,7 +18,7 @@ import { chromeStyles, STYLESHEET, websiteChrome } from "../src/stylesheet.js";
 
 const ROOT = findRoot(dirname(fileURLToPath(import.meta.url)));
 const WEBSITE = "https://website.example";
-const HUB = "https://the-cascade-protocol.github.io/cascade-runtime-js/";
+const HUB = "https://hub.example";
 const GITHUB = "https://github.com/the-cascade-protocol";
 
 type Pages = Map<string, string>;
@@ -67,7 +67,7 @@ async function built(chrome: Chrome): Promise<{ pages: Pages; css: string }> {
 }
 
 before(async () => {
-  const on = await built({ website: WEBSITE, built: BUILT });
+  const on = await built({ website: WEBSITE, hub: HUB, built: BUILT });
   pages = on.pages;
   stylesheet = on.css;
   off = (await built({ built: BUILT })).pages;
@@ -165,7 +165,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           ["Start building", "/developers/build/"],
           ["Guides", "/developers/guides/"],
           ["Built on standards", "/developers/standards/"],
-          ["Reference ↗", HUB],
+          ["Reference ↗", `${HUB}/`],
         ],
         columns: {
           "§ Cascade Protocol": [
@@ -180,7 +180,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
             ["Start building", "/developers/build/"],
             ["Guides", "/developers/guides/"],
             ["Built on standards", "/developers/standards/"],
-            ["Reference", HUB],
+            ["Reference", `${HUB}/`],
             ["For AI agents (llms.txt)", "/llms.txt"],
           ],
           "§ Community": [
@@ -229,7 +229,7 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
       );
     });
 
-    it("builds every link of the chrome from the website address it was given, bar the hub's own and the organization's", () => {
+    it("builds every link of the chrome from the website and hub addresses it was given, bar the organization's", () => {
       for (const [path, html] of pages) {
         const chrome =
           html.slice(
@@ -245,8 +245,10 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         assert.ok(hrefs.length > 20, path);
         for (const href of hrefs)
           assert.ok(
-            href.startsWith(`${WEBSITE}/`) || href === HUB || href === GITHUB,
-            `${path}: ${href} is neither under the website address nor the hub's or the organization's`,
+            href.startsWith(`${WEBSITE}/`) ||
+              href === `${HUB}/` ||
+              href === GITHUB,
+            `${path}: ${href} is neither under the website address nor the hub's address nor the organization's`,
           );
       }
     });
@@ -275,9 +277,10 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
           footer.includes("is a trademark of Cascade Agentic Labs"),
           path,
         );
-        assert.match(
-          subbar(html),
-          /<a href="https:\/\/the-cascade-protocol\.github\.io\/cascade-runtime-js\/" aria-current="page">Reference ↗<\/a>/,
+        assert.ok(
+          subbar(html).includes(
+            `<span aria-current="page">Reference ↗</span>`,
+          ),
           path,
         );
       }
@@ -296,9 +299,10 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
         new TextDecoder().decode(
           hubFiles(["Records"], new Map(), chrome).get("index.html"),
         );
-      const on = front({ website: WEBSITE, built: BUILT });
+      const on = front({ website: WEBSITE, hub: HUB, built: BUILT });
       assert.ok(on.includes(`Built on ${BUILT}.`));
       assert.ok(on.includes(`href="${WEBSITE}/community/contribute/"`));
+      assert.ok(on.includes(`href="${HUB}/"`));
       const plain = front({ built: BUILT });
       assert.ok(plain.includes(`Built on ${BUILT}.`));
       assert.ok(!plain.includes(WEBSITE));
@@ -477,13 +481,21 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
       }
     });
 
-    it("builds the links to the website of its pages from the address of --website, a trailing slash dropped", () => {
-      const { run, out } = spec("--built", BUILT, "--website", `${WEBSITE}/`);
+    it("builds the links to the website and the hub of its pages from the addresses of --website and --hub, a trailing slash dropped", () => {
+      const { run, out } = spec(
+        "--built",
+        BUILT,
+        "--website",
+        `${WEBSITE}/`,
+        "--hub",
+        `${HUB}/`,
+      );
       try {
         assert.equal(run.status, 0, run.stderr);
         const page = readFileSync(join(out, "index.html"), "utf8");
         const footer = page.slice(page.indexOf(`<footer class="sx-footer">`));
         assert.ok(footer.includes(`href="${WEBSITE}/community/contribute/"`));
+        assert.ok(footer.includes(`<a href="${HUB}/">Reference</a>`));
         assert.ok(page.includes(`<a class="sx-logo" href="${WEBSITE}/">`));
         assert.ok(!page.includes("cascadeprotocol.org"));
       } finally {
@@ -491,26 +503,41 @@ describe("Every hub page carries the website's header, footer and tokens", () =>
       }
     });
 
-    it("links no page of the website when --website is not given", () => {
+    it("links no page of the website when --website is not given, and none of the hub when --hub is not", () => {
       const { run, out } = spec("--built", BUILT);
+      const { run: withWebsite, out: websiteOut } = spec(
+        "--built",
+        BUILT,
+        "--website",
+        WEBSITE,
+      );
       try {
         assert.equal(run.status, 0, run.stderr);
         const page = readFileSync(join(out, "index.html"), "utf8");
         assert.ok(page.includes(`<span class="sx-logo">`));
         assert.ok(!page.includes("/contribute/"));
+        assert.equal(withWebsite.status, 0, withWebsite.stderr);
+        const linked = readFileSync(join(websiteOut, "index.html"), "utf8");
+        assert.ok(linked.includes(`<li>Reference</li>`));
+        assert.ok(
+          linked.includes(`<span aria-current="page">Reference ↗</span>`),
+        );
       } finally {
         rmSync(out, { recursive: true, force: true });
+        rmSync(websiteOut, { recursive: true, force: true });
       }
     });
 
-    it("refuses a --website that is not an http(s) address", () => {
-      const { run, out } = spec("--website", "cascadeprotocol.org");
-      rmSync(out, { recursive: true, force: true });
-      assert.equal(run.status, 1);
-      assert.match(
-        run.stderr,
-        /--website is cascadeprotocol\.org, not an http/,
-      );
+    it("refuses a --website or a --hub that is not an http(s) address", () => {
+      for (const flag of ["--website", "--hub"]) {
+        const { run, out } = spec(flag, "cascadeprotocol.org");
+        rmSync(out, { recursive: true, force: true });
+        assert.equal(run.status, 1);
+        assert.match(
+          run.stderr,
+          new RegExp(`${flag} is cascadeprotocol\\.org, not an http`),
+        );
+      }
     });
 
     it("refuses a --built that is not a date as YYYY-MM-DD", () => {
