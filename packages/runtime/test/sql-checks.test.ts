@@ -211,7 +211,7 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
     }
   });
 
-  it("fails the screens of a view whose keyed fill leaves the rows of an entry a record moved out of, and one that fills whole though the layout places the view at two addresses", async () => {
+  it("fails the screens of a view whose keyed fill leaves the rows of an entry a record moved out of, one whose fill run again makes or drops a table, and one that fills whole though the layout places the view at two addresses", async () => {
     const real = await vocabulary();
     const conditions = await readText(real, CONDITIONS);
     const allergies = await readText(real, ALLERGIES);
@@ -268,6 +268,22 @@ describe("Checking the vocabulary's SQL against its queries · sqlFailures(), sq
     assert.match(
       keyed[0]?.why ?? "",
       /moved out of entry .*: condition_member holds .* a whole fill does not/,
+    );
+    const remaking = replaced(
+      conditions,
+      "CREATE TEMP TABLE IF NOT EXISTS condition_filled",
+      "DROP TABLE IF EXISTS temp.condition_filled;\nCREATE TEMP TABLE condition_filled",
+    );
+    const remade = (await over({ [CONDITIONS]: remaking }, "conditions-view"))
+      .filter(({ outcome }) => outcome === "failed")
+      .map(({ test, why }) => ({ test: test.split("#")[1], why }));
+    assert.deepEqual(
+      remade.map(({ test }) => test),
+      ["keyed/conditions-view/everyday", "keyed/conditions-view/export"],
+    );
+    assert.match(
+      remade[0]?.why ?? "",
+      /queries\/views\/conditions\.sql: its fill part, run again, makes or drops a table, view or index/,
     );
     const addressed = (
       await over({ [ALLERGIES]: one(allergies) }, "allergies-view")
