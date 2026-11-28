@@ -1,0 +1,803 @@
+{
+  "builds": [
+    {
+      "name": "fresh-first-screen-synthea-10y",
+      "scenario": "fresh-first-screen",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "fresh-first-screen-synthea-10y.trace.json",
+        "bytes": 362698,
+        "calls": 3948,
+        "drawn": 3869,
+        "shortestMs": 0,
+        "merged": 79,
+        "mergedEvents": 2,
+        "runMs": 5242.02,
+        "top": [
+          {
+            "name": "arrivals.convert",
+            "selfMs": 890.699,
+            "calls": 1,
+            "says": "Converting the source record into the pod's own format with the adapter. Sits inside scenario.import."
+          },
+          {
+            "name": "bridge.stage:records",
+            "selfMs": 590.675,
+            "calls": 1,
+            "says": "The Bridge makes the pod's records, with their versions, from what its mappings produced. Sits inside arrivals.convert."
+          },
+          {
+            "name": "store.query",
+            "selfMs": 508.546,
+            "calls": 245,
+            "says": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress."
+          },
+          {
+            "name": "pod-database.build.load",
+            "selfMs": 285.243,
+            "calls": 1,
+            "says": "Loading the pod's facts into the saved database. Sits inside core-pod.keepdatabase."
+          },
+          {
+            "name": "core-pod.import.adapters",
+            "selfMs": 279.934,
+            "calls": 1,
+            "says": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import."
+          },
+          {
+            "name": "pod.judge",
+            "selfMs": 263.616,
+            "calls": 1,
+            "says": "Claiming one confirmed profile as the pod's owner, by filing the judgment that says so."
+          },
+          {
+            "name": "bridge.stage:mapping",
+            "selfMs": 246.436,
+            "calls": 1,
+            "says": "The Bridge runs the adapter's mappings over the source record's facts to produce the pod's facts. Sits inside arrivals.convert."
+          },
+          {
+            "name": "union.loadFiles",
+            "selfMs": 195.78,
+            "calls": 14,
+            "says": "Loading the pod's files into memory as facts."
+          },
+          {
+            "name": "union.add",
+            "selfMs": 187.063,
+            "calls": 124,
+            "says": "Adding facts to the pod's in-memory facts."
+          },
+          {
+            "name": "scenario.open",
+            "selfMs": 127.107,
+            "calls": 1,
+            "says": "Opening the pod: finding its folder, its keys and its saved state."
+          }
+        ],
+        "bridgeQueries": [
+          {
+            "name": "record.rq",
+            "ms": 91.048,
+            "calls": 647,
+            "says": "The Bridge's query for record, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "coding-system-table.rq",
+            "ms": 24.638,
+            "calls": 647,
+            "says": "The Bridge's query for coding system table, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "lab-result.rq",
+            "ms": 19.728,
+            "calls": 647,
+            "says": "The Bridge's query for lab result, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "lab-result-quantities.rq",
+            "ms": 16.508,
+            "calls": 647,
+            "says": "The Bridge's query for lab result quantities, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "absent-reasons.rq",
+            "ms": 15.909,
+            "calls": 647,
+            "says": "The Bridge's query for absent reasons, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "lab-result-codes.rq",
+            "ms": 15.848,
+            "calls": 647,
+            "says": "The Bridge's query for lab result codes, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "detect.rq",
+            "ms": 10.003,
+            "calls": 1,
+            "says": "The query that recognises what kind of record this is. Sits inside bridge.stage-detect."
+          },
+          {
+            "name": "narrative-text.rq",
+            "ms": 8.43,
+            "calls": 647,
+            "says": "The Bridge's query for narrative text, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "medication-supply-and-dosages.rq",
+            "ms": 7.425,
+            "calls": 647,
+            "says": "The Bridge's query for medication supply and dosages, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "medication.rq",
+            "ms": 7.326,
+            "calls": 647,
+            "says": "The Bridge's query for medication, which pulls those out of the converted source. Sits inside arrivals.convert."
+          }
+        ]
+      },
+      "cpu": {
+        "file": "fresh-first-screen-synthea-10y.cpuprofile",
+        "bytes": 893285,
+        "workers": [
+          {
+            "file": "fresh-first-screen-synthea-10y.wasm-worker.cpuprofile",
+            "bytes": 107367,
+            "role": "wasm-worker"
+          },
+          {
+            "file": "fresh-first-screen-synthea-10y.wasm-worker-2.cpuprofile",
+            "bytes": 113637,
+            "role": "wasm-worker"
+          },
+          {
+            "file": "fresh-first-screen-synthea-10y.wasm-worker-3.cpuprofile",
+            "bytes": 1838993,
+            "role": "wasm-worker"
+          },
+          {
+            "file": "fresh-first-screen-synthea-10y.pod-database-worker.cpuprofile",
+            "bytes": 103618,
+            "role": "pod-database-worker"
+          }
+        ]
+      }
+    },
+    {
+      "name": "close-synthea-10y",
+      "scenario": "close",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "close-synthea-10y.trace.json",
+        "bytes": 1793,
+        "calls": 7,
+        "drawn": 7,
+        "shortestMs": 0,
+        "merged": 0,
+        "mergedEvents": 0,
+        "runMs": 119.788,
+        "top": [
+          {
+            "name": "core-pod.keepBuild.dump",
+            "selfMs": 60.349,
+            "calls": 1,
+            "says": "Gathering the pod's facts to put in the saved database. Sits inside core-pod.keepbuild."
+          },
+          {
+            "name": "core-pod.keepBuild",
+            "selfMs": 38.545,
+            "calls": 1,
+            "says": "Preparing the content of the saved database. Sits inside core-pod.keepdatabase."
+          },
+          {
+            "name": "scenario.close",
+            "selfMs": 13.241,
+            "calls": 1,
+            "says": "Closing the pod, saving its database for the next time it opens if neither the match nor a question has built it already."
+          },
+          {
+            "name": "core-pod.keepBuild.write",
+            "selfMs": 4.231,
+            "calls": 1,
+            "says": "Writing the gathered facts into the saved database. Sits inside core-pod.keepbuild."
+          },
+          {
+            "name": "files.write.file",
+            "selfMs": 3.042,
+            "calls": 1,
+            "says": "Writing one file into the pod's folder."
+          },
+          {
+            "name": "core-pod.keepDatabase",
+            "selfMs": 0.312,
+            "calls": 1,
+            "says": "Saving the pod's database so the next opening is fast. Sits inside scenario.close."
+          },
+          {
+            "name": "files.write.rename",
+            "selfMs": 0.067,
+            "calls": 1,
+            "says": "Moving a finished file into place, so a half-written file is never seen."
+          }
+        ],
+        "bridgeQueries": []
+      },
+      "cpu": {
+        "file": "fresh-first-screen-synthea-10y.cpuprofile",
+        "bytes": 893285,
+        "workers": [
+          {
+            "file": "fresh-first-screen-synthea-10y.wasm-worker.cpuprofile",
+            "bytes": 107367,
+            "role": "wasm-worker"
+          },
+          {
+            "file": "fresh-first-screen-synthea-10y.wasm-worker-2.cpuprofile",
+            "bytes": 113637,
+            "role": "wasm-worker"
+          },
+          {
+            "file": "fresh-first-screen-synthea-10y.wasm-worker-3.cpuprofile",
+            "bytes": 1838993,
+            "role": "wasm-worker"
+          },
+          {
+            "file": "fresh-first-screen-synthea-10y.pod-database-worker.cpuprofile",
+            "bytes": 103618,
+            "role": "pod-database-worker"
+          }
+        ],
+        "processOf": "fresh-first-screen"
+      }
+    },
+    {
+      "name": "reopen-first-answer-synthea-10y",
+      "scenario": "reopen-first-answer",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "reopen-first-answer-synthea-10y.trace.json",
+        "bytes": 22641,
+        "calls": 211,
+        "drawn": 195,
+        "shortestMs": 0,
+        "merged": 16,
+        "mergedEvents": 1,
+        "runMs": 238.412,
+        "top": [
+          {
+            "name": "files.read.file",
+            "selfMs": 120.582,
+            "calls": 179,
+            "says": "Reading one file from the pod's folder."
+          },
+          {
+            "name": "scenario.open",
+            "selfMs": 99.757,
+            "calls": 1,
+            "says": "Opening the pod: finding its folder, its keys and its saved state."
+          },
+          {
+            "name": "question:pod/My active conditions",
+            "selfMs": 75.925,
+            "calls": 1,
+            "says": "The answer to: pod my active conditions."
+          },
+          {
+            "name": "archives.open",
+            "selfMs": 19.389,
+            "calls": 1,
+            "says": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds."
+          },
+          {
+            "name": "files.hash.sha256",
+            "selfMs": 3.615,
+            "calls": 20,
+            "says": "Fingerprinting a file's content to tell whether it changed."
+          },
+          {
+            "name": "question:pod/My active medications",
+            "selfMs": 2.769,
+            "calls": 1,
+            "says": "The answer to: pod my active medications."
+          },
+          {
+            "name": "core-pod.inputsHash",
+            "selfMs": 2.151,
+            "calls": 1,
+            "says": "Working out a fingerprint of everything a result depends on, to know when it can be reused."
+          },
+          {
+            "name": "union.loadTurtle",
+            "selfMs": 1.185,
+            "calls": 1,
+            "says": "Loading text-format facts into memory."
+          },
+          {
+            "name": "scenario.close",
+            "selfMs": 1.119,
+            "calls": 1,
+            "says": "Closing the pod, saving its database for the next time it opens if neither the match nor a question has built it already."
+          },
+          {
+            "name": "store.query",
+            "selfMs": 0.941,
+            "calls": 1,
+            "says": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress."
+          }
+        ],
+        "bridgeQueries": []
+      },
+      "cpu": {
+        "file": "reopen-first-answer-synthea-10y.cpuprofile",
+        "bytes": 271966,
+        "workers": []
+      }
+    },
+    {
+      "name": "question-page-synthea-10y",
+      "scenario": "question-page",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "question-page-synthea-10y.trace.json",
+        "bytes": 3820,
+        "calls": 16,
+        "drawn": 16,
+        "shortestMs": 0,
+        "merged": 0,
+        "mergedEvents": 0,
+        "runMs": 38.502,
+        "top": [
+          {
+            "name": "question.page:pod/What everything is called",
+            "selfMs": 9.909,
+            "calls": 1,
+            "says": "One page of the answer to: pod what everything is called."
+          },
+          {
+            "name": "question.page:pod/What each import brought in",
+            "selfMs": 9.03,
+            "calls": 1,
+            "says": "One page of the answer to: pod what each import brought in."
+          },
+          {
+            "name": "question.page:pod/My medication history",
+            "selfMs": 3.636,
+            "calls": 1,
+            "says": "One page of the answer to: pod my medication history."
+          },
+          {
+            "name": "question.page:pod/My active medications",
+            "selfMs": 2.768,
+            "calls": 1,
+            "says": "One page of the answer to: pod my active medications."
+          },
+          {
+            "name": "question.page:profile/What needs review",
+            "selfMs": 2.498,
+            "calls": 1,
+            "says": "One page of the answer to: profile what needs review."
+          },
+          {
+            "name": "question.page:pod/How many of each kind",
+            "selfMs": 1.873,
+            "calls": 1,
+            "says": "One page of the answer to: pod how many of each kind."
+          },
+          {
+            "name": "question.page:pod/My lab results",
+            "selfMs": 1.509,
+            "calls": 1,
+            "says": "One page of the answer to: pod my lab results."
+          },
+          {
+            "name": "question.page:pod/My condition history",
+            "selfMs": 1.294,
+            "calls": 1,
+            "says": "One page of the answer to: pod my condition history."
+          },
+          {
+            "name": "question.page:pod/The person this pod is about",
+            "selfMs": 1.147,
+            "calls": 1,
+            "says": "One page of the answer to: pod the person this pod is about."
+          },
+          {
+            "name": "question.page:pod/My procedures",
+            "selfMs": 1.012,
+            "calls": 1,
+            "says": "One page of the answer to: pod my procedures."
+          }
+        ],
+        "bridgeQueries": []
+      },
+      "cpu": {
+        "file": "question-page-synthea-10y.cpuprofile",
+        "bytes": 285760,
+        "workers": []
+      }
+    },
+    {
+      "name": "reimport-identical-synthea-10y",
+      "scenario": "reimport-identical",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "reimport-identical-synthea-10y.trace.json",
+        "bytes": 27078,
+        "calls": 243,
+        "drawn": 227,
+        "shortestMs": 0,
+        "merged": 16,
+        "mergedEvents": 1,
+        "runMs": 379.729,
+        "top": [
+          {
+            "name": "files.read.file",
+            "selfMs": 135.448,
+            "calls": 190,
+            "says": "Reading one file from the pod's folder."
+          },
+          {
+            "name": "scenario.open",
+            "selfMs": 95.127,
+            "calls": 1,
+            "says": "Opening the pod: finding its folder, its keys and its saved state."
+          },
+          {
+            "name": "kept.readBack.restore",
+            "selfMs": 72.801,
+            "calls": 1,
+            "says": "Restoring the saved answers into memory. Sits inside kept.readback."
+          },
+          {
+            "name": "scenario.import",
+            "selfMs": 69.577,
+            "calls": 1,
+            "says": "Bringing the whole record into the pod: converting it, checking it, saving it and judging which records are the same."
+          },
+          {
+            "name": "core-pod.besideDigest",
+            "selfMs": 32.92,
+            "calls": 1,
+            "says": "Fingerprinting the saved state kept beside the pod, to check it is intact when the pod opens."
+          },
+          {
+            "name": "archives.open",
+            "selfMs": 20.635,
+            "calls": 1,
+            "says": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds."
+          },
+          {
+            "name": "core-pod.builtDigests",
+            "selfMs": 12.06,
+            "calls": 1,
+            "says": "Checking that each saved answer file is still the one the saved state was made with."
+          },
+          {
+            "name": "question.page:pod/My lab results",
+            "selfMs": 8.81,
+            "calls": 1,
+            "says": "One page of the answer to: pod my lab results."
+          },
+          {
+            "name": "pod.profilesTied",
+            "selfMs": 7.551,
+            "calls": 1,
+            "says": "Looking up which profiles the person has already said are, or are not, themselves."
+          },
+          {
+            "name": "kept.readBack",
+            "selfMs": 3.002,
+            "calls": 1,
+            "says": "Reading the saved answers back in when the pod opens."
+          }
+        ],
+        "bridgeQueries": []
+      }
+    },
+    {
+      "name": "reimport-changed-synthea-10y",
+      "scenario": "reimport-changed",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "reimport-changed-synthea-10y.trace.json",
+        "bytes": 206401,
+        "calls": 2149,
+        "drawn": 2094,
+        "shortestMs": 0,
+        "merged": 55,
+        "mergedEvents": 2,
+        "runMs": 3478.408,
+        "top": [
+          {
+            "name": "arrivals.convert",
+            "selfMs": 896.453,
+            "calls": 1,
+            "says": "Converting the source record into the pod's own format with the adapter. Sits inside scenario.import."
+          },
+          {
+            "name": "bridge.stage:records",
+            "selfMs": 576.008,
+            "calls": 1,
+            "says": "The Bridge makes the pod's records, with their versions, from what its mappings produced. Sits inside arrivals.convert."
+          },
+          {
+            "name": "core-pod.import.adapters",
+            "selfMs": 279.259,
+            "calls": 1,
+            "says": "Reading the adapter that knows how to convert this kind of record. Sits inside scenario.import."
+          },
+          {
+            "name": "bridge.stage:mapping",
+            "selfMs": 247.395,
+            "calls": 1,
+            "says": "The Bridge runs the adapter's mappings over the source record's facts to produce the pod's facts. Sits inside arrivals.convert."
+          },
+          {
+            "name": "files.read.file",
+            "selfMs": 171.889,
+            "calls": 322,
+            "says": "Reading one file from the pod's folder."
+          },
+          {
+            "name": "store.query",
+            "selfMs": 129.097,
+            "calls": 116,
+            "says": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress."
+          },
+          {
+            "name": "bridge.stage:lift",
+            "selfMs": 107.144,
+            "calls": 1,
+            "says": "The Bridge lifts the source record into facts. Sits inside arrivals.convert."
+          },
+          {
+            "name": "pod-database.keyed.screens",
+            "selfMs": 99.398,
+            "calls": 2,
+            "says": "Updating the saved database's ready-made answer tables."
+          },
+          {
+            "name": "arrivals.parseGraph",
+            "selfMs": 98.896,
+            "calls": 1,
+            "says": "Reading the converted records as facts. Sits inside scenario.import."
+          },
+          {
+            "name": "scenario.open",
+            "selfMs": 89.901,
+            "calls": 1,
+            "says": "Opening the pod: finding its folder, its keys and its saved state."
+          }
+        ],
+        "bridgeQueries": [
+          {
+            "name": "record.rq",
+            "ms": 91.706,
+            "calls": 647,
+            "says": "The Bridge's query for record, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "coding-system-table.rq",
+            "ms": 24.648,
+            "calls": 647,
+            "says": "The Bridge's query for coding system table, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "lab-result.rq",
+            "ms": 19.429,
+            "calls": 647,
+            "says": "The Bridge's query for lab result, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "lab-result-quantities.rq",
+            "ms": 16.329,
+            "calls": 647,
+            "says": "The Bridge's query for lab result quantities, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "absent-reasons.rq",
+            "ms": 16.024,
+            "calls": 647,
+            "says": "The Bridge's query for absent reasons, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "lab-result-codes.rq",
+            "ms": 15.842,
+            "calls": 647,
+            "says": "The Bridge's query for lab result codes, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "detect.rq",
+            "ms": 9.841,
+            "calls": 1,
+            "says": "The query that recognises what kind of record this is. Sits inside bridge.stage-detect."
+          },
+          {
+            "name": "narrative-text.rq",
+            "ms": 8.593,
+            "calls": 647,
+            "says": "The Bridge's query for narrative text, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "medication-supply-and-dosages.rq",
+            "ms": 7.271,
+            "calls": 647,
+            "says": "The Bridge's query for medication supply and dosages, which pulls those out of the converted source. Sits inside arrivals.convert."
+          },
+          {
+            "name": "medication.rq",
+            "ms": 7.239,
+            "calls": 647,
+            "says": "The Bridge's query for medication, which pulls those out of the converted source. Sits inside arrivals.convert."
+          }
+        ]
+      }
+    },
+    {
+      "name": "question-after-update-synthea-10y",
+      "scenario": "question-after-update",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "question-after-update-synthea-10y.trace.json",
+        "bytes": 22636,
+        "calls": 211,
+        "drawn": 195,
+        "shortestMs": 0,
+        "merged": 16,
+        "mergedEvents": 1,
+        "runMs": 230.787,
+        "top": [
+          {
+            "name": "files.read.file",
+            "selfMs": 114.342,
+            "calls": 179,
+            "says": "Reading one file from the pod's folder."
+          },
+          {
+            "name": "scenario.open",
+            "selfMs": 98.462,
+            "calls": 1,
+            "says": "Opening the pod: finding its folder, its keys and its saved state."
+          },
+          {
+            "name": "question:pod/My active conditions",
+            "selfMs": 65.065,
+            "calls": 1,
+            "says": "The answer to: pod my active conditions."
+          },
+          {
+            "name": "archives.open",
+            "selfMs": 18.506,
+            "calls": 1,
+            "says": "Opening the archives that hold some of the pod's files: reading the directory at the end of each, never the files it holds."
+          },
+          {
+            "name": "question:pod/My active medications",
+            "selfMs": 2.735,
+            "calls": 1,
+            "says": "The answer to: pod my active medications."
+          },
+          {
+            "name": "core-pod.inputsHash",
+            "selfMs": 2.152,
+            "calls": 1,
+            "says": "Working out a fingerprint of everything a result depends on, to know when it can be reused."
+          },
+          {
+            "name": "files.hash.sha256",
+            "selfMs": 1.918,
+            "calls": 20,
+            "says": "Fingerprinting a file's content to tell whether it changed."
+          },
+          {
+            "name": "scenario.close",
+            "selfMs": 1.083,
+            "calls": 1,
+            "says": "Closing the pod, saving its database for the next time it opens if neither the match nor a question has built it already."
+          },
+          {
+            "name": "union.loadTurtle",
+            "selfMs": 0.962,
+            "calls": 1,
+            "says": "Loading text-format facts into memory."
+          },
+          {
+            "name": "union.select",
+            "selfMs": 0.956,
+            "calls": 1,
+            "says": "Asking the in-memory facts a question that returns rows."
+          }
+        ],
+        "bridgeQueries": []
+      }
+    },
+    {
+      "name": "reopen-after-kill-synthea-10y",
+      "scenario": "reopen-after-kill",
+      "dataset": "synthea-10y",
+      "encrypted": false,
+      "trace": {
+        "file": "reopen-after-kill-synthea-10y.trace.json",
+        "bytes": 48695,
+        "calls": 435,
+        "drawn": 378,
+        "shortestMs": 0,
+        "merged": 57,
+        "mergedEvents": 2,
+        "runMs": 1603.851,
+        "top": [
+          {
+            "name": "scenario.close",
+            "selfMs": 567.152,
+            "calls": 1,
+            "says": "Closing the pod, saving its database for the next time it opens if neither the match nor a question has built it already."
+          },
+          {
+            "name": "pod-database.build.load",
+            "selfMs": 292.513,
+            "calls": 1,
+            "says": "Loading the pod's facts into the saved database. Sits inside core-pod.keepdatabase."
+          },
+          {
+            "name": "store.query",
+            "selfMs": 247.002,
+            "calls": 44,
+            "says": "Questions put to the pod's fact store, many of them: the time one or more of them was in progress."
+          },
+          {
+            "name": "files.read.file",
+            "selfMs": 117.417,
+            "calls": 190,
+            "says": "Reading one file from the pod's folder."
+          },
+          {
+            "name": "pod-database.build.screens:fill",
+            "selfMs": 110.84,
+            "calls": 1,
+            "says": "Filling in the database's ready-made answer tables. Sits inside core-pod.keepdatabase."
+          },
+          {
+            "name": "scenario.open",
+            "selfMs": 102.448,
+            "calls": 1,
+            "says": "Opening the pod: finding its folder, its keys and its saved state."
+          },
+          {
+            "name": "question:pod/My active conditions",
+            "selfMs": 87.002,
+            "calls": 1,
+            "says": "The answer to: pod my active conditions."
+          },
+          {
+            "name": "pod-database.build.worker",
+            "selfMs": 77.524,
+            "calls": 1,
+            "says": "Starting the helper that builds the saved database. Sits inside core-pod.keepdatabase."
+          },
+          {
+            "name": "union.add",
+            "selfMs": 75.042,
+            "calls": 37,
+            "says": "Adding facts to the pod's in-memory facts."
+          },
+          {
+            "name": "kept.whole.podFiles",
+            "selfMs": 74.583,
+            "calls": 1,
+            "says": "Reading every pod file. Sits inside kept.whole."
+          }
+        ],
+        "bridgeQueries": []
+      }
+    }
+  ]
+}
