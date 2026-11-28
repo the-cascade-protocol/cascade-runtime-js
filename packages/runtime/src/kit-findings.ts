@@ -224,7 +224,7 @@ export async function kitFindings(options: {
       }
       const wanted = new Set(
         documents.flatMap(({ stem }) =>
-          ["graph.ttl", "findings.ttl", "unaccepted.txt"].map(
+          ["graph.ttl", "unaccepted.txt"].map(
             (name) => `${saved}/${stem}/${name}`,
           ),
         ),

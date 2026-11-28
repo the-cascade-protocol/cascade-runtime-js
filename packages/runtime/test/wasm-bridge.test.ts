@@ -325,6 +325,43 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       });
   });
 
+  describe("given a `findings.ttl` put back beside a graph a kit saves", () => {
+    let differ: string[];
+    let put: string;
+
+    before(async () => {
+      const real = await vocabulary();
+      const graph = (await real.list("conformance/priya-natarajan/")).find(
+        (path) => /\/bridge\/.+\/graph\.ttl$/.test(path),
+      );
+      assert.ok(graph, "priya-natarajan saves no graph");
+      put = graph.replace(/graph\.ttl$/, "findings.ttl");
+      ({ differ } = await kitFindings({
+        vocabulary: {
+          iri: real.iri,
+          read: (path) => real.read(path),
+          write: () => Promise.reject(new Error("read only")),
+          list: async (folder) => [
+            ...(await real.list(folder)),
+            ...(put.startsWith(folder) ? [put] : []),
+          ],
+        },
+        importers: importersNamed(components.config.importers),
+        adaptersOf,
+      }));
+    });
+
+    it("fails the kit, naming the file as saved with no document of the import to have it", () => {
+      const lines = differ.filter((line) => line.includes(put));
+      assert.equal(lines.length, 1, differ.join("\n"));
+      assert.match(
+        lines[0] ?? "",
+        /^conformance\/priya-natarajan E\d+: \S+\/findings\.ttl is saved, but no document of the import has such a file$/,
+      );
+      assert.equal(differ.length, 1, differ.join("\n"));
+    });
+  });
+
   describe("given an adapter whose accounting says a field is carried that its mapping never writes", () => {
     let differ: string[];
 
