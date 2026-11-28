@@ -134,6 +134,15 @@ export interface LoadedAdapter {
     document: BridgeDocument,
     options?: ConvertOptions,
   ): Promise<Conversion>;
+  /**
+   * Each occurrence of a path the adapter's accounting says is carried that a conversion of the document owes and
+   * neither writes nor reports, one line each: none where the accounting and the mappings agree. It is a second
+   * conversion. Resolves undefined where the Bridge offers no such check.
+   */
+  unmet?(
+    document: BridgeDocument,
+    budget?: ConvertBudget,
+  ): Promise<readonly string[] | undefined>;
   /** Releases the loaded adapter; no call is made on it after. */
   free(): Promise<void>;
 }

@@ -4,6 +4,7 @@ import {
   type BridgeDocument,
   type BridgeErrorKind,
   type Conversion,
+  type ConvertBudget,
   type ConvertOptions,
   type Description,
   type Format,
@@ -30,6 +31,8 @@ export interface BridgePackage {
 interface PackageAdapter {
   accepts(document: BridgeDocument): boolean;
   convert(document: BridgeDocument, options?: ConvertOptions): Conversion;
+  /** Absent from a package built before the Bridge had the call. */
+  unmet?(document: BridgeDocument, budget?: ConvertBudget): string[];
   free(): void;
 }
 
@@ -66,6 +69,11 @@ export type Request =
       readonly op: "convert";
       readonly document: BridgeDocument;
       readonly options?: ConvertOptions;
+    }
+  | {
+      readonly op: "unmet";
+      readonly document: BridgeDocument;
+      readonly budget?: ConvertBudget;
     }
   | { readonly op: "free" };
 
@@ -160,6 +168,14 @@ export function serving(bridge: BridgePackage): (request: Request) => Answer {
           transfer: buffers(value.graph, value.findings),
         };
       }
+      case "unmet":
+        return {
+          reply: {
+            ok: true,
+            value: loaded().unmet?.(request.document, request.budget),
+          },
+          transfer: [],
+        };
       case "free":
         adapter?.free();
         adapter = undefined;
@@ -372,6 +388,12 @@ export class WasmBridge implements Bridge {
           document: copiedDocument(document, transfer),
           ...(options && { options }),
         }))) as Conversion,
+      unmet: async (document, budget) =>
+        (await instance.call((transfer) => ({
+          op: "unmet",
+          document: copiedDocument(document, transfer),
+          ...(budget && { budget }),
+        }))) as readonly string[] | undefined,
       free: () => {
         instance.end();
         return Promise.resolve();

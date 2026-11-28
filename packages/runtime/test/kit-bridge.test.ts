@@ -8,7 +8,6 @@ import { promisify } from "node:util";
 import { kitImports } from "../src/kit-bridge.js";
 import { importersNamed } from "../src/importers.js";
 import { checkouts } from "../src/node/components.js";
-import { iri, type Triple } from "../src/rdf.js";
 import { notIsomorphic, triples } from "../src/graphs.js";
 import { ROOT, storyFrom, vocabulary } from "./vocabulary.js";
 
@@ -39,7 +38,7 @@ async function filesUnder(
 }
 
 /**
- * `npm run kit:bridge` converts every document a kit's story imports with the Bridge and writes the results as the kit
+ * `npm run kit:bridge` converts every document a kit's story imports with the Bridge and writes the graphs as the kit
  * saves them, into a folder of the caller's. A vocabulary maintainer runs it when an adapter changes, and compares that
  * folder with the kit.
  */
@@ -49,11 +48,7 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
     /** For each document the kit's story imports: what the kit saved and where the command wrote its own. */
     let documents: {
       saved: Uint8Array;
-      savedFindings: Uint8Array;
       graph: string;
-      findings: string;
-      findingsAt: string;
-      documentIri: string;
       named: string;
     }[];
     let savedFiles: string[];
@@ -78,13 +73,12 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
       for (const { converted, documents: imported } of imports) {
         savedFiles.push(
           ...(await files.list(`${converted}/`))
-            .filter((path) => !path.endsWith("/unaccepted.txt"))
+            .filter((path) => path.endsWith("/graph.ttl"))
             .map((path) => path.slice(folder.length + 1)),
         );
-        for (const { stem, path, iri: named, repeated } of imported) {
+        for (const { stem, iri: named, repeated } of imported) {
           const at = `${converted}/${stem}/`;
           const saved = await files.read(`${at}graph.ttl`);
-          const savedFindings = await files.read(`${at}findings.ttl`);
           const unaccepted =
             (await files.read(`${at}unaccepted.txt`)) !== undefined;
           if (!repeated && !unaccepted) accepted += 1;
@@ -93,22 +87,17 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
             assert.ok(repeated || unaccepted, `${at} is saved`);
             continue;
           }
-          assert.ok(savedFindings, `${at} is saved`);
           const here = join(out, converted.slice(folder.length + 1), stem);
           documents.push({
             saved,
-            savedFindings,
             graph: join(here, "graph.ttl"),
-            findings: join(here, "findings.ttl"),
-            findingsAt: `${files.iri}${at}findings.ttl`,
-            documentIri: `${files.iri}${path}`,
             named,
           });
         }
       }
       assert.ok(accepted > 0, "the story imports a document the kit accepts");
       assert.equal(
-        savedFiles.filter((path) => path.endsWith("/graph.ttl")).length,
+        savedFiles.length,
         accepted,
         "the graphs the kit saves, against the documents the story imports that are neither repeated nor unaccepted",
       );
@@ -118,31 +107,17 @@ describe("Writing a kit's saved output again · npm run kit:bridge", () => {
       await rm(out, { recursive: true, force: true });
     });
 
-    it("writes the graph and conversion findings files the kit saves for the documents it accepts, and no other", async () => {
+    it("writes the graph file the kit saves for each document it accepts, and no other", async () => {
       assert.deepEqual(await filesUnder(out), savedFiles.sort());
     });
 
-    it("writes for each document a graph and conversion findings isomorphic to the kit's", async () => {
-      for (const one of documents) {
+    it("writes for each document a graph isomorphic to the kit's", async () => {
+      for (const one of documents)
         assert.equal(
           notIsomorphic(triples(one.saved), triples(await readFile(one.graph))),
           undefined,
           `${one.named}'s graph`,
         );
-        assert.equal(
-          notIsomorphic(
-            triples(one.savedFindings, one.findingsAt).map(
-              ([s, p, o]): Triple =>
-                o.termType === "NamedNode" && o.value === one.documentIri
-                  ? [s, p, iri(one.named)]
-                  : [s, p, o],
-            ),
-            triples(await readFile(one.findings)),
-          ),
-          undefined,
-          `${one.named}'s conversion findings`,
-        );
-      }
     });
   });
 

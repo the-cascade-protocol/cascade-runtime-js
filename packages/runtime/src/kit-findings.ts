@@ -1,5 +1,5 @@
 import { type AdaptersOf, EVERY_FINDING } from "./bridge.js";
-import { featureStory } from "./conformance.js";
+import { type Assertion, featureStory } from "./conformance.js";
 import type { Files } from "./files.js";
 import { notIsomorphic, triples } from "./graphs.js";
 import type { Importer } from "./importer.js";
@@ -7,11 +7,25 @@ import { kitImports } from "./kit-bridge.js";
 import { kitsOf } from "./kit.js";
 import { savesBridgeOutput } from "./replay.js";
 import { OxigraphStore } from "./oxigraph-store.js";
-import { iri, type Triple } from "./rdf.js";
+import type { Term } from "./rdf.js";
+import { CASCADE } from "./step.js";
 
-/** The name of the check a kit is held to beside those of `KIT_CHECKS`: its saved Bridge output is what the adapters make. */
+const OA = "http://www.w3.org/ns/oa#";
+const RDF_VALUE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#value";
+const SH_VALUE = "http://www.w3.org/ns/shacl#value";
+const SH_RESULT_SEVERITY = "http://www.w3.org/ns/shacl#resultSeverity";
+const SH_RESULT_PATH = "http://www.w3.org/ns/shacl#resultPath";
+const SH_RESULT_MESSAGE = "http://www.w3.org/ns/shacl#resultMessage";
+const SH_VIOLATION = "http://www.w3.org/ns/shacl#Violation";
+const NOT_ACCOUNTED = `${CASCADE}SourcePathNotAccounted`;
+
+/**
+ * The name of the check a kit is held to beside those of `KIT_CHECKS`: each document its story imports converts, holds no
+ * field its adapter's accounting leaves unnamed, draws no finding of severity Violation, agrees with that accounting, and, where the kit saves the graph, is
+ * converted to that graph.
+ */
 export const KIT_FINDINGS_CHECK =
-  "the-bridge-output-is-the-output-the-kit-saves";
+  "the-documents-of-the-kit-are-converted-and-accounted-for";
 
 /** The imports, by kit and step, whose export its importer cannot read and for which the kit saves nothing. */
 export const KNOWN_SKIPPED: readonly string[] = [
@@ -34,21 +48,134 @@ export function unvouchedFor(
   ];
 }
 
-/** What differs between the Bridge output each kit saves and what the configured adapters make of its imports. */
-export interface KitFindings {
-  /** One line for each import whose output differs from the kit's, with the kit's name first. */
-  readonly differ: string[];
-  readonly skipped: string[];
-  readonly converted: number;
-  readonly unaccepted: number;
-  readonly acceptedUnaccepted: number;
+/**
+ * Where each census note of a conversion's findings puts its path, as a person finds it: the path the note's selectors
+ * give, a Bundle's entry first, and, when the note's own value goes further, that value, the path inside the record.
+ */
+export function unaccountedPaths(findings: Uint8Array | undefined): string[] {
+  if (findings === undefined || findings.length === 0) return [];
+  const { notes, of, selected } = readNotes(findings);
+  return notes
+    .filter((note) => of(note, `${OA}hasBody`)[0]?.value === NOT_ACCOUNTED)
+    .map((note) => {
+      const path = selected(note);
+      const inside = of(note, SH_VALUE)[0]?.value;
+      return inside === undefined || path.includes(inside)
+        ? path
+        : `${path} (in the record ${inside})`;
+    });
 }
 
 /**
- * What differs, by kit, step and stem, between the Bridge output a kit saved for each document its importers find in
- * an import step's download and what the configured adapters make of it: the first to accept it converts it, and
- * where the kit saved that no adapter accepts it, none does. A kit that saves no Bridge output is left out: its replay
- * converts the downloads, and there is nothing saved to compare.
+ * Each finding of severity Violation that a conversion draws, as a person reads it: its body (the shape's constraint, or
+ * `bridge:PredicateNotDeclared`), the path it gives (else the selectors' path in the document) and its message, where it
+ * has one.
+ */
+export function violationsOf(findings: Uint8Array | undefined): string[] {
+  if (findings === undefined || findings.length === 0) return [];
+  const { notes, of, selected } = readNotes(findings);
+  return notes
+    .filter((note) =>
+      of(note, SH_RESULT_SEVERITY).some(
+        (severity) => severity.value === SH_VIOLATION,
+      ),
+    )
+    .map((note) => {
+      const body = of(note, `${OA}hasBody`)[0]?.value ?? "a finding";
+      const path = of(note, SH_RESULT_PATH)[0]?.value ?? selected(note);
+      const message = of(note, SH_RESULT_MESSAGE)[0]?.value;
+      return `${body} is a violation of the vocabulary's shapes at ${path}${message === undefined ? "" : `: ${message}`}`;
+    });
+}
+
+/** The notes of a conversion's findings, what each says of a node, and the path a note's selectors give. */
+function readNotes(findings: Uint8Array): {
+  notes: Term[];
+  of: (node: Term, predicate: string) => Term[];
+  selected: (note: Term) => string;
+} {
+  const all = triples(findings);
+  const of = (node: Term, predicate: string): Term[] =>
+    all
+      .filter(([s, p]) => s.value === node.value && p.value === predicate)
+      .map(([, , o]) => o);
+  const notes = all
+    .filter(([, p]) => p.value === `${OA}hasBody`)
+    .map(([note]) => note);
+  const selected = (note: Term): string => {
+    const chain: string[] = [];
+    for (const target of of(note, `${OA}hasTarget`))
+      for (const selector of of(target, `${OA}hasSelector`))
+        for (
+          let each: Term | undefined = selector;
+          each !== undefined;
+          each = of(each, `${OA}refinedBy`)[0]
+        ) {
+          const value = of(each, RDF_VALUE)[0]?.value;
+          if (value) chain.push(value);
+        }
+    return chain.join(" | ");
+  };
+  return { notes, of, selected };
+}
+
+/** What the kits' documents fail. */
+export interface KitFindings {
+  /** One line for each failure, with the kit's name first. */
+  readonly differ: string[];
+  readonly skipped: string[];
+  /** The documents converted, each once in its kit. */
+  readonly converted: number;
+  /** Of those, the documents compared with the graph their kit saves. */
+  readonly compared: number;
+  readonly unaccepted: number;
+  readonly acceptedUnaccepted: number;
+  /** The documents converted by an adapter whose Bridge offers no agreement check: the check was not made for them. */
+  readonly agreementUnchecked: number;
+  /** Each of those documents, as `kit step stem (path)`. */
+  readonly agreementUncheckedAt: string[];
+}
+
+/** The one line a run of the kit check prints: how many documents were converted, compared and agreement-checked. */
+export function kitCountsLine(found: KitFindings): string {
+  return `the kits' documents: ${found.converted} converted, ${found.compared} compared with a saved graph, ${found.converted - found.agreementUnchecked} agreement-checked, ${found.agreementUnchecked} not agreement-checked`;
+}
+
+/** The assertions of the kit check, one for each kit: failed where its documents fail, or where one had no agreement check. */
+export function kitAssertions(
+  found: KitFindings,
+  kits: readonly string[],
+  iri: string,
+): Assertion[] {
+  return kits.map((kit): Assertion => {
+    const mine = [
+      ...found.differ.filter((line) => line.startsWith(`${kit} `)),
+      ...found.agreementUncheckedAt
+        .filter((at) => at.startsWith(`${kit} `))
+        .map(
+          (at) =>
+            `${at}: the Bridge that loaded its adapter offers no agreement check`,
+        ),
+    ];
+    return {
+      test: `${iri}${kit}/#${KIT_FINDINGS_CHECK}`,
+      name: KIT_FINDINGS_CHECK,
+      outcome: mine.length === 0 ? "passed" : "failed",
+      ...(mine.length === 0 ? {} : { why: mine.join("\n") }),
+    };
+  });
+}
+
+/** The most lines of one document's disagreement that are told; the rest are counted. */
+const UNMET_TOLD = 3;
+
+/**
+ * What fails, by kit, step and stem, for each document its importers find in an import step's download: the first adapter
+ * to accept it converts it, and where the kit saved that no adapter accepts it, none does. A converted document fails
+ * where it holds a field the adapter's accounting does not name (the census), where the Bridge's output validation draws
+ * a Violation, where the accounting says a field is
+ * carried and the conversion neither wrote nor explained it (the agreement), and, for a kit that saves its graphs, where
+ * the conversion is not the graph saved. A kit that saves no Bridge output is checked the same but for that.
  */
 export async function kitFindings(options: {
   readonly vocabulary: Files;
@@ -60,8 +187,11 @@ export async function kitFindings(options: {
   const skipped: string[] = [];
   const seen = new Set<string>();
   let converted = 0;
+  let compared = 0;
   let unaccepted = 0;
   let acceptedUnaccepted = 0;
+  let agreementUnchecked = 0;
+  const agreementUncheckedAt: string[] = [];
   for (const kit of await kitsOf(files)) {
     const skippedBefore = skipped.length;
     const convertedBefore = converted;
@@ -70,7 +200,7 @@ export async function kitFindings(options: {
       `${kit}/${kit.slice(kit.lastIndexOf("/") + 1)}.feature`,
       () => new OxigraphStore(),
     );
-    if (!(await savesBridgeOutput(files, person.folder))) continue;
+    const saves = await savesBridgeOutput(files, person.folder);
     for (const {
       step,
       converted: saved,
@@ -113,9 +243,9 @@ export async function kitFindings(options: {
       } of documents) {
         const at = `${saved}/${stem}/`;
         const named = `${kit} ${step.name} ${stem}`;
-        const [graph, findings, refused] = await Promise.all([
+        const where = `${named} (${documentPath})`;
+        const [graph, refused] = await Promise.all([
           files.read(`${at}graph.ttl`),
-          files.read(`${at}findings.ttl`),
           files.read(`${at}unaccepted.txt`),
         ]);
         const known = `${kit} ${iriOf}`;
@@ -125,11 +255,12 @@ export async function kitFindings(options: {
           if (accepting !== undefined) acceptedUnaccepted++;
           continue;
         }
-        if (graph === undefined) {
+        if (graph === undefined && saves) {
           if (!seen.has(known))
             differ.push(`${named}: nothing is saved for it`);
           continue;
         }
+        if (graph === undefined && seen.has(known)) continue;
         seen.add(known);
         converted++;
         if (accepting === undefined) {
@@ -137,23 +268,35 @@ export async function kitFindings(options: {
           continue;
         }
         const made = await accepting.convert(offered, EVERY_FINDING);
-        const path = `${files.iri}${documentPath}`;
-        const expectedFindings =
-          findings === undefined
-            ? []
-            : triples(findings, `${files.iri}${at}findings.ttl`).map(
-                ([s, p, o]): Triple =>
-                  o.termType === "NamedNode" && o.value === path
-                    ? [s, p, iri(iriOf)]
-                    : [s, p, o],
-              );
-        const why =
-          notIsomorphic(triples(graph), triples(made.graph)) ??
-          notIsomorphic(
-            expectedFindings,
-            triples(made.findings ?? new Uint8Array()),
+        if (graph !== undefined) {
+          compared++;
+          const why = notIsomorphic(triples(graph), triples(made.graph));
+          if (why !== undefined) differ.push(`${named}: ${why}`);
+        }
+        if (made.unvalidated !== undefined)
+          differ.push(
+            `${where}: its graph was not validated (${made.unvalidated}), so its census was not read`,
           );
-        if (why !== undefined) differ.push(`${named}: ${why}`);
+        for (const path of unaccountedPaths(made.findings))
+          differ.push(
+            `${where}: ${path} is in the document, and the adapter's accounting does not name it`,
+          );
+        for (const violation of violationsOf(made.findings))
+          differ.push(`${where}: ${violation}`);
+        const unmet = await accepting.unmet?.(offered);
+        if (unmet === undefined) {
+          agreementUnchecked++;
+          agreementUncheckedAt.push(where);
+        } else {
+          for (const line of unmet.slice(0, UNMET_TOLD))
+            differ.push(
+              `${where}: the accounting and the conversion disagree: ${line}`,
+            );
+          if (unmet.length > UNMET_TOLD)
+            differ.push(
+              `${where}: and ${unmet.length - UNMET_TOLD} more disagreements`,
+            );
+        }
       }
     }
     differ.push(
@@ -163,5 +306,14 @@ export async function kitFindings(options: {
       }).map((line) => (line.startsWith(kit) ? line : `${kit} ${line}`)),
     );
   }
-  return { differ, skipped, converted, unaccepted, acceptedUnaccepted };
+  return {
+    differ,
+    skipped,
+    converted,
+    compared,
+    unaccepted,
+    acceptedUnaccepted,
+    agreementUnchecked,
+    agreementUncheckedAt,
+  };
 }
