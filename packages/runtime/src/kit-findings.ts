@@ -13,6 +13,10 @@ import { CASCADE } from "./step.js";
 const OA = "http://www.w3.org/ns/oa#";
 const RDF_VALUE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#value";
 const SH_VALUE = "http://www.w3.org/ns/shacl#value";
+const SH_RESULT_SEVERITY = "http://www.w3.org/ns/shacl#resultSeverity";
+const SH_RESULT_PATH = "http://www.w3.org/ns/shacl#resultPath";
+const SH_RESULT_MESSAGE = "http://www.w3.org/ns/shacl#resultMessage";
+const SH_VIOLATION = "http://www.w3.org/ns/shacl#Violation";
 const NOT_ACCOUNTED = `${CASCADE}SourcePathNotAccounted`;
 
 /**
@@ -50,33 +54,69 @@ export function unvouchedFor(
  */
 export function unaccountedPaths(findings: Uint8Array | undefined): string[] {
   if (findings === undefined || findings.length === 0) return [];
-  const all = triples(findings);
-  const of = (node: Term, predicate: string): Term[] =>
-    all
-      .filter(([s, p]) => s.value === node.value && p.value === predicate)
-      .map(([, , o]) => o);
-  return all
-    .filter(
-      ([, p, o]) => p.value === `${OA}hasBody` && o.value === NOT_ACCOUNTED,
-    )
-    .map(([note]) => {
-      const chain: string[] = [];
-      for (const target of of(note, `${OA}hasTarget`))
-        for (const selector of of(target, `${OA}hasSelector`))
-          for (
-            let each: Term | undefined = selector;
-            each !== undefined;
-            each = of(each, `${OA}refinedBy`)[0]
-          ) {
-            const value = of(each, RDF_VALUE)[0]?.value;
-            if (value) chain.push(value);
-          }
-      const path = chain.join(" | ");
+  const { notes, of, selected } = readNotes(findings);
+  return notes
+    .filter((note) => of(note, `${OA}hasBody`)[0]?.value === NOT_ACCOUNTED)
+    .map((note) => {
+      const path = selected(note);
       const inside = of(note, SH_VALUE)[0]?.value;
       return inside === undefined || path.includes(inside)
         ? path
         : `${path} (in the record ${inside})`;
     });
+}
+
+/**
+ * Each finding of severity Violation that a conversion draws, as a person reads it: its body (the shape's constraint, or
+ * `bridge:PredicateNotDeclared`), the path it gives (else the selectors' path in the document) and its message, where it
+ * has one.
+ */
+export function violationsOf(findings: Uint8Array | undefined): string[] {
+  if (findings === undefined || findings.length === 0) return [];
+  const { notes, of, selected } = readNotes(findings);
+  return notes
+    .filter((note) =>
+      of(note, SH_RESULT_SEVERITY).some(
+        (severity) => severity.value === SH_VIOLATION,
+      ),
+    )
+    .map((note) => {
+      const body = of(note, `${OA}hasBody`)[0]?.value ?? "a finding";
+      const path = of(note, SH_RESULT_PATH)[0]?.value ?? selected(note);
+      const message = of(note, SH_RESULT_MESSAGE)[0]?.value;
+      return `${body} is a violation of the vocabulary's shapes at ${path}${message === undefined ? "" : `: ${message}`}`;
+    });
+}
+
+/** The notes of a conversion's findings, what each says of a node, and the path a note's selectors give. */
+function readNotes(findings: Uint8Array): {
+  notes: Term[];
+  of: (node: Term, predicate: string) => Term[];
+  selected: (note: Term) => string;
+} {
+  const all = triples(findings);
+  const of = (node: Term, predicate: string): Term[] =>
+    all
+      .filter(([s, p]) => s.value === node.value && p.value === predicate)
+      .map(([, , o]) => o);
+  const notes = all
+    .filter(([, p]) => p.value === `${OA}hasBody`)
+    .map(([note]) => note);
+  const selected = (note: Term): string => {
+    const chain: string[] = [];
+    for (const target of of(note, `${OA}hasTarget`))
+      for (const selector of of(target, `${OA}hasSelector`))
+        for (
+          let each: Term | undefined = selector;
+          each !== undefined;
+          each = of(each, `${OA}refinedBy`)[0]
+        ) {
+          const value = of(each, RDF_VALUE)[0]?.value;
+          if (value) chain.push(value);
+        }
+    return chain.join(" | ");
+  };
+  return { notes, of, selected };
 }
 
 /** What the kits' documents fail. */
@@ -207,6 +247,8 @@ export async function kitFindings(options: {
           differ.push(
             `${where}: ${path} is in the document, and the adapter's accounting does not name it`,
           );
+        for (const violation of violationsOf(made.findings))
+          differ.push(`${where}: ${violation}`);
         const unmet = await accepting.unmet?.(offered);
         if (unmet === undefined) agreementUnchecked++;
         else {
