@@ -28,13 +28,17 @@ import { StoryTime } from "../src/ids.js";
 import { ofMediaType } from "../src/load-adapter.js";
 import { importersNamed } from "../src/importers.js";
 import {
+  KIT_FINDINGS_CHECK,
   type KitFindings,
   KNOWN_SKIPPED,
+  kitAssertions,
+  kitCountsLine,
   kitFindings,
   unaccountedPaths,
   unvouchedFor,
 } from "../src/kit-findings.js";
 import { kitImports } from "../src/kit-bridge.js";
+import { kitsOf } from "../src/kit.js";
 import { documentName } from "../src/names.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { probing } from "../src/probe.js";
@@ -259,6 +263,17 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       assert.equal(found.agreementUnchecked, 0);
     });
 
+    it("gives the counts in one line, with none not agreement-checked, and passes every kit", async () => {
+      const files = await vocabulary();
+      assert.equal(
+        kitCountsLine(found),
+        `the kits' documents: ${found.converted} converted, ${found.compared} compared with a saved graph, ${found.converted} agreement-checked, 0 not agreement-checked`,
+      );
+      const assertions = kitAssertions(found, await kitsOf(files), files.iri);
+      assert.equal(assertions.length, (await kitsOf(files)).length);
+      assert.ok(assertions.every(({ outcome }) => outcome === "passed"));
+    });
+
     it("has no adapter accept the document the kit saves as unaccepted", () => {
       assert.equal(found.unaccepted, 1);
       assert.equal(found.acceptedUnaccepted, 0);
@@ -391,6 +406,29 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
     it("says in its result that the check was not made for each document, and fails none for it", () => {
       assert.deepEqual(found.differ, []);
       assert.equal(found.agreementUnchecked, found.converted);
+      assert.equal(found.agreementUncheckedAt.length, found.converted);
+    });
+
+    it("gives the counts in one line, and fails each kit, naming each document the check was not made for", async () => {
+      const files = await vocabulary();
+      assert.equal(
+        kitCountsLine(found),
+        `the kits' documents: ${found.converted} converted, ${found.compared} compared with a saved graph, 0 agreement-checked, ${found.converted} not agreement-checked`,
+      );
+      const kits = await kitsOf(files);
+      const assertions = kitAssertions(found, kits, files.iri);
+      assert.equal(assertions.length, kits.length);
+      for (const [index, kit] of kits.entries()) {
+        const one = assertions[index];
+        assert.equal(one?.test, `${files.iri}${kit}/#${KIT_FINDINGS_CHECK}`);
+        assert.equal(one?.outcome, "failed", kit);
+        assert.match(
+          one?.why ?? "",
+          /offers no agreement check/,
+          kit,
+        );
+        assert.ok((one?.why ?? "").includes(`${kit} `), kit);
+      }
     });
   });
 

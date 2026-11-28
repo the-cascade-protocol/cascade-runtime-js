@@ -1,5 +1,5 @@
 import { type AdaptersOf, EVERY_FINDING } from "./bridge.js";
-import { featureStory } from "./conformance.js";
+import { type Assertion, featureStory } from "./conformance.js";
 import type { Files } from "./files.js";
 import { notIsomorphic, triples } from "./graphs.js";
 import type { Importer } from "./importer.js";
@@ -132,6 +132,26 @@ export interface KitFindings {
   readonly acceptedUnaccepted: number;
   /** The documents converted by an adapter whose Bridge offers no agreement check: the check was not made for them. */
   readonly agreementUnchecked: number;
+  /** Each of those documents, as `kit step stem (path)`. */
+  readonly agreementUncheckedAt: string[];
+}
+
+/** The one line a run of the kit check prints: how many documents were converted, compared and agreement-checked. */
+export function kitCountsLine(found: KitFindings): string {
+  void found;
+  return "";
+}
+
+/** The assertions of the kit check, one for each kit: failed where its documents fail, or where one had no agreement check. */
+export function kitAssertions(
+  found: KitFindings,
+  kits: readonly string[],
+  iri: string,
+): Assertion[] {
+  void found;
+  void kits;
+  void iri;
+  return [];
 }
 
 /** The most lines of one document's disagreement that are told; the rest are counted. */
@@ -278,5 +298,6 @@ export async function kitFindings(options: {
     unaccepted,
     acceptedUnaccepted,
     agreementUnchecked,
+    agreementUncheckedAt: [],
   };
 }
