@@ -423,6 +423,51 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
     });
   });
 
+  describe("given a Bridge whose conversion of each document draws a finding of severity Violation against the vocabulary's shapes", () => {
+    const VIOLATION = `@prefix oa: <http://www.w3.org/ns/oa#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+_:shapeViolation a oa:Annotation ;
+  oa:hasBody <http://www.w3.org/ns/shacl#MinCountConstraintComponent> ;
+  sh:resultSeverity sh:Violation ;
+  sh:resultPath <https://ns.cascadeprotocol.org/core/v1#allergyCriticality> ;
+  sh:resultMessage "less than 1 values" .
+`;
+    let found: KitFindings;
+
+    before(async () => {
+      found = await kitFindings({
+        vocabulary: await vocabulary(),
+        importers: importersNamed(components.config.importers),
+        adaptersOf: (mediaType) =>
+          adaptersOf(mediaType).map((adapter) => ({
+            ...adapter,
+            convert: async (document, options) => {
+              const made = await adapter.convert(document, options);
+              return {
+                ...made,
+                findings: new Uint8Array([
+                  ...(made.findings ?? []),
+                  ...new TextEncoder().encode(VIOLATION),
+                ]),
+              };
+            },
+          })),
+      });
+    });
+
+    it("fails each document, naming the kit, the step, the document, the finding's body, its path and its message", () => {
+      const lines = found.differ.filter((line) =>
+        line.includes("MinCountConstraintComponent"),
+      );
+      assert.equal(lines.length, found.converted);
+      for (const line of lines) {
+        assert.match(line, /^conformance\/[a-z-]+ E\d+ \S+ \(/);
+        assert.ok(line.includes("allergyCriticality"), line);
+        assert.ok(line.includes("less than 1 values"), line);
+      }
+    });
+  });
+
   describe("given an adapter loaded in a worker", () => {
     let expected: Saved;
 
