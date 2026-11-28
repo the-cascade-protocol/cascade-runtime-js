@@ -57,7 +57,7 @@ import {
   nativeOxigraph,
 } from "./oxigraph-native.js";
 import { kitImports } from "../kit-bridge.js";
-import { KIT_FINDINGS_CHECK, kitFindings } from "../kit-findings.js";
+import { kitAssertions, kitCountsLine, kitFindings } from "../kit-findings.js";
 import { kitsOf } from "../kit.js";
 import { ofMediaType } from "../load-adapter.js";
 import { WasmBridge } from "../wasm-bridge.js";
@@ -324,24 +324,13 @@ async function kitFindingAssertions(
   config: RuntimeConfig,
   adaptersOf: () => Promise<AdaptersOf>,
 ): Promise<Assertion[]> {
-  const { differ, agreementUnchecked } = await kitFindings({
+  const found = await kitFindings({
     vocabulary: files,
     importers: importersNamed(config.importers),
     adaptersOf: await adaptersOf(),
   });
-  if (agreementUnchecked > 0)
-    log(
-      `the kits' agreement check was not made for ${agreementUnchecked} documents: their Bridge offers none`,
-    );
-  return (await kitsOf(files)).map((kit): Assertion => {
-    const mine = differ.filter((line) => line.startsWith(`${kit} `));
-    return {
-      test: `${files.iri}${kit}/#${KIT_FINDINGS_CHECK}`,
-      name: KIT_FINDINGS_CHECK,
-      outcome: mine.length === 0 ? "passed" : "failed",
-      ...(mine.length === 0 ? {} : { why: mine.join("\n") }),
-    };
-  });
+  log(kitCountsLine(found));
+  return kitAssertions(found, await kitsOf(files), files.iri);
 }
 
 /**

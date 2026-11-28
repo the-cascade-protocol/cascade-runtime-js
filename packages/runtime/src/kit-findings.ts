@@ -21,7 +21,7 @@ const NOT_ACCOUNTED = `${CASCADE}SourcePathNotAccounted`;
 
 /**
  * The name of the check a kit is held to beside those of `KIT_CHECKS`: each document its story imports converts, holds no
- * field its adapter's accounting leaves unnamed, agrees with that accounting, and, where the kit saves the graph, is
+ * field its adapter's accounting leaves unnamed, draws no finding of severity Violation, agrees with that accounting, and, where the kit saves the graph, is
  * converted to that graph.
  */
 export const KIT_FINDINGS_CHECK =
@@ -138,8 +138,7 @@ export interface KitFindings {
 
 /** The one line a run of the kit check prints: how many documents were converted, compared and agreement-checked. */
 export function kitCountsLine(found: KitFindings): string {
-  void found;
-  return "";
+  return `the kits' documents: ${found.converted} converted, ${found.compared} compared with a saved graph, ${found.converted - found.agreementUnchecked} agreement-checked, ${found.agreementUnchecked} not agreement-checked`;
 }
 
 /** The assertions of the kit check, one for each kit: failed where its documents fail, or where one had no agreement check. */
@@ -148,10 +147,23 @@ export function kitAssertions(
   kits: readonly string[],
   iri: string,
 ): Assertion[] {
-  void found;
-  void kits;
-  void iri;
-  return [];
+  return kits.map((kit): Assertion => {
+    const mine = [
+      ...found.differ.filter((line) => line.startsWith(`${kit} `)),
+      ...found.agreementUncheckedAt
+        .filter((at) => at.startsWith(`${kit} `))
+        .map(
+          (at) =>
+            `${at}: the Bridge that loaded its adapter offers no agreement check`,
+        ),
+    ];
+    return {
+      test: `${iri}${kit}/#${KIT_FINDINGS_CHECK}`,
+      name: KIT_FINDINGS_CHECK,
+      outcome: mine.length === 0 ? "passed" : "failed",
+      ...(mine.length === 0 ? {} : { why: mine.join("\n") }),
+    };
+  });
 }
 
 /** The most lines of one document's disagreement that are told; the rest are counted. */
@@ -160,7 +172,8 @@ const UNMET_TOLD = 3;
 /**
  * What fails, by kit, step and stem, for each document its importers find in an import step's download: the first adapter
  * to accept it converts it, and where the kit saved that no adapter accepts it, none does. A converted document fails
- * where it holds a field the adapter's accounting does not name (the census), where the accounting says a field is
+ * where it holds a field the adapter's accounting does not name (the census), where the Bridge's output validation draws
+ * a Violation, where the accounting says a field is
  * carried and the conversion neither wrote nor explained it (the agreement), and, for a kit that saves its graphs, where
  * the conversion is not the graph saved. A kit that saves no Bridge output is checked the same but for that.
  */
@@ -178,6 +191,7 @@ export async function kitFindings(options: {
   let unaccepted = 0;
   let acceptedUnaccepted = 0;
   let agreementUnchecked = 0;
+  const agreementUncheckedAt: string[] = [];
   for (const kit of await kitsOf(files)) {
     const skippedBefore = skipped.length;
     const convertedBefore = converted;
@@ -270,8 +284,10 @@ export async function kitFindings(options: {
         for (const violation of violationsOf(made.findings))
           differ.push(`${where}: ${violation}`);
         const unmet = await accepting.unmet?.(offered);
-        if (unmet === undefined) agreementUnchecked++;
-        else {
+        if (unmet === undefined) {
+          agreementUnchecked++;
+          agreementUncheckedAt.push(where);
+        } else {
           for (const line of unmet.slice(0, UNMET_TOLD))
             differ.push(
               `${where}: the accounting and the conversion disagree: ${line}`,
@@ -298,6 +314,6 @@ export async function kitFindings(options: {
     unaccepted,
     acceptedUnaccepted,
     agreementUnchecked,
-    agreementUncheckedAt: [],
+    agreementUncheckedAt,
   };
 }

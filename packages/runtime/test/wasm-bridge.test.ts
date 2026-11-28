@@ -422,11 +422,7 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
         const one = assertions[index];
         assert.equal(one?.test, `${files.iri}${kit}/#${KIT_FINDINGS_CHECK}`);
         assert.equal(one?.outcome, "failed", kit);
-        assert.match(
-          one?.why ?? "",
-          /offers no agreement check/,
-          kit,
-        );
+        assert.match(one?.why ?? "", /offers no agreement check/, kit);
         assert.ok((one?.why ?? "").includes(`${kit} `), kit);
       }
     });
