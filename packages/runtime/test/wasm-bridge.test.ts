@@ -3,6 +3,7 @@ import {
   cp,
   mkdir,
   mkdtemp,
+  readFile,
   rm,
   symlink,
   utimes,
@@ -32,6 +33,7 @@ import {
   kitFindings,
   unvouchedFor,
 } from "../src/kit-findings.js";
+import { kitImports } from "../src/kit-bridge.js";
 import { documentName } from "../src/names.js";
 import { OxigraphStore } from "../src/oxigraph-store.js";
 import { probing } from "../src/probe.js";
@@ -66,6 +68,7 @@ import { notIsomorphic, triples } from "../src/graphs.js";
 import {
   filed,
   layout,
+  overlaid,
   RUNTIME,
   ROOT,
   storyFrom,
@@ -180,6 +183,60 @@ async function standIn(
   return { ...document, iri: await documentName(bytes), bytes };
 }
 
+interface Planted {
+  /** The path in the vocabulary of the first JSON document of a kit's story, and its text with `field` added. */
+  readonly path: string;
+  readonly text: string;
+  /** The field that no accounting names, as the finding gives its path. */
+  readonly field: string;
+  /** For a Bundle, the entry it is planted in: the last. */
+  readonly entry?: number;
+}
+
+/** The first FHIR document a kit's story imports, with a field no accounting names added to its record (a Bundle's last entry). */
+async function plantedIn(
+  kit: string,
+  adaptersOf: AdaptersOf,
+): Promise<Planted> {
+  const { story, folder } = await storyFrom(
+    `conformance/${kit}/${kit}.feature`,
+  );
+  for (const { documents } of await kitImports({
+    vocabulary: await vocabulary(),
+    folder,
+    steps: story.steps,
+    importers: importersNamed(components.config.importers),
+    adaptersOf,
+  }))
+    for (const { path, offered } of documents) {
+      let record: { resourceType?: string; entry?: { resource: object }[] };
+      try {
+        record = JSON.parse(new TextDecoder().decode(offered.bytes));
+      } catch {
+        continue;
+      }
+      if (record.resourceType === "Bundle" && record.entry?.length) {
+        const entry = record.entry.length - 1;
+        Object.assign(record.entry[entry]?.resource ?? {}, {
+          zzUnknownField: "x",
+        });
+        return {
+          path,
+          text: JSON.stringify(record),
+          field: "/resource/zzUnknownField",
+          entry,
+        };
+      }
+      if (typeof record.resourceType === "string")
+        return {
+          path,
+          text: JSON.stringify({ ...record, zzUnknownField: "x" }),
+          field: "/zzUnknownField",
+        };
+    }
+  throw new Error(`${kit} imports no JSON document`);
+}
+
 /**
  * The Bridge is one WebAssembly module, built by cascade-bridge-rs, that runs every adapter. The runtime runs it in a
  * worker, so a document that crashes it costs one conversion and not the page.
@@ -227,6 +284,114 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
 
     it("skips only an import whose export its importer cannot read and for which the kit saves nothing", () => {
       assert.deepEqual(found.skipped, KNOWN_SKIPPED);
+    });
+  });
+
+  describe("given a document of each kit with a field the adapter's accounting does not name", () => {
+    const KITS = [
+      "alex-rivera",
+      "martin-okafor",
+      "priya-natarajan",
+      "tamsin-vale",
+    ] as const;
+    const planted = new Map<string, Planted>();
+    let differ: string[];
+
+    before(async () => {
+      const texts: Record<string, string> = {};
+      for (const kit of KITS) {
+        const one = await plantedIn(kit, adaptersOf);
+        planted.set(kit, one);
+        texts[one.path] = one.text;
+      }
+      ({ differ } = await kitFindings({
+        vocabulary: overlaid(await vocabulary(), texts),
+        importers: importersNamed(components.config.importers),
+        adaptersOf,
+      }));
+    });
+
+    for (const kit of KITS)
+      it(`fails the kit ${kit}, naming the document and the path`, () => {
+        const { path, field, entry } = planted.get(kit) as Planted;
+        const named = differ.filter(
+          (line) =>
+            line.startsWith(`conformance/${kit} `) &&
+            line.includes(path) &&
+            line.includes(field) &&
+            (entry === undefined || line.includes(`/entry/${entry}`)),
+        );
+        assert.ok(
+          named.length > 0,
+          `no line names ${path}, ${field}${entry === undefined ? "" : ` and /entry/${entry}`}:\n${differ.join("\n")}`,
+        );
+      });
+  });
+
+  describe("given an adapter whose accounting says a field is carried that its mapping never writes", () => {
+    let differ: string[];
+
+    before(async () => {
+      const folder = await mkdtemp(join(tmpdir(), "adapter-unmet-"));
+      const adapters: LoadedAdapter[] = [];
+      const bridge = new WasmBridge(inWorker(compiled));
+      try {
+        const [first] = components.config.adapters;
+        const original = await components.resolve(first as Followed);
+        await cp(original.folder, folder, {
+          recursive: true,
+          filter: (from) =>
+            !from
+              .slice(original.folder.length)
+              .split(sep)
+              .some((part) => [".git", "fixtures", "bench"].includes(part)),
+        });
+        const accounting = join(folder, "vocab", "fhir-accounting.ttl");
+        const text = await readFile(accounting, "utf8");
+        const entry = /\bbridge:asProperty cascade:allergyCriticality \]/;
+        assert.match(text, entry);
+        await writeFile(
+          accounting,
+          text.replace(
+            entry,
+            "bridge:asProperty cascade:allergyCriticalityNeverWritten ]",
+          ),
+        );
+        const configured = await loadConfiguredAdapters(
+          bridge,
+          components.config.adapters,
+          {
+            ...components,
+            resolve: async (followed) =>
+              followed === first
+                ? { ...original, folder }
+                : components.resolve(followed),
+          },
+        );
+        adapters.push(...configured.map(({ adapter }) => adapter));
+        ({ differ } = await kitFindings({
+          vocabulary: await vocabulary(),
+          importers: importersNamed(components.config.importers),
+          adaptersOf: ofMediaType(configured),
+        }));
+      } finally {
+        for (const adapter of adapters) await adapter.free();
+        bridge.close();
+        await rm(folder, { recursive: true, force: true });
+      }
+    });
+
+    it("fails a document that has the field, naming the document and the accounting entry", () => {
+      assert.ok(
+        differ.some(
+          (line) =>
+            line.startsWith("conformance/alex-rivera ") &&
+            line.includes("AllergyIntolerance-") &&
+            line.includes('"/criticality"') &&
+            line.includes("allergyCriticalityNeverWritten"),
+        ),
+        differ.join("\n"),
+      );
     });
   });
 
