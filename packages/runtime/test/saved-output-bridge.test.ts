@@ -8,7 +8,6 @@ import {
 } from "../src/bridge.js";
 import { MemoryFiles } from "../src/files.js";
 import { documentName } from "../src/names.js";
-import { OxigraphStore } from "../src/oxigraph-store.js";
 import { SavedOutputBridge } from "../src/saved-output-bridge.js";
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -22,9 +21,9 @@ async function documentOf(text: string): Promise<BridgeDocument> {
 }
 
 /**
- * A kit saves, beside each export, the graph and conversion findings the Bridge made of each document.
- * `SavedOutputBridge` answers a conversion from those files, so a story replays where no Bridge can run, and what the
- * kit saved stays the expected output every runtime is held to.
+ * A kit saves, beside each export, the graph the Bridge made of each document. `SavedOutputBridge` answers a conversion
+ * from those files, so a story replays where no Bridge can run, and what the kit saved stays the expected output every
+ * runtime is held to.
  */
 describe("Converting from a kit's saved output · SavedOutputBridge.of()", () => {
   const peanut = '{"resourceType": "AllergyIntolerance", "id": "peanut"}';
@@ -48,10 +47,6 @@ describe("Converting from a kit's saved output · SavedOutputBridge.of()", () =>
       new Uint8Array(),
     );
     await story.write("s/bridge/AllergyIntolerance-peanut/graph.ttl", graph);
-    await story.write(
-      "s/bridge/AllergyIntolerance-peanut/findings.ttl",
-      bytes("<urn:finding> a <urn:Finding> ."),
-    );
   });
 
   describe("given a step whose export is a folder of documents", () => {
@@ -70,37 +65,17 @@ describe("Converting from a kit's saved output · SavedOutputBridge.of()", () =>
       assert.equal(await adapter.accepts(await documentOf(peanut)), true);
     });
 
-    it("converts it to the graph and, asked for every finding, the conversion findings saved under its file's name", async () => {
-      const converted = await adapter.convert(
-        await documentOf(peanut),
-        EVERY_FINDING,
-      );
-      const store = new OxigraphStore();
-      await store.loadTurtle(converted.graph, { graph: "urn:graph" });
-      await store.loadTurtle(converted.findings ?? "", {
-        graph: "urn:findings",
-      });
-      assert.equal(
-        await store.ask(
-          "ASK { GRAPH <urn:graph> { <urn:record> a <urn:Allergy> } }",
-          new Set(),
-        ),
-        true,
-        "the graph",
-      );
-      assert.equal(
-        await store.ask(
-          "ASK { GRAPH <urn:findings> { <urn:finding> a <urn:Finding> } }",
-          new Set(),
-        ),
-        true,
-        "the conversion findings",
-      );
+    it("converts it to the graph saved under its file's name", async () => {
+      const converted = await adapter.convert(await documentOf(peanut));
+      assert.deepEqual(converted.graph, graph);
+      assert.equal(converted.findings, undefined);
     });
 
-    it("returns the graph alone where the convert asks for no findings", async () => {
-      const converted = await adapter.convert(await documentOf(peanut));
-      assert.equal(converted.findings, undefined);
+    it("rejects a conversion that asks for findings with a BridgeError of kind `bridge`: it saves none", async () => {
+      await assert.rejects(
+        adapter.convert(await documentOf(peanut), EVERY_FINDING),
+        (error) => isBridgeError(error) && error.kind === "bridge",
+      );
     });
 
     it("declines a document the step marks with `unaccepted.txt`", async () => {

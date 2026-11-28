@@ -167,6 +167,8 @@ export async function loadAdapter(
       accepts: (document) => retrying((on) => on.accepts(envelopeOf(document))),
       convert: (document, options) =>
         retrying((on) => on.convert(envelopeOf(document), options)),
+      unmet: (document, budget) =>
+        retrying(async (on) => on.unmet?.(envelopeOf(document), budget)),
       free: async () => {
         const last = loaded;
         loaded = undefined;

@@ -31,6 +31,7 @@ import {
   type KitFindings,
   KNOWN_SKIPPED,
   kitFindings,
+  unaccountedPaths,
   unvouchedFor,
 } from "../src/kit-findings.js";
 import { kitImports } from "../src/kit-bridge.js";
@@ -57,7 +58,7 @@ import {
   loadSharedAdapters,
   Pool,
 } from "../src/node/wasm.js";
-import { iri, type Triple } from "../src/rdf.js";
+import type { Triple } from "../src/rdf.js";
 import {
   type CompiledBridge,
   inThread,
@@ -116,13 +117,11 @@ async function loaded(spawn: Spawn): Promise<LoadedAdapter> {
 interface Saved {
   readonly document: BridgeDocument;
   readonly graph: Triple[];
-  readonly findings: Triple[];
 }
 
 /**
  * A document of Alex's export as an import step of her story converted it: in the envelope for one resource, with the
- * facts the importer writes for it at the step's time, and the Bridge's saved output. The command line that saved it
- * named the document by its path, which the findings give relative to themselves; a runtime names it by its N5 name.
+ * facts the importer writes for it at the step's time, and the graph the kit saves for it.
  */
 async function saved(step: string, stem: string): Promise<Saved> {
   const files = await vocabulary();
@@ -133,22 +132,14 @@ async function saved(step: string, stem: string): Promise<Saved> {
   const exportFolder = `${alex}/${found.happened.export}`;
   const path = `${exportFolder}/clinical-records/${stem}.json`;
   const folder = `${alex}/${found.happened.converted}/${stem}/`;
-  const [documents, graph, findings] = await Promise.all([
+  const [documents, graph] = await Promise.all([
     appleHealthExport.documents(files, exportFolder),
     files.read(`${folder}graph.ttl`),
-    files.read(`${folder}findings.ttl`),
   ]);
   const document = documents?.find((each) => each.path === path);
   if (document === undefined || graph === undefined)
     throw new Error(`Alex's kit saves no conversion of ${stem} at ${step}`);
   const name = await documentName(document.bytes);
-  const named = (triple: Triple): Triple => {
-    const [subject, predicate, object] = triple;
-    return object.termType === "NamedNode" &&
-      object.value === `${files.iri}${path}`
-      ? [subject, predicate, iri(name)]
-      : triple;
-  };
   return {
     document: {
       iri: name,
@@ -157,22 +148,11 @@ async function saved(step: string, stem: string): Promise<Saved> {
       facts: { iri: `${name}#facts`, bytes: document.facts(found.when) },
     },
     graph: triples(graph),
-    findings:
-      findings === undefined
-        ? []
-        : triples(findings, `${files.iri}${folder}findings.ttl`).map(named),
   };
 }
 
 function same(expected: Saved, found: Conversion): void {
   assert.equal(notIsomorphic(expected.graph, triples(found.graph)), undefined);
-  assert.equal(
-    notIsomorphic(
-      expected.findings,
-      triples(found.findings ?? new Uint8Array()),
-    ),
-    undefined,
-  );
 }
 
 async function standIn(
@@ -267,14 +247,16 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       });
     });
 
-    it("converts each document to a graph and conversion findings isomorphic to those the kit saves", async () => {
+    it("converts each document to the graph the kit saves, if it saves one, with no field unaccounted for and no disagreement of the accounting", async () => {
       assert.deepEqual(found.differ, []);
       assert.equal(
-        found.converted,
+        found.compared,
         (await (await vocabulary()).list("conformance")).filter((path) =>
           /\/bridge\/.+\/graph\.ttl$/.test(path),
         ).length,
       );
+      assert.ok(found.converted > found.compared, "a kit that saves no graph");
+      assert.equal(found.agreementUnchecked, 0);
     });
 
     it("has no adapter accept the document the kit saves as unaccepted", () => {
@@ -348,15 +330,10 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
         });
         const accounting = join(folder, "vocab", "fhir-accounting.ttl");
         const text = await readFile(accounting, "utf8");
-        const entry = /\bbridge:asProperty cascade:allergyCriticality \]/;
+        const entry =
+          /(bridge:sourcePath "\/criticality" ;[^\]]*?bridge:asProperty cascade:allergyCriticality)( \])/;
         assert.match(text, entry);
-        await writeFile(
-          accounting,
-          text.replace(
-            entry,
-            "bridge:asProperty cascade:allergyCriticalityNeverWritten ]",
-          ),
-        );
+        await writeFile(accounting, text.replace(entry, "$1NeverWritten$2"));
         const configured = await loadConfiguredAdapters(
           bridge,
           components.config.adapters,
@@ -392,6 +369,57 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
         ),
         differ.join("\n"),
       );
+    });
+  });
+
+  describe("given a Bridge that offers no agreement check", () => {
+    let found: KitFindings;
+
+    before(async () => {
+      found = await kitFindings({
+        vocabulary: await vocabulary(),
+        importers: importersNamed(components.config.importers),
+        adaptersOf: (mediaType) =>
+          adaptersOf(mediaType).map(({ accepts, convert, free }) => ({
+            accepts,
+            convert,
+            free,
+          })),
+      });
+    });
+
+    it("says in its result that the check was not made for each document, and fails none for it", () => {
+      assert.deepEqual(found.differ, []);
+      assert.equal(found.agreementUnchecked, found.converted);
+    });
+  });
+
+  describe("given a Bridge that leaves each graph unvalidated and finds five disagreements in each document", () => {
+    let found: KitFindings;
+
+    before(async () => {
+      found = await kitFindings({
+        vocabulary: await vocabulary(),
+        importers: importersNamed(components.config.importers),
+        adaptersOf: (mediaType) =>
+          adaptersOf(mediaType).map((adapter) => ({
+            ...adapter,
+            convert: async (document, options) => ({
+              ...(await adapter.convert(document, options)),
+              unvalidated: "no vocabulary",
+            }),
+            unmet: () => Promise.resolve(["a", "b", "c", "d", "e"]),
+          })),
+      });
+    });
+
+    it("fails each document for its census not read, and tells three disagreements and counts the rest", () => {
+      const lines = (text: string): number =>
+        found.differ.filter((line) => line.includes(text)).length;
+      assert.equal(lines("so its census was not read"), found.converted);
+      assert.equal(lines("disagree: c"), found.converted);
+      assert.equal(lines("disagree: d"), 0);
+      assert.equal(lines("and 2 more disagreements"), found.converted);
     });
   });
 
@@ -1171,6 +1199,41 @@ describe("Converting a document with the WebAssembly Bridge · WasmBridge, inWor
       );
       assert.deepEqual(done.wrote, []);
       assert.deepEqual(await files.list(""), []);
+    });
+  });
+
+  describe("given the census notes of a conversion", () => {
+    const note = (selectors: string, value: string): Uint8Array =>
+      new TextEncoder().encode(`
+        @prefix oa: <http://www.w3.org/ns/oa#> .
+        @prefix sh: <http://www.w3.org/ns/shacl#> .
+        @prefix cascade: <https://ns.cascadeprotocol.org/cascade#> .
+        <urn:n> a oa:Annotation ; oa:hasBody cascade:SourcePathNotAccounted ;
+          oa:hasTarget [ oa:hasSelector ${selectors} ] ; sh:value ${value} .`);
+    const at = (value: string, refined = ""): string =>
+      `[ <http://www.w3.org/1999/02/22-rdf-syntax-ns#value> "${value}" ${refined} ]`;
+
+    it("gives the path of the selectors, a Bundle's entry first", () => {
+      assert.deepEqual(
+        unaccountedPaths(
+          note(
+            at("/entry/8", `; oa:refinedBy ${at("/resource/x")}`),
+            '"/resource/x"',
+          ),
+        ),
+        ["/entry/8 | /resource/x"],
+      );
+    });
+
+    it("adds the note's own value where it goes beyond the selectors", () => {
+      assert.deepEqual(unaccountedPaths(note(at("/a"), '"/a/@b"')), [
+        "/a (in the record /a/@b)",
+      ]);
+    });
+
+    it("gives none for no findings", () => {
+      assert.deepEqual(unaccountedPaths(undefined), []);
+      assert.deepEqual(unaccountedPaths(new Uint8Array()), []);
     });
   });
 

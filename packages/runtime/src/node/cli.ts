@@ -49,7 +49,7 @@ import {
 } from "./runtime.js";
 import { featurePod } from "./story-pod.js";
 import { OxigraphStore } from "../oxigraph-store.js";
-import { type AdaptersOf, EVERY_FINDING } from "../bridge.js";
+import type { AdaptersOf } from "../bridge.js";
 import { useOxigraph, usedOxigraph } from "../oxigraph-engine.js";
 import {
   chooseOxigraph,
@@ -316,20 +316,23 @@ function adaptersLoader(
 }
 
 /**
- * One assertion for each kit: that what the configured adapters make of each document its imports hand the Bridge is
- * the output the kit saves, so a change to an adapter that changes its findings fails until the kit saves them again.
- * A person folder with no `bridge/` folder is converted by the replay instead.
+ * One assertion for each kit: that each document its imports hand the Bridge converts, holds no field the adapter's
+ * accounting does not name, agrees with that accounting, and, where the kit saves its graph, is converted to it.
  */
 async function kitFindingAssertions(
   files: FolderFiles,
   config: RuntimeConfig,
   adaptersOf: () => Promise<AdaptersOf>,
 ): Promise<Assertion[]> {
-  const { differ } = await kitFindings({
+  const { differ, agreementUnchecked } = await kitFindings({
     vocabulary: files,
     importers: importersNamed(config.importers),
     adaptersOf: await adaptersOf(),
   });
+  if (agreementUnchecked > 0)
+    log(
+      `the kits' agreement check was not made for ${agreementUnchecked} documents: their Bridge offers none`,
+    );
   return (await kitsOf(files)).map((kit): Assertion => {
     const mine = differ.filter((line) => line.startsWith(`${kit} `));
     return {
@@ -604,8 +607,8 @@ async function buildExamplePod(args: string[]): Promise<number> {
 }
 
 /**
- * Saves the Bridge output of the kit `conformance/<name>/` into a folder, as `<converted folder>/<stem>/graph.ttl` and
- * `findings.ttl` for each document an import step of its story hands on, and says the commits it converted with.
+ * Saves the Bridge output of the kit `conformance/<name>/` into a folder, as `<converted folder>/<stem>/graph.ttl` for
+ * each document an import step of its story hands on, and says the commits it converted with.
  */
 async function saveKitBridge(args: string[]): Promise<number> {
   const [kit, out] = args;
@@ -674,14 +677,10 @@ async function saveKitBridge(args: string[]): Promise<number> {
         )
           console.error(`${step.name} ${stem}: converted before`);
         else {
-          const made = await accepting.convert(offered, EVERY_FINDING);
+          const made = await accepting.convert(offered);
           const folder = join(out, saved, stem);
           await mkdir(folder, { recursive: true });
           await writeFile(join(folder, "graph.ttl"), made.graph);
-          await writeFile(
-            join(folder, "findings.ttl"),
-            made.findings ?? new Uint8Array(),
-          );
           written++;
         }
       }

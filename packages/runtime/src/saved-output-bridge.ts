@@ -16,8 +16,8 @@ export interface SavedOutput {
   /** The folder of the export, whose files are the documents, or the one file downloaded. */
   readonly export: string;
   /**
-   * The folder holding, under each document's file stem, `graph.ttl` and `findings.ttl` for a document that is
-   * converted, or `unaccepted.txt` for one no adapter accepted.
+   * The folder holding, under each document's file stem, `graph.ttl` for a document that is converted, or
+   * `unaccepted.txt` for one no adapter accepted.
    */
   readonly converted: string;
 }
@@ -107,15 +107,8 @@ export class SavedOutputBridge implements Bridge {
         `the story saves no Bridge output for ${document.iri}`,
       );
     }
-    if (!options?.findings && !options?.census) return { graph };
-    if (!options.findings || !options.census)
-      throw new BridgeError(
-        "bridge",
-        "the saved output holds the findings and the census together, so a convert asks for both or neither",
-      );
-    const findings =
-      (await this.files.read(`${this.converted}${stem}/findings.ttl`)) ??
-      new Uint8Array();
-    return { graph, findings };
+    if (options?.findings || options?.census)
+      throw new BridgeError("bridge", "the saved output holds no findings");
+    return { graph };
   }
 }
